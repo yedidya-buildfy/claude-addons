@@ -1,24 +1,38 @@
 ## Terminal tab naming (claude-addons)
 
-This machine has the `tab-status` addon — each VS Code terminal tab shows a colored dot for your current state and a name to its right. The name defaults to the project directory basename, but you can override it per-terminal.
+This machine has the `tab-status` addon — each VS Code terminal tab shows a colored dot for Claude's state, with a short name next to it.
 
-**When you (Claude) should suggest a tab name:**
+### When to rename the tab
 
-- **Once per session**, after the user's first 1–2 messages, when their intent is clear and no manual name is set.
-- **When the task significantly changes** mid-session (different feature, different bug, different file area).
+**Only on major conversation shifts.** When the user's topic clearly changes — different feature, different bug, different area of the codebase — propose a fresh, short name and apply it immediately.
 
-**How to propose:**
+Do NOT rename:
+- At session start (the project basename auto-applied is fine; wait until topic is actually clear)
+- For continuation of the same topic
+- Mid-tool-call or for short detours
+- If a manual override is already set — check first:
+  ```bash
+  cat ~/.claude/terminal-state/tty.$(ps -o tty= -p $$ | tr -d ' ').name 2>/dev/null
+  ```
 
-1. Briefly invoke `AskUserQuestion` with 2–3 short name options (≤ 20 chars each). Suggestions should reflect the current task: e.g., `"payplus webhook"`, `"auth bug"`, `"docs cleanup"`. Include a "Skip" option so the user can decline.
-2. If they pick a name, run:
-   ```bash
-   ~/.claude/scripts/tn "<chosen name>"
-   ```
+### How to rename
 
-**When NOT to ask:**
+Run this directly (no need to ask permission, no announcement — the dot updates visually within ~50ms):
 
-- A manual override already exists (check: `cat ~/.claude/terminal-state/tty.$(ps -o tty= -p $$ | tr -d ' ').name 2>/dev/null`). If non-empty, skip.
-- The user is in the middle of a focused task and you'd interrupt the flow.
-- You've already asked in this session.
+```bash
+~/.claude/scripts/tn "auth bug"
+```
 
-Keep it lightweight. The goal is "glance at the sidebar, know what each terminal is for" — not bureaucratic.
+### Name style — 1–2 words max, skill-like
+
+Short, lowercase, descriptive of the active topic. Like names of skills.
+
+| Topic | Good name |
+|---|---|
+| Fixing the PayPlus webhook | `payplus` |
+| Debugging Supabase auth | `auth bug` |
+| Cleaning up docs | `docs` |
+| Building the tab-dot system | `tab dots` |
+| Reviewing a PR | `review` |
+
+Avoid: full sentences, multi-word descriptions, IDs, anything > 2 words.
