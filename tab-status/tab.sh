@@ -28,10 +28,6 @@ name_file="$state_dir/$session.name"
 get_bg() { cat "$bg_file" 2>/dev/null || echo 0; }
 set_bg() { echo "$1" > "$bg_file"; }
 
-# Spawn the watcher if there isn't a live one for this session already.
-# Safe to call from any action — that's how the system self-heals if a watcher
-# was killed externally or never spawned (e.g. SessionStart hook didn't fire
-# because hooks weren't loaded yet when the user started Claude).
 ensure_watcher() {
   wpid=$(cat "$state_dir/$session.watcher_pid" 2>/dev/null)
   if [ -n "$wpid" ] && kill -0 "$wpid" 2>/dev/null; then
@@ -74,6 +70,13 @@ case "$action" in
     echo red > "$state_file"
     ensure_watcher
     log_line "state=red"
+    ;;
+
+  blue)
+    # Claude is waiting on user input (AskUserQuestion).
+    echo blue > "$state_file"
+    ensure_watcher
+    log_line "state=blue"
     ;;
 
   green)

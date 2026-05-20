@@ -38,6 +38,7 @@ while [ "$ticks" -lt "$max_ticks" ]; do
   case "$state" in
     white) dot="⚪" ;;
     red)   dot="🔴" ;;
+    blue)  dot="🔵" ;;
     green) [ "$bg" -gt 0 ] && dot="🟡" || dot="🟢" ;;
     *)     dot="🟢" ;;
   esac

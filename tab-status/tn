@@ -1,0 +1,35 @@
+#!/bin/bash
+# Set or clear the tab name override for the current terminal. Callable from
+# any shell (zsh `tn` wraps this) OR from Claude Code's Bash tool — walks PPID
+# up to find the controlling TTY in case the subprocess has no direct one.
+#
+# Usage:
+#   tn <name>    set tab name to "<dot> <name>"
+#   tn           clear override; auto-name (project basename) takes over
+
+state_dir="$HOME/.claude/terminal-state"
+mkdir -p "$state_dir"
+
+pid=$$; tty_dev=""
+for _ in 1 2 3 4 5 6 7 8; do
+  t=$(ps -o tty= -p "$pid" 2>/dev/null | tr -d ' ')
+  if [ -n "$t" ] && [ "$t" != "??" ]; then
+    tty_dev="$t"
+    break
+  fi
+  pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+  [ -z "$pid" ] && break
+done
+
+if [ -z "$tty_dev" ]; then
+  echo "tn: no TTY" >&2
+  exit 1
+fi
+
+if [ -z "$1" ]; then
+  rm -f "$state_dir/tty.$tty_dev.name"
+  echo "tn: cleared override for $tty_dev"
+else
+  echo "$1" > "$state_dir/tty.$tty_dev.name"
+  echo "tn: tab → '$1' (visible within ~300ms)"
+fi

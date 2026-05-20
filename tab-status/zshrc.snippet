@@ -1,15 +1,4 @@
-# Override the tab name shown alongside the colored dot. `tn` with no args clears it.
-# Without this, the name auto-derives from the basename of the project directory.
-tn() {
-  local state_dir="$HOME/.claude/terminal-state"
-  mkdir -p "$state_dir"
-  local tty_dev=$(ps -o tty= -p $$ 2>/dev/null | tr -d ' ')
-  [ -n "$tty_dev" ] && [ "$tty_dev" != "??" ] || { echo "tn: no TTY" >&2; return 1; }
-  if [ -z "$1" ]; then
-    rm -f "$state_dir/tty.$tty_dev.name"
-    printf '\033]0;\a'
-  else
-    echo "$1" > "$state_dir/tty.$tty_dev.name"
-    printf '\033]0;🟢 %s\a' "$1"
-  fi
-}
+# Thin wrapper around ~/.claude/scripts/tn so you can type `tn <name>` interactively.
+# The CLI (~/.claude/scripts/tn) is what Claude calls from its Bash tool — same code path,
+# single source of truth.
+tn() { "$HOME/.claude/scripts/tn" "$@"; }

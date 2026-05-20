@@ -10,7 +10,11 @@
       { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh green" } ] }
     ],
     "PreToolUse": [
-      { "matcher": "Agent", "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh bg-inc" } ] }
+      { "matcher": "Agent", "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh bg-inc" } ] },
+      { "matcher": "AskUserQuestion", "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh blue" } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "AskUserQuestion", "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh red" } ] }
     ],
     "SubagentStop": [
       { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh bg-dec" } ] }

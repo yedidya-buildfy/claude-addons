@@ -8,6 +8,7 @@ TS=$(date '+%Y-%m-%d-%H%M%S')
 
 CLAUDE_DIR="$HOME/.claude"
 CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
+CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
 VSCODE_SETTINGS="$HOME/Library/Application Support/Code/User/settings.json"
 ZSHRC="$HOME/.zshrc"
 
@@ -23,9 +24,6 @@ backup() {
   dim "    backed up: $1.bak.$TS"
 }
 
-# Deep-merges the JSON object on stdin into the file at $1 (creating the file
-# if it doesn't exist). Preserves other keys. Uses node, which is guaranteed
-# present since Claude Code requires it.
 json_merge() {
   local file="$1"
   local incoming
@@ -61,8 +59,9 @@ if confirm "Install tab-status?"; then
 
   cp "$ROOT/tab-status/tab.sh" "$CLAUDE_DIR/scripts/tab.sh"
   cp "$ROOT/tab-status/tab-watcher.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh"
-  chmod +x "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh"
-  green "    copied scripts → ~/.claude/scripts/"
+  cp "$ROOT/tab-status/tn" "$CLAUDE_DIR/scripts/tn"
+  chmod +x "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh" "$CLAUDE_DIR/scripts/tn"
+  green "    copied scripts → ~/.claude/scripts/ (tab.sh, tab-watcher.sh, tn)"
 
   backup "$CLAUDE_SETTINGS"
   cat "$ROOT/tab-status/settings.json.snippet" | json_merge "$CLAUDE_SETTINGS"
@@ -77,11 +76,22 @@ if confirm "Install tab-status?"; then
   fi
 
   if [ -f "$ZSHRC" ] && ! grep -q "^tn()" "$ZSHRC" 2>/dev/null; then
-    if confirm "Append the \`tn\` shell function to ~/.zshrc?"; then
+    if confirm "Append the \`tn\` shell wrapper to ~/.zshrc?"; then
       backup "$ZSHRC"
       echo "" >> "$ZSHRC"
       cat "$ROOT/tab-status/zshrc.snippet" >> "$ZSHRC"
-      green "    appended tn function to ~/.zshrc (run \`source ~/.zshrc\` to load)"
+      green "    appended tn wrapper to ~/.zshrc (run \`source ~/.zshrc\` to load)"
+    fi
+  fi
+
+  if confirm "Let Claude suggest tab names? (appends ~30 lines to ~/.claude/CLAUDE.md)"; then
+    backup "$CLAUDE_MD"
+    if ! grep -q "Terminal tab naming (claude-addons)" "$CLAUDE_MD" 2>/dev/null; then
+      [ -f "$CLAUDE_MD" ] && echo "" >> "$CLAUDE_MD"
+      cat "$ROOT/tab-status/CLAUDE.md.snippet" >> "$CLAUDE_MD"
+      green "    appended naming instructions to ~/.claude/CLAUDE.md"
+    else
+      dim "    instructions already present, skipping"
     fi
   fi
 fi

@@ -4,7 +4,7 @@ Two small add-ons for [Claude Code](https://claude.com/claude-code) on macOS + V
 
 | Addon | What it does |
 |---|---|
-| [**tab-status**](./tab-status) | Colored dot (⚪🔴🟡🟢) on the VS Code terminal tab showing whether Claude is idle, working, or waiting on a background agent |
+| [**tab-status**](./tab-status) | Colored dot (⚪🔴🔵🟡🟢) on the VS Code terminal tab showing whether Claude is idle, working, waiting on you, or waiting on a background agent. Optional: Claude can suggest tab names when the task changes |
 | [**statusline-gsd**](./statusline-gsd) | Drops in the [GSD project's](https://github.com/gsd-build/get-shit-done) statusline — model name, current task, context-usage bar at the bottom of every Claude session |
 
 The two are independent — install one or both. They share zero code.

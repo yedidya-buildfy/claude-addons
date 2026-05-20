@@ -1,0 +1,24 @@
+## Terminal tab naming (claude-addons)
+
+This machine has the `tab-status` addon — each VS Code terminal tab shows a colored dot for your current state and a name to its right. The name defaults to the project directory basename, but you can override it per-terminal.
+
+**When you (Claude) should suggest a tab name:**
+
+- **Once per session**, after the user's first 1–2 messages, when their intent is clear and no manual name is set.
+- **When the task significantly changes** mid-session (different feature, different bug, different file area).
+
+**How to propose:**
+
+1. Briefly invoke `AskUserQuestion` with 2–3 short name options (≤ 20 chars each). Suggestions should reflect the current task: e.g., `"payplus webhook"`, `"auth bug"`, `"docs cleanup"`. Include a "Skip" option so the user can decline.
+2. If they pick a name, run:
+   ```bash
+   ~/.claude/scripts/tn "<chosen name>"
+   ```
+
+**When NOT to ask:**
+
+- A manual override already exists (check: `cat ~/.claude/terminal-state/tty.$(ps -o tty= -p $$ | tr -d ' ').name 2>/dev/null`). If non-empty, skip.
+- The user is in the middle of a focused task and you'd interrupt the flow.
+- You've already asked in this session.
+
+Keep it lightweight. The goal is "glance at the sidebar, know what each terminal is for" — not bureaucratic.
