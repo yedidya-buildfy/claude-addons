@@ -17,7 +17,7 @@ tty_override="$state_dir/tty.$tty_dev.name"
 echo "[$(date '+%H:%M:%S')] START session=$session tty=$tty_dev watcher_pid=$$" >> "$log"
 
 ticks=0
-max_ticks=864000   # ~12h at 50ms
+max_ticks=2160000  # ~12h at 20ms
 last_state=""
 last_name=""
 
@@ -70,12 +70,12 @@ while [ "$ticks" -lt "$max_ticks" ]; do
     paint_ok=0
   fi
 
-  # heartbeat: one line every 120 ticks (~6s at 50ms) — just for liveness check
-  if [ "$((ticks % 120))" -eq 0 ]; then
+  # heartbeat: one line every 300 ticks (~6s at 20ms) — just for liveness check
+  if [ "$((ticks % 300))" -eq 0 ]; then
     echo "[$(date '+%H:%M:%S')] heartbeat session=$session tick=$ticks state=$state dot=$dot name='$name' paint_ok=$paint_ok bg=$bg" >> "$log"
   fi
 
-  sleep 0.05
+  sleep 0.02
   ticks=$((ticks + 1))
 done
 
