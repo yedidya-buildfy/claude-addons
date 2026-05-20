@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh white" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh red" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh green" } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Agent", "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh bg-inc" } ] }
+    ],
+    "SubagentStop": [
+      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh bg-dec" } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh session-end" } ] }
+    ]
+  }
+}
