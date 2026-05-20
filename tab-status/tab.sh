@@ -12,6 +12,7 @@ action="$1"
 input=$(cat)
 
 log_line() { echo "[$(date '+%H:%M:%S')] action=$action pid=$$ ppid=$PPID $*" >> "$log"; }
+prev_state() { cat "$state_file" 2>/dev/null; }
 
 session=$(echo "$input" | python3 -c 'import sys,json
 try: print(json.load(sys.stdin).get("session_id",""))
@@ -60,29 +61,35 @@ ensure_watcher() {
 
 case "$action" in
   white)
-    echo white > "$state_file"
-    set_bg 0
+    p=$(prev_state); echo white > "$state_file"; set_bg 0
     ensure_watcher
-    log_line "state=white"
+    log_line "state: $p → white"
     ;;
 
   red)
-    echo red > "$state_file"
+    p=$(prev_state); echo red > "$state_file"
     ensure_watcher
-    log_line "state=red"
+    log_line "state: $p → red"
     ;;
 
   blue)
     # Claude is waiting on user input (AskUserQuestion).
-    echo blue > "$state_file"
+    p=$(prev_state); echo blue > "$state_file"
     ensure_watcher
-    log_line "state=blue"
+    log_line "state: $p → blue (AskUserQuestion)"
     ;;
 
   green)
-    echo green > "$state_file"
-    ensure_watcher
-    log_line "state=green bg=$(get_bg)"
+    # Claude fires Stop while AskUserQuestion is waiting for the user. Don't
+    # let that overwrite blue — only transition to green if we're not waiting.
+    p=$(prev_state)
+    if [ "$p" = "blue" ]; then
+      log_line "state: blue (preserved — Stop fired during AskUserQuestion wait)"
+    else
+      echo green > "$state_file"
+      ensure_watcher
+      log_line "state: $p → green bg=$(get_bg)"
+    fi
     ;;
 
   bg-inc)

@@ -17,7 +17,9 @@ tty_override="$state_dir/tty.$tty_dev.name"
 echo "[$(date '+%H:%M:%S')] START session=$session tty=$tty_dev watcher_pid=$$" >> "$log"
 
 ticks=0
-max_ticks=144000   # ~12h at 300ms
+max_ticks=432000   # ~12h at 100ms
+last_state=""
+last_name=""
 
 while [ "$ticks" -lt "$max_ticks" ]; do
   # clean shutdown signal from SessionEnd
@@ -51,6 +53,16 @@ while [ "$ticks" -lt "$max_ticks" ]; do
     name="claude"
   fi
 
+  # Log on actual changes — these are the events worth seeing in the trace.
+  if [ "$state" != "$last_state" ]; then
+    echo "[$(date '+%H:%M:%S')] state_change session=$session: '$last_state' → '$state' (dot=$dot)" >> "$log"
+    last_state="$state"
+  fi
+  if [ "$name" != "$last_name" ]; then
+    echo "[$(date '+%H:%M:%S')] name_change session=$session: '$last_name' → '$name'" >> "$log"
+    last_name="$name"
+  fi
+
   if [ -w "/dev/$tty_dev" ]; then
     printf '\033]0;%s %s\a' "$dot" "$name" > "/dev/$tty_dev" 2>/dev/null
     paint_ok=1
@@ -58,12 +70,12 @@ while [ "$ticks" -lt "$max_ticks" ]; do
     paint_ok=0
   fi
 
-  # heartbeat: one line every 20 ticks (~6s)
-  if [ "$((ticks % 20))" -eq 0 ]; then
+  # heartbeat: one line every 60 ticks (~6s at 100ms) — just for liveness check
+  if [ "$((ticks % 60))" -eq 0 ]; then
     echo "[$(date '+%H:%M:%S')] heartbeat session=$session tick=$ticks state=$state dot=$dot name='$name' paint_ok=$paint_ok bg=$bg" >> "$log"
   fi
 
-  sleep 0.3
+  sleep 0.1
   ticks=$((ticks + 1))
 done
 
