@@ -64,6 +64,18 @@ case "$action" in
     p=$(prev_state); echo white > "$state_file"; set_bg 0
     ensure_watcher
     log_line "state: $p → white"
+    # Inject a reminder about the tab-name skill into Claude's session context.
+    # Only fires if the skill is actually installed.
+    if [ -f "$HOME/.claude/skills/tab-name/SKILL.md" ]; then
+      cat <<'JSON'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "[claude-addons] The `tab-name` skill is installed. Per its when_to_use rules: as soon as you can identify the topic in 1-3 words (usually after the user's 1st or 2nd substantive message), pick a name yourself, apply silently with `~/.claude/scripts/tn \"<name>\"`, and add a one-line text-question at the end of your response (e.g. `(Renamed tab to \"auth bug\" — different one?)`). Re-fire on topic shifts. Default project-basename name is a placeholder — replace it."
+  }
+}
+JSON
+    fi
     ;;
 
   red)

@@ -96,6 +96,18 @@ if confirm "Install the \`tab-name\` skill?"; then
   green "    installed skill → ~/.claude/skills/tab-name/SKILL.md"
   dim "    fires on /tab-name, on phrases like 'rename tab', and auto-fires when topic shifts"
   dim "    requires tab-status (for the \`tn\` CLI it calls)"
+
+  if confirm "Also append a reminder to ~/.claude/CLAUDE.md for max reliability?"; then
+    backup "$CLAUDE_MD"
+    if ! grep -q "\`tab-name\`" "$CLAUDE_MD" 2>/dev/null; then
+      [ -f "$CLAUDE_MD" ] && [ -s "$CLAUDE_MD" ] && echo "" >> "$CLAUDE_MD"
+      # extract the markdown fence block from the snippet
+      sed -n '/^```markdown$/,/^```$/{/^```markdown$/d; /^```$/d; p;}' "$ROOT/skill-tab-name/CLAUDE.md.snippet" >> "$CLAUDE_MD"
+      green "    appended skill reminder to ~/.claude/CLAUDE.md"
+    else
+      dim "    reminder already present, skipping"
+    fi
+  fi
 fi
 
 echo

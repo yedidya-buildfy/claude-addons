@@ -1,0 +1,11 @@
+# Optional CLAUDE.md snippet
+
+For maximum reliability, append this to your `~/.claude/CLAUDE.md`. The skill auto-loads via Claude Code's skills system and the addon's SessionStart hook also injects a reminder, but having it in CLAUDE.md as well gives Claude a third (system-prompt-level) signal so it can't miss the trigger.
+
+```markdown
+## Skills to invoke proactively
+
+- **`tab-name`** — As soon as you can identify what the current session is about in 1–3 words (usually after the user's first or second substantive message), invoke this skill. Pick a short name yourself, apply silently via `~/.claude/scripts/tn "<name>"`, and add **one short text-question** at the end of your response so the user can override (e.g. `(Renamed tab to "auth bug" — want a different one?)`). Re-fire on topic shifts. See `~/.claude/skills/tab-name/SKILL.md` for full rules. Don't be cautious — the default project-basename name is a placeholder, your job is to replace it.
+```
+
+`install.sh` offers to do this automatically.
