@@ -1,44 +1,56 @@
 ---
 name: tab-name
-description: Rename the VS Code terminal tab to a short label that reflects what the conversation is actually about. Fires automatically when the user's topic clearly shifts mid-session (different feature, bug, file area, or domain) and on explicit user requests. Trigger on /tab-name, "rename tab", "change tab name", "set tab name", "tab name", "שנה שם לטרמינל", "תן שם לטרמינל", "החלף שם", "תקרא לטאב".
-when_to_use: When the active topic of the conversation has clearly changed from the previous topic — different feature, different bug, different codebase area — AND no manual override is already pinned. Also fires when the user explicitly asks to rename. Do NOT fire at session start (let the auto-derived project basename stand until the topic is clear) or during continuation of the same topic.
+description: Set the VS Code terminal tab to a short name that reflects the current conversation topic. Fires EARLY in any substantive working session (after 1–2 user turns once intent is clear) and AGAIN whenever the topic shifts. Also fires on explicit requests. Trigger on /tab-name, "rename tab", "change tab name", "set tab name", "tab name", "שנה שם לטרמינל", "תן שם לטרמינל", "החלף שם", "תקרא לטאב".
+when_to_use: As soon as you can identify what the user is working on (usually their first or second substantive message), propose a tab name. Also re-fire when the topic shifts mid-session. Do NOT fire on greetings, throwaway questions, or if a manual override is already set. The default project-basename name (`dashbord`, etc.) is a placeholder — replace it as soon as you know what the session is actually about.
 disable-model-invocation: false
 ---
 
 # Rename the VS Code terminal tab
 
-This machine has a `tab-status` addon — each terminal tab shows a colored status dot and a short name. The name lives in `~/.claude/terminal-state/tty.<ttysNNN>.name` (manual override) or `~/.claude/terminal-state/<session>.name` (auto, project basename).
+This addon paints a colored dot + a short name on each VS Code terminal tab. The default name is the project directory basename (e.g. `dashbord`) — a placeholder. **Your job is to replace it with something topic-specific as soon as you understand what the user is working on.**
 
-## Step 1 — Check whether a manual override is already pinned
+## When to fire — be proactive, not cautious
+
+Fire as soon as you can answer "what is this session about?" in 1–3 words. That's usually within the first one or two substantive messages from the user.
+
+| Situation | Fire? |
+|---|---|
+| First substantive message gives clear intent (e.g. "let me fix the payplus webhook") | **Yes — fire now** |
+| User asks a specific question on a specific topic | **Yes** |
+| User just said "hi" or "look at this screenshot" with no topic context yet | No — wait one more turn |
+| You already fired this session and the topic hasn't changed | No — don't repeat |
+| Topic clearly shifts ("now let me work on the auth bug instead") | **Yes — fire again** |
+| User explicitly asks ("rename tab", "/tab-name") | **Yes — always** |
+| Manual override already pinned by `tn` | No — respect it unless asked to override |
+
+## Check first — is a manual override pinned?
 
 ```bash
 cat ~/.claude/terminal-state/tty.$(ps -o tty= -p $$ | tr -d ' ').name 2>/dev/null
 ```
 
-- **Empty output** → no override; proceed.
-- **Non-empty output** AND the user **did NOT explicitly ask to rename** → do nothing. They already set a name they like.
-- **Non-empty output** AND the user explicitly asked → proceed; override will be replaced.
+- Empty → proceed.
+- Non-empty AND the user didn't explicitly ask to rename → respect it; do nothing.
+- Non-empty AND the user explicitly asked → proceed; the chosen name replaces the override.
 
-## Step 2 — Decide the path
+## How to fire
 
-| User said this | Action |
-|---|---|
-| `"rename tab to X"`, `"call this tab X"`, `"שנה לX"` (explicit name) | **Skip the question.** Run `~/.claude/scripts/tn "X"` directly. |
-| `"rename tab"`, `/tab-name`, `"give this tab a name"` (no specific name) | Go to Step 3 — propose options via AskUserQuestion. |
-| Auto-fired because topic shifted, no explicit user request | Go to Step 3 — propose options via AskUserQuestion. |
+### Path A — user gave an explicit name
 
-## Step 3 — Propose names via `AskUserQuestion`
+User said something like `"rename tab to payplus"`, `"call this tab auth"`, `"שנה לX"`.
 
-Read the recent conversation. Identify the **active topic** in 1–3 words (prefer 2).
+→ Skip the question. Run `~/.claude/scripts/tn "<name>"` directly. Done.
 
-Call `AskUserQuestion` with **3 short name options** plus the implicit "Other" the tool always provides:
+### Path B — you're proposing names
+
+Call `AskUserQuestion` with **3 short name options** (the tool automatically adds an "Other" so the user can type a custom name):
 
 - All lowercase
 - 1–3 words each, **prefer 2 words**
 - Skill-style — descriptive of the topic, not generic
-- Each option's `description` field is one short sentence explaining why that name fits
+- Each option's `description` is one short sentence saying why that name fits
 
-Example call:
+Example:
 
 ```
 question: "What should this tab be called?"
@@ -46,35 +58,28 @@ header:   "Tab name"
 options:
   - label: "payplus"      description: "PayPlus webhook integration"
   - label: "auth bug"     description: "Fixing the Supabase auth bug"
-  - label: "docs cleanup" description: "Cleaning up docs/ structure"
+  - label: "docs cleanup" description: "Restructuring docs/"
 ```
 
-## Step 4 — Apply
-
-Once the user picks (or types via "Other"), run:
+After the user picks (or types via "Other"), run:
 
 ```bash
 ~/.claude/scripts/tn "<chosen name>"
 ```
 
-That's all. The watcher repaints the tab within ~20ms. **No announcement** — don't say "tab renamed". The user can see it.
+**No announcement.** The dot updates within ~20ms — the user can see it.
 
 ## Good names
 
-`payplus`, `auth bug`, `tab dots`, `docs`, `code review`, `whatsapp`, `claude api`, `migrations`, `context bar`
+`payplus`, `auth bug`, `tab dots`, `claude addons`, `docs`, `code review`, `migrations`, `context bar`, `whatsapp`, `claude api`
 
-## Bad names (avoid)
+## Bad names — avoid
 
-- `fix-the-payplus-integration-webhook` — too long
-- `dashboard-improvements-v2` — too long, version suffix
-- `T1`, `task` — not descriptive
-- `working on stuff`, `current` — generic, no information
+- Long sentences: `fix-the-payplus-integration-webhook`
+- Version suffixes: `dashboard-v2`, `auth-fix-attempt-3`
+- Single letters / IDs: `T1`, `task`, `current`
+- Generic: `working on stuff`, `code`, `terminal`
 
-## When NOT to fire
+## Don't be shy
 
-- Session just started; topic isn't clear yet
-- Same topic is continuing; user is mid-task
-- A tool call returned an error and you're debugging the same problem
-- The user is asking a clarifying question, not pivoting
-
-If unsure whether the topic shifted enough to rename, **don't**. False renames are more annoying than a stale name.
+The user wants the tab renamed. Being conservative ("the topic might shift later, let me wait") is worse than firing once. If you fire and the topic changes later, you'll just fire again — that's the design.
