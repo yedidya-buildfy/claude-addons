@@ -60,11 +60,13 @@ Note: VS Code's right-click → Rename sets a *static* tab title that ignores OS
 
 This addon ships a Claude Code skill at [`skill-tab-name/SKILL.md`](./skill-tab-name/SKILL.md). When installed, Claude will:
 
-- **Auto-fire** when your topic clearly shifts mid-session (different feature, bug, area)
-- **Fire on `/tab-name`** if you want to trigger it manually
-- **Fire on natural-language requests** like "rename tab", "tab name", "שנה שם לטרמינל"
-- Ask via `AskUserQuestion` with 2–3 short name suggestions + an "Other" option
-- Apply your choice by running `~/.claude/scripts/tn "<name>"` silently — no announcement, dot updates within ~20ms
+- **Pick a name on its own** as soon as your intent is clear (usually after your 1st or 2nd substantive message)
+- **Apply it silently** via `~/.claude/scripts/tn "<name>"` — no UI popup
+- **Add one short text question at the end of the response** so you can override: `(Renamed tab to "auth bug" — want a different one?)`
+- **Re-fire on topic shifts** the same way
+- **Fire on `/tab-name`** or natural-language requests like "rename tab", "שנה שם לטרמינל"
+
+The default is low friction — no `AskUserQuestion` popup, no separate confirmation step. The name just changes, and you correct it in a few words if you don't like it. The skill only uses `AskUserQuestion` if you explicitly ask for choices (e.g. "give me options for the name").
 
 Install the skill manually (or let `install.sh` do it):
 ```bash
@@ -72,7 +74,7 @@ mkdir -p ~/.claude/skills/tab-name
 cp tab-status/skill-tab-name/SKILL.md ~/.claude/skills/tab-name/SKILL.md
 ```
 
-Names follow a strict style: **1–3 words, prefer 2, lowercase, skill-like.** Examples: `payplus`, `auth bug`, `tab dots`, `docs cleanup`. Long sentences and IDs are explicitly rejected by the skill.
+Name style: **1–3 words, prefer 2, lowercase, skill-like.** Good: `payplus`, `auth bug`, `tab dots`, `docs cleanup`. Bad: long sentences, version suffixes, generic words.
 
 ## Debugging
 
