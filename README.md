@@ -12,7 +12,7 @@ The two are independent — install one or both. They share zero code.
 ## Install
 
 ```bash
-git clone https://github.com/<your-username>/claude-addons.git
+git clone https://github.com/yedidya-buildfy/claude-addons.git
 cd claude-addons
 ./install.sh
 ```
