@@ -84,15 +84,11 @@ if confirm "Install tab-status?"; then
     fi
   fi
 
-  if confirm "Let Claude suggest tab names? (appends ~30 lines to ~/.claude/CLAUDE.md)"; then
-    backup "$CLAUDE_MD"
-    if ! grep -q "Terminal tab naming (claude-addons)" "$CLAUDE_MD" 2>/dev/null; then
-      [ -f "$CLAUDE_MD" ] && echo "" >> "$CLAUDE_MD"
-      cat "$ROOT/tab-status/CLAUDE.md.snippet" >> "$CLAUDE_MD"
-      green "    appended naming instructions to ~/.claude/CLAUDE.md"
-    else
-      dim "    instructions already present, skipping"
-    fi
+  if confirm "Install the \`tab-name\` skill? (lets Claude suggest tab names via AskUserQuestion on topic shifts)"; then
+    mkdir -p "$CLAUDE_DIR/skills/tab-name"
+    cp "$ROOT/tab-status/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
+    green "    installed skill → ~/.claude/skills/tab-name/SKILL.md"
+    dim "    fires on /tab-name, on phrases like 'rename tab', and auto-fires when topic shifts"
   fi
 fi
 

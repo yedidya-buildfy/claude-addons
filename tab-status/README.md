@@ -56,15 +56,23 @@ tn             # clears override, back to auto-name (project basename)
 
 Note: VS Code's right-click → Rename sets a *static* tab title that ignores OSC sequences. To get the dot, use `tn` instead.
 
-## Letting Claude rename tabs for you (optional)
+## Letting Claude rename tabs for you (skill — optional)
 
-The CLI at `~/.claude/scripts/tn` is callable from Claude's Bash tool. If you install [`CLAUDE.md.snippet`](./CLAUDE.md.snippet) into your `~/.claude/CLAUDE.md`, Claude will:
+This addon ships a Claude Code skill at [`skill-tab-name/SKILL.md`](./skill-tab-name/SKILL.md). When installed, Claude will:
 
-- Suggest a tab name via `AskUserQuestion` once per session (after your intent is clear)
-- Suggest a fresh name when the task significantly changes mid-session
-- Apply your choice by running `~/.claude/scripts/tn "<name>"`
+- **Auto-fire** when your topic clearly shifts mid-session (different feature, bug, area)
+- **Fire on `/tab-name`** if you want to trigger it manually
+- **Fire on natural-language requests** like "rename tab", "tab name", "שנה שם לטרמינל"
+- Ask via `AskUserQuestion` with 2–3 short name suggestions + an "Other" option
+- Apply your choice by running `~/.claude/scripts/tn "<name>"` silently — no announcement, dot updates within ~20ms
 
-This is optional — without the snippet, Claude won't touch the tab name; you can still set it manually with `tn`.
+Install the skill manually (or let `install.sh` do it):
+```bash
+mkdir -p ~/.claude/skills/tab-name
+cp tab-status/skill-tab-name/SKILL.md ~/.claude/skills/tab-name/SKILL.md
+```
+
+Names follow a strict style: **1–3 words, prefer 2, lowercase, skill-like.** Examples: `payplus`, `auth bug`, `tab dots`, `docs cleanup`. Long sentences and IDs are explicitly rejected by the skill.
 
 ## Debugging
 

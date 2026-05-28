@@ -23,9 +23,10 @@ if [ "$killed" -gt 0 ]; then
   dim "  killed $killed running watcher(s)"
 fi
 
-# Remove scripts
-rm -f "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh"
-green "  removed ~/.claude/scripts/tab.sh and tab-watcher.sh"
+# Remove scripts + skill
+rm -f "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh" "$CLAUDE_DIR/scripts/tn"
+rm -rf "$CLAUDE_DIR/skills/tab-name"
+green "  removed ~/.claude/scripts/{tab.sh,tab-watcher.sh,tn} and ~/.claude/skills/tab-name/"
 
 # Strip our hook entries from ~/.claude/settings.json
 if [ -f "$CLAUDE_SETTINGS" ]; then
