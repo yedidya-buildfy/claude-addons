@@ -53,7 +53,7 @@ cyan "claude-addons installer"
 echo
 
 # --- tab-status ---
-cyan "[1/2] tab-status (colored dot on VS Code terminal tabs)"
+cyan "[1/3] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
@@ -84,18 +84,24 @@ if confirm "Install tab-status?"; then
     fi
   fi
 
-  if confirm "Install the \`tab-name\` skill? (lets Claude suggest tab names via AskUserQuestion on topic shifts)"; then
-    mkdir -p "$CLAUDE_DIR/skills/tab-name"
-    cp "$ROOT/tab-status/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
-    green "    installed skill → ~/.claude/skills/tab-name/SKILL.md"
-    dim "    fires on /tab-name, on phrases like 'rename tab', and auto-fires when topic shifts"
-  fi
+fi
+
+echo
+
+# --- skill-tab-name ---
+cyan "[2/3] skill-tab-name (Claude picks tab names automatically)"
+if confirm "Install the \`tab-name\` skill?"; then
+  mkdir -p "$CLAUDE_DIR/skills/tab-name"
+  cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
+  green "    installed skill → ~/.claude/skills/tab-name/SKILL.md"
+  dim "    fires on /tab-name, on phrases like 'rename tab', and auto-fires when topic shifts"
+  dim "    requires tab-status (for the \`tn\` CLI it calls)"
 fi
 
 echo
 
 # --- statusline-gsd ---
-cyan "[2/2] statusline-gsd (model + task + context bar at bottom)"
+cyan "[3/3] statusline-gsd (model + task + context bar at bottom)"
 if confirm "Install GSD statusline?"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   green "    copied gsd-statusline.js → ~/.claude/"

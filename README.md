@@ -1,13 +1,14 @@
 # claude-addons
 
-Two small add-ons for [Claude Code](https://claude.com/claude-code) on macOS + VS Code:
+Three small add-ons for [Claude Code](https://claude.com/claude-code) on macOS + VS Code:
 
 | Addon | What it does |
 |---|---|
-| [**tab-status**](./tab-status) | Colored dot (⚪🔴🔵🟡🟢) on the VS Code terminal tab showing whether Claude is idle, working, waiting on you, or waiting on a background agent. Optional: Claude can suggest tab names when the task changes |
-| [**statusline-gsd**](./statusline-gsd) | Drops in the [GSD project's](https://github.com/gsd-build/get-shit-done) statusline — model name, current task, context-usage bar at the bottom of every Claude session |
+| [**tab-status**](./tab-status) | Colored dot (⚪🔴🔵🟡🟢) on the VS Code terminal tab showing whether Claude is idle, working, waiting on you, or waiting on a background agent. |
+| [**skill-tab-name**](./skill-tab-name) | A Claude Code skill that auto-picks a short 1–3 word tab name based on what your conversation is about. Silent — no popup; one open question at the end of the response so you can override. |
+| [**statusline-gsd**](./statusline-gsd) | Drops in the [GSD project's](https://github.com/gsd-build/get-shit-done) statusline — model name, current task, context-usage bar at the bottom of every Claude session. |
 
-The two are independent — install one or both. They share zero code.
+The three are independent — install any combination. They share zero hard dependencies, but `skill-tab-name` does use the `tn` CLI installed by `tab-status`, so it's most useful with both.
 
 ## Install
 
@@ -17,7 +18,7 @@ cd claude-addons
 ./install.sh
 ```
 
-The installer is interactive — it'll ask before touching each file, makes timestamped backups of anything it changes (`*.bak.YYYY-MM-DD-HHMMSS`), and prints what it did. Re-run it any time to update.
+The installer is interactive — it asks before each addon, makes timestamped backups of anything it changes (`*.bak.YYYY-MM-DD-HHMMSS`), and is idempotent (safe to re-run).
 
 ## Uninstall
 
@@ -25,14 +26,14 @@ The installer is interactive — it'll ask before touching each file, makes time
 ./uninstall.sh
 ```
 
-Removes the installed scripts and reverts the hook entries it added. Leaves the GSD statusline file in `~/.claude/` if you want to keep using it standalone.
+Removes installed scripts and reverts the hook entries it added. Leaves `~/.zshrc` and `~/.claude/gsd-statusline.js` in place if you want to keep using them standalone.
 
 ## Requirements
 
-- macOS (Linux likely works too — install.sh doesn't use anything Mac-specific, but I haven't tested it)
-- VS Code (for tab-status; the OSC tab-title behavior is VS Code-specific)
-- Claude Code (any recent version with hook support)
-- Node.js (already required by Claude Code, so already installed)
+- macOS (Linux likely works too — none of the install logic is Mac-specific, but it's not regularly tested there)
+- VS Code (for `tab-status`; the OSC tab-title behavior is VS Code-specific)
+- Claude Code (any recent version with hook + skill support)
+- Node.js (already required by Claude Code)
 - Python 3 (for JSON parsing in the hook script — `/usr/bin/python3` ships with macOS)
 
 ## What lives where after install
@@ -41,16 +42,19 @@ Removes the installed scripts and reverts the hook entries it added. Leaves the 
 ~/.claude/
 ├── scripts/
 │   ├── tab.sh                 ← from tab-status/
-│   └── tab-watcher.sh         ← from tab-status/
+│   ├── tab-watcher.sh         ← from tab-status/
+│   └── tn                     ← from tab-status/
+├── skills/tab-name/
+│   └── SKILL.md               ← from skill-tab-name/
 ├── gsd-statusline.js          ← from statusline-gsd/
 ├── settings.json              ← hooks block merged in
 └── terminal-state/            ← runtime state, auto-created
 
-~/.zshrc                       ← optional `tn` function appended
+~/.zshrc                       ← optional `tn` shell wrapper appended
 ~/Library/Application Support/Code/User/settings.json
                                ← terminal.integrated.tabs.title added
 ```
 
 ## License
 
-The repo's own code is MIT — see [`LICENSE`](./LICENSE). The bundled GSD statusline is also MIT, copyright Lex Christopherson — see [`statusline-gsd/LICENSE`](./statusline-gsd/LICENSE) and [`statusline-gsd/ATTRIBUTION.md`](./statusline-gsd/ATTRIBUTION.md).
+The repo's own code is MIT — see [`LICENSE`](./LICENSE). The bundled GSD statusline is also MIT, Copyright Lex Christopherson — see [`statusline-gsd/LICENSE`](./statusline-gsd/LICENSE) and [`statusline-gsd/ATTRIBUTION.md`](./statusline-gsd/ATTRIBUTION.md).
