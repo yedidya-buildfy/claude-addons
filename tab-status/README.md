@@ -7,8 +7,13 @@ Each Claude Code session gets a colored circle prefix on its VS Code terminal ta
 | ⚪ | Session just started, no commands yet |
 | 🔴 | Claude is processing your prompt |
 | 🔵 | Claude is waiting for your answer to a question (`AskUserQuestion`) |
-| 🟡 | Main response done, background agents still running |
+| 🟡 | Main response done, background **agents** (subagents) still running |
+| 🩵 | Main response done, background **Bash shells** still running (cyan) |
 | 🟢 | Idle / done, ready for the next prompt |
+
+🟡 vs 🩵 lets you tell apart the two kinds of background work: 🟡 = an `Agent`/subagent is still going, 🩵 = a `Bash` command you launched with `run_in_background:true` is still alive. If both are running, 🟡 wins.
+
+Unlike the other states, 🩵 is **not** driven by a hook — Claude Code emits no "background shell finished" event, so there'd be nothing to clear the dot. Instead the watcher counts live background shells directly (zsh children of the `claude` process on this TTY running a shell-snapshot eval, polled at ~3 Hz while idle). When a shell exits, its process is gone and the dot self-clears back to 🟢.
 
 ## How it works
 
@@ -30,7 +35,7 @@ The watcher exists because Claude Code itself emits OSC title sequences (its aut
 | `PreToolUse` (matcher: `AskUserQuestion`) | `tab.sh blue` | 🔵 |
 | `PostToolUse` (matcher: `AskUserQuestion`) | `tab.sh red` | 🔴 (back to working) |
 | `SubagentStop` | `tab.sh bg-dec` | counter only |
-| `Stop` | `tab.sh green` | 🟢 or 🟡 if `bg > 0` |
+| `Stop` | `tab.sh green` | 🟢, 🟡 if `bg > 0`, or 🩵 if background shells alive |
 | `SessionEnd` | `tab.sh session-end` | cleanup |
 
 ## State files
