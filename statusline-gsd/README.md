@@ -1,31 +1,31 @@
-# statusline-gsd — bundled GSD statusline
+# statusline-gsd — ה‑statusline של GSD, מצורף
 
-This directory bundles `gsd-statusline.js` from the [GSD project](https://github.com/gsd-build/get-shit-done) so the install script can drop it into `~/.claude/` without you needing to install the full GSD distribution.
+התיקייה הזו מצרפת את `gsd-statusline.js` מ‑[פרויקט GSD](https://github.com/gsd-build/get-shit-done) כך שסקריפט ההתקנה יכול להשתיל אותו ל‑`~/.claude/` בלי שתצטרך להתקין את כל הפצת GSD המלאה.
 
-**This is not my code.** It's an unmodified copy. See [`ATTRIBUTION.md`](./ATTRIBUTION.md) for credits and [`LICENSE`](./LICENSE) for the upstream MIT license.
+**זה לא הקוד שלי.** זה עותק ללא שינויים. ראו [`ATTRIBUTION.md`](./ATTRIBUTION.md) לקרדיטים ו‑[`LICENSE`](./LICENSE) לרישיון ה‑MIT המקורי.
 
-## What it shows
+## מה זה מציג
 
-Inside the Claude Code statusline at the bottom of every terminal:
+בתוך ה‑statusline של Claude Code בתחתית כל טרמינל:
 
 ```
 Opus 4.7 (1M context) │ dashbord │ ████░░░░░░ 48%
 ```
 
-- **Model** — current Claude model
-- **Middle** — currently active TODO task, OR GSD planning state if any `.planning/STATE.md` is found in your workspace, OR omitted
-- **Directory** — basename of cwd
-- **Context bar** — 10-segment progress bar showing how much of the *usable* context window is consumed. Color-coded:
-  - 🟩 green < 50%
-  - 🟨 yellow 50–65%
-  - 🟧 orange 65–80%
-  - 🟥 blinking red 💀 ≥ 80%
+- **מודל** — מודל ה‑Claude הנוכחי
+- **אמצע** — משימת ה‑TODO הפעילה כעת, או מצב התכנון של GSD אם נמצא `.planning/STATE.md` כלשהו ב‑workspace שלך, או מושמט
+- **תיקייה** — שם הבסיס של ה‑cwd
+- **מד קונטקסט** — מד התקדמות בן 10 מקטעים שמראה כמה מחלון הקונטקסט ה*שמיש* נוצל. מקודד בצבעים:
+  - 🟩 ירוק < 50%
+  - 🟨 צהוב 50–65%
+  - 🟧 כתום 65–80%
+  - 🟥 אדום מהבהב 💀 ≥ 80%
 
-The bar accounts for Claude Code's auto-compact buffer (~16.5% by default), so 100% on the bar = full usable context (compaction trigger), not 100% of the raw token budget.
+המד לוקח בחשבון את ה‑buffer של ה‑auto-compact ב‑Claude Code (~16.5% כברירת מחדל), אז 100% במד = קונטקסט שמיש מלא (נקודת ההפעלה של ה‑compaction), לא 100% מתקציב הטוקנים הגולמי.
 
-## Manual install
+## התקנה ידנית
 
-Copy `gsd-statusline.js` into `~/.claude/` and point your `~/.claude/settings.json` `statusLine` at it:
+העתק את `gsd-statusline.js` ל‑`~/.claude/` והפנה אליו את `statusLine` ב‑`~/.claude/settings.json`:
 
 ```json
 {
@@ -36,8 +36,8 @@ Copy `gsd-statusline.js` into `~/.claude/` and point your `~/.claude/settings.js
 }
 ```
 
-## Full GSD distribution
+## הפצת GSD המלאה
 
-This is a one-file convenience copy. If you want the **complete** GSD experience — planning workflows, slash commands like `/gsd-plan-phase`, the context-monitor PostToolUse hook, the update checker, the skills plugin — install GSD directly from upstream: https://github.com/gsd-build/get-shit-done
+זה עותק נוחות בקובץ אחד. אם אתה רוצה את חוויית GSD ה**מלאה** — תהליכי תכנון, פקודות slash כמו `/gsd-plan-phase`, ה‑hook מסוג PostToolUse לניטור קונטקסט, בודק העדכונים, תוסף הסקילים — התקן את GSD ישירות מהמקור: https://github.com/gsd-build/get-shit-done
 
-I am not affiliated with TÂCHES or Lex Christopherson. This bundle exists only because I find the statusline genuinely useful and wanted my repo to be self-contained.
+אני לא קשור ל‑TÂCHES או ל‑Lex Christopherson. החבילה הזו קיימת רק כי אני מוצא את ה‑statusline שימושי באמת ורציתי שהריפו שלי יהיה עצמאי.

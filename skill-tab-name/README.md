@@ -1,52 +1,52 @@
-# skill-tab-name — Claude proposes a short tab name on its own
+# skill-tab-name — Claude מציע לבד שם קצר ל‑tab
 
-A Claude Code skill that watches what your conversation is about and silently sets the VS Code terminal tab name to a short, topic-appropriate label (1–3 words, prefer 2, lowercase, skill-style). At the end of each response it adds one short open question so you can override:
+סקיל ל‑Claude Code שעוקב אחרי מה שהשיחה שלך עוסקת בו ומגדיר בשקט את שם ה‑tab בטרמינל של VS Code לתווית קצרה שמתאימה לנושא (1–3 מילים, עדיף 2, אותיות קטנות, בסגנון שמות סקילים). בסוף כל תשובה הוא מוסיף שאלה פתוחה קצרה אחת כדי שתוכל לעקוף:
 
 > *(Renamed tab to "auth bug" — want a different one?)*
 
-## Triggers
+## טריגרים
 
-Fires automatically when:
-- Your intent becomes clear in your first or second substantive message
-- The topic shifts mid-session (different feature, bug, area)
+נורה אוטומטית כאשר:
+- הכוונה שלך מתבהרת בהודעה המהותית הראשונה או השנייה שלך
+- הנושא משתנה באמצע הסשן (פיצ'ר אחר, באג, אזור אחר)
 
-Fires on explicit requests:
+נורה לפי בקשה מפורשת:
 - `/tab-name`
-- Phrases like "rename tab", "tab name", "שנה שם לטרמינל", "תן שם לטרמינל"
+- ביטויים כמו "rename tab", "tab name", "שנה שם לטרמינל", "תן שם לטרמינל"
 
-Does NOT fire on:
-- Greetings, throwaway messages, single screenshots without context
-- Continuation of the same topic
-- Tabs where you've already pinned a manual name with `tn`
+**לא** נורה על:
+- ברכות, הודעות זניחות, צילום מסך בודד בלי הקשר
+- המשך של אותו נושא
+- tabs שכבר קיבעת בהם שם ידני עם `tn`
 
-## Behavior
+## התנהגות
 
-| User says | What the skill does |
+| המשתמש אומר | מה הסקיל עושה |
 |---|---|
-| `"let me fix the payplus webhook"` | Picks `payplus`, runs `tn "payplus"` silently, adds *(Renamed tab to "payplus" — different name?)* at the end |
-| `"rename tab to auth"` (explicit name) | Runs `tn "auth"` directly, no question |
-| `"rename tab"` (no name given) | Picks best guess, applies, adds confirm-question at end |
-| `"give me options for the name"` | Uses `AskUserQuestion` with 3 candidates |
+| `"let me fix the payplus webhook"` | בוחר `payplus`, מריץ `tn "payplus"` בשקט, מוסיף בסוף *(Renamed tab to "payplus" — different name?)* |
+| `"rename tab to auth"` (שם מפורש) | מריץ `tn "auth"` ישירות, בלי שאלה |
+| `"rename tab"` (בלי שם) | בוחר את הניחוש הטוב ביותר, מחיל, ומוסיף שאלת אישור בסוף |
+| `"give me options for the name"` | משתמש ב‑`AskUserQuestion` עם 3 מועמדים |
 
-## Requires
+## דרישות
 
-This skill calls `~/.claude/scripts/tn`, which is installed by the [`tab-status`](../tab-status) addon. Install `tab-status` first (or together via the top-level `install.sh`).
+הסקיל הזה קורא ל‑`~/.claude/scripts/tn`, שמותקן ע"י התוסף [`tab-status`](../tab-status). התקן את `tab-status` קודם (או יחד דרך ה‑`install.sh` ברמה העליונה).
 
-## Manual install
+## התקנה ידנית
 
 ```bash
 mkdir -p ~/.claude/skills/tab-name
 cp skill-tab-name/SKILL.md ~/.claude/skills/tab-name/SKILL.md
 ```
 
-Claude Code discovers the skill automatically on its next session start.
+Claude Code מגלה את הסקיל אוטומטית בתחילת הסשן הבא שלו.
 
-## Name style
+## סגנון השם
 
-**Good:** `payplus`, `auth bug`, `tab dots`, `claude addons`, `docs cleanup`, `code review`, `migrations`, `context bar`
+**טוב:** `payplus`, `auth bug`, `tab dots`, `claude addons`, `docs cleanup`, `code review`, `migrations`, `context bar`
 
-**Bad (skill rejects):**
-- Long sentences (`fix-the-payplus-integration-webhook`)
-- Version suffixes (`auth-fix-attempt-3`)
-- Single letters / IDs (`T1`, `current`)
-- Generic words (`working on stuff`, `code`)
+**רע (הסקיל דוחה):**
+- משפטים ארוכים (`fix-the-payplus-integration-webhook`)
+- סיומות גרסה (`auth-fix-attempt-3`)
+- אותיות בודדות / מזהים (`T1`, `current`)
+- מילים גנריות (`working on stuff`, `code`)

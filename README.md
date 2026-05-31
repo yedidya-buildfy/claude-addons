@@ -1,16 +1,16 @@
 # claude-addons
 
-Three small add-ons for [Claude Code](https://claude.com/claude-code) on macOS + VS Code:
+שלושה תוספים קטנים ל‑[Claude Code](https://claude.com/claude-code) על macOS + VS Code:
 
-| Addon | What it does |
+| תוסף | מה זה עושה |
 |---|---|
-| [**tab-status**](./tab-status) | Colored dot (⚪🔴🔵🟡🩵🟢) on the VS Code terminal tab showing whether Claude is idle, working, waiting on you, waiting on a background agent (🟡), or running a background Bash shell (🩵). |
-| [**skill-tab-name**](./skill-tab-name) | A Claude Code skill that auto-picks a short 1–3 word tab name based on what your conversation is about. Silent — no popup; one open question at the end of the response so you can override. |
-| [**statusline-gsd**](./statusline-gsd) | Drops in the [GSD project's](https://github.com/gsd-build/get-shit-done) statusline — model name, current task, context-usage bar at the bottom of every Claude session. |
+| [**tab-status**](./tab-status) | נקודה צבעונית (⚪🔴🔵🟡🩵🟢) על ה‑tab של הטרמינל ב‑VS Code, שמראה אם Claude פנוי, עובד, מחכה לך, מחכה לסוכן רקע (🟡), או מריץ shell של Bash ברקע (🩵). |
+| [**skill-tab-name**](./skill-tab-name) | סקיל ל‑Claude Code שבוחר לבד שם קצר ל‑tab (1–3 מילים) לפי מה שהשיחה עוסקת בו. שקט — בלי חלון קופץ; שאלה פתוחה אחת בסוף התשובה כדי שתוכל לעקוף. |
+| [**statusline-gsd**](./statusline-gsd) | משתיל את ה‑statusline של [פרויקט GSD](https://github.com/gsd-build/get-shit-done) — שם המודל, המשימה הנוכחית, ומד ניצול הקונטקסט בתחתית כל סשן של Claude. |
 
-The three are independent — install any combination. They share zero hard dependencies, but `skill-tab-name` does use the `tn` CLI installed by `tab-status`, so it's most useful with both.
+השלושה עצמאיים — אפשר להתקין כל שילוב. אין ביניהם תלויות קשיחות, אבל `skill-tab-name` כן משתמש ב‑CLI בשם `tn` שמותקן ע"י `tab-status`, אז הוא הכי שימושי כששניהם מותקנים.
 
-## Install
+## התקנה
 
 ```bash
 git clone https://github.com/yedidya-buildfy/claude-addons.git
@@ -18,25 +18,25 @@ cd claude-addons
 ./install.sh
 ```
 
-The installer is interactive — it asks before each addon, makes timestamped backups of anything it changes (`*.bak.YYYY-MM-DD-HHMMSS`), and is idempotent (safe to re-run).
+ההתקנה אינטראקטיבית — היא שואלת לפני כל תוסף, יוצרת גיבויים עם חותמת זמן לכל מה שהיא משנה (`*.bak.YYYY-MM-DD-HHMMSS`), ואידמפוטנטית (בטוח להריץ שוב).
 
-## Uninstall
+## הסרה
 
 ```bash
 ./uninstall.sh
 ```
 
-Removes installed scripts and reverts the hook entries it added. Leaves `~/.zshrc` and `~/.claude/gsd-statusline.js` in place if you want to keep using them standalone.
+מסיר את הסקריפטים שהותקנו ומחזיר את רשומות ה‑hooks שהוא הוסיף. משאיר את `~/.zshrc` ואת `~/.claude/gsd-statusline.js` במקומם, למקרה שתרצה להמשיך להשתמש בהם בנפרד.
 
-## Requirements
+## דרישות
 
-- macOS (Linux likely works too — none of the install logic is Mac-specific, but it's not regularly tested there)
-- VS Code (for `tab-status`; the OSC tab-title behavior is VS Code-specific)
-- Claude Code (any recent version with hook + skill support)
-- Node.js (already required by Claude Code)
-- Python 3 (for JSON parsing in the hook script — `/usr/bin/python3` ships with macOS)
+- macOS (סביר שגם Linux עובד — שום חלק מלוגיקת ההתקנה לא ספציפי ל‑Mac, אבל זה לא נבדק שם באופן קבוע)
+- VS Code (עבור `tab-status`; התנהגות כותרת ה‑tab דרך OSC ספציפית ל‑VS Code)
+- Claude Code (כל גרסה עדכנית עם תמיכה ב‑hooks + skills)
+- Node.js (כבר נדרש ע"י Claude Code)
+- Python 3 (לפענוח JSON בסקריפט ה‑hook — `/usr/bin/python3` מגיע עם macOS)
 
-## What lives where after install
+## מה נמצא איפה אחרי ההתקנה
 
 ```
 ~/.claude/
@@ -55,6 +55,6 @@ Removes installed scripts and reverts the hook entries it added. Leaves `~/.zshr
                                ← terminal.integrated.tabs.title added
 ```
 
-## License
+## רישיון
 
-The repo's own code is MIT — see [`LICENSE`](./LICENSE). The bundled GSD statusline is also MIT, Copyright Lex Christopherson — see [`statusline-gsd/LICENSE`](./statusline-gsd/LICENSE) and [`statusline-gsd/ATTRIBUTION.md`](./statusline-gsd/ATTRIBUTION.md).
+הקוד של הריפו עצמו הוא MIT — ראו [`LICENSE`](./LICENSE). ה‑statusline של GSD המצורף הוא גם MIT, בזכויות יוצרים של Lex Christopherson — ראו [`statusline-gsd/LICENSE`](./statusline-gsd/LICENSE) ו‑[`statusline-gsd/ATTRIBUTION.md`](./statusline-gsd/ATTRIBUTION.md).
