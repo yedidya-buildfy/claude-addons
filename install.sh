@@ -37,10 +37,20 @@ json_merge() {
     const target = JSON.parse(fs.readFileSync(file, "utf8"));
     function merge(a, b) {
       for (const k of Object.keys(b)) {
-        if (b[k] && typeof b[k] === "object" && !Array.isArray(b[k]) && a[k] && typeof a[k] === "object" && !Array.isArray(a[k])) {
-          merge(a[k], b[k]);
+        const bv = b[k], av = a[k];
+        if (Array.isArray(bv) && Array.isArray(av)) {
+          // Append items from incoming, dedupe by structural equality so
+          // re-running the installer stays idempotent and existing hook
+          // entries (e.g. from other plugins like GSD) are preserved.
+          const seen = new Set(av.map(x => JSON.stringify(x)));
+          for (const item of bv) {
+            const key = JSON.stringify(item);
+            if (!seen.has(key)) { av.push(item); seen.add(key); }
+          }
+        } else if (bv && typeof bv === "object" && !Array.isArray(bv) && av && typeof av === "object" && !Array.isArray(av)) {
+          merge(av, bv);
         } else {
-          a[k] = b[k];
+          a[k] = bv;
         }
       }
     }

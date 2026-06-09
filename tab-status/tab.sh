@@ -84,6 +84,38 @@ JSON
     log_line "state: $p → red"
     ;;
 
+  remind-name)
+    # Re-inject the tab-name reminder on every UserPromptSubmit, but only
+    # while no manual override exists for this TTY. Stops once a name is
+    # pinned (by Claude or by `tn`). Fixes the "skill fires only at
+    # SessionStart and gets forgotten in long sessions" problem.
+    [ -f "$HOME/.claude/skills/tab-name/SKILL.md" ] || exit 0
+
+    pid=$$; tty_dev=""
+    for _ in 1 2 3 4 5 6 7 8; do
+      t=$(ps -o tty= -p "$pid" 2>/dev/null | tr -d ' ')
+      if [ -n "$t" ] && [ "$t" != "??" ]; then
+        tty_dev="$t"
+        break
+      fi
+      pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+      [ -z "$pid" ] && break
+    done
+    [ -z "$tty_dev" ] && exit 0
+
+    if [ ! -f "$state_dir/tty.$tty_dev.name" ]; then
+      log_line "remind-name: no override for $tty_dev — injecting reminder"
+      cat <<'JSON'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "[claude-addons] The VS Code tab still shows the default project basename — the `tab-name` skill has not been applied yet. If you can describe what this session is about in 1-3 words, pick a name now and apply it silently with `~/.claude/scripts/tn \"<name>\"`, then add a one-line text-question at the end of your response (e.g. `(Renamed tab to \"auth bug\" — different one?)`). If the topic still isn't clear, skip — this reminder will fire again on the next prompt."
+  }
+}
+JSON
+    fi
+    ;;
+
   blue)
     # Claude is waiting on user input (AskUserQuestion).
     p=$(prev_state); echo blue > "$state_file"
