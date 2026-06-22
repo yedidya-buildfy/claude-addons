@@ -63,7 +63,7 @@ cyan "claude-addons installer"
 echo
 
 # --- tab-status ---
-cyan "[1/3] tab-status (colored dot on VS Code terminal tabs)"
+cyan "[1/4] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
@@ -99,7 +99,7 @@ fi
 echo
 
 # --- skill-tab-name ---
-cyan "[2/3] skill-tab-name (Claude picks tab names automatically)"
+cyan "[2/4] skill-tab-name (Claude picks tab names automatically)"
 if confirm "Install the \`tab-name\` skill?"; then
   mkdir -p "$CLAUDE_DIR/skills/tab-name"
   cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
@@ -122,8 +122,20 @@ fi
 
 echo
 
+# --- skill-design-in-browser ---
+cyan "[3/4] skill-design-in-browser (design UI in the browser before coding)"
+if confirm "Install the `design-in-browser` skill?"; then
+  mkdir -p "$CLAUDE_DIR/skills/design-in-browser"
+  cp "$ROOT/skill-design-in-browser/SKILL.md" "$CLAUDE_DIR/skills/design-in-browser/SKILL.md"
+  green "    installed skill → ~/.claude/skills/design-in-browser/SKILL.md"
+  dim "    fires on /design-in-browser and on phrases like 'show me design options'"
+  dim "    uses an impeccable / UI-UX plugin if one is installed"
+fi
+
+echo
+
 # --- statusline-gsd ---
-cyan "[3/3] statusline-gsd (model + task + context bar at bottom)"
+cyan "[4/4] statusline-gsd (model + task + context bar at bottom)"
 if confirm "Install GSD statusline?"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   green "    copied gsd-statusline.js → ~/.claude/"
