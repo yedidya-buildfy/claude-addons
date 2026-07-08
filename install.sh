@@ -135,10 +135,15 @@ fi
 echo
 
 # --- statusline-gsd ---
-cyan "[4/4] statusline-gsd (model + task + context bar at bottom)"
+cyan "[4/4] statusline-gsd (model + task + context bar + plan usage at bottom)"
 if confirm "Install GSD statusline?"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   green "    copied gsd-statusline.js → ~/.claude/"
+
+  mkdir -p "$CLAUDE_DIR/scripts"
+  cp "$ROOT/statusline-gsd/usage-fetch.sh" "$CLAUDE_DIR/scripts/usage-fetch.sh"
+  chmod +x "$CLAUDE_DIR/scripts/usage-fetch.sh"
+  green "    copied usage-fetch.sh → ~/.claude/scripts/ (plan-usage cache refresher)"
 
   backup "$CLAUDE_SETTINGS"
   echo '{"statusLine":{"type":"command","command":"node ~/.claude/gsd-statusline.js"}}' | json_merge "$CLAUDE_SETTINGS"

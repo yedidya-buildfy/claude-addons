@@ -25,8 +25,9 @@ fi
 
 # Remove scripts + skill
 rm -f "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh" "$CLAUDE_DIR/scripts/tn"
+rm -f "$CLAUDE_DIR/scripts/usage-fetch.sh" "$CLAUDE_DIR/cache/claude-usage.json"
 rm -rf "$CLAUDE_DIR/skills/tab-name"
-green "  removed ~/.claude/scripts/{tab.sh,tab-watcher.sh,tn} and ~/.claude/skills/tab-name/"
+green "  removed ~/.claude/scripts/{tab.sh,tab-watcher.sh,tn,usage-fetch.sh} and ~/.claude/skills/tab-name/"
 
 # Strip our hook entries from ~/.claude/settings.json
 if [ -f "$CLAUDE_SETTINGS" ]; then

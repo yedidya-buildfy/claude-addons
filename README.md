@@ -7,7 +7,7 @@
 | [**tab-status**](./tab-status) | נקודה צבעונית (⚪🔴🔵🟡🩵🟢) על ה‑tab של הטרמינל ב‑VS Code, שמראה אם Claude פנוי, עובד, מחכה לך, מחכה לסוכן רקע (🟡), או מריץ shell של Bash ברקע (🩵). |
 | [**skill-tab-name**](./skill-tab-name) | סקיל ל‑Claude Code שבוחר לבד שם קצר ל‑tab (1–3 מילים) לפי מה שהשיחה עוסקת בו. שקט — בלי חלון קופץ; שאלה פתוחה אחת בסוף התשובה כדי שתוכל לעקוף. |
 | [**skill-design-in-browser**](./skill-design-in-browser) | סקיל ל‑Claude Code שמעצב UI בדפדפן לפני נגיעה בקוד: בונה mockup HTML עצמאי עם 2–3 גרסאות בלשוניות, פותח בדפדפן לאיטרציה, ומיישם ל‑React/וכו׳ רק אחרי שאתה מאשר. משתמש ב‑impeccable או בכל סקיל UI/UX אם מותקן. |
-| [**statusline-gsd**](./statusline-gsd) | משתיל את ה‑statusline של [פרויקט GSD](https://github.com/gsd-build/get-shit-done) — שם המודל, המשימה הנוכחית, ומד ניצול הקונטקסט בתחתית כל סשן של Claude. |
+| [**statusline-gsd**](./statusline-gsd) | משתיל את ה‑statusline של [פרויקט GSD](https://github.com/gsd-build/get-shit-done) — שם המודל, המשימה הנוכחית, ומד ניצול הקונטקסט בתחתית כל סשן של Claude — בתוספת מקומית של ניצול התוכנית כמו `/usage`: סשן 5 שעות (+זמן לאיפוס), שבועי, ושבועי פר‑מודל (Fable). |
 
 כולם עצמאיים — אפשר להתקין כל שילוב. אין ביניהם תלויות קשיחות, אבל `skill-tab-name` כן משתמש ב‑CLI בשם `tn` שמותקן ע"י `tab-status`, אז הוא הכי שימושי כששניהם מותקנים.
 

@@ -191,6 +191,108 @@ function formatGsdState(s) {
   return parts.join(' · ');
 }
 
+// --- Plan usage (5h session / weekly / per-model weekly) ---------------------
+
+const USAGE_CACHE_TTL_MS = 60_000;
+
+function usageColor(pct) {
+  if (pct < 50) return '32';
+  if (pct < 65) return '33';
+  if (pct < 80) return '38;5;208';
+  return '31';
+}
+
+// Accepts epoch seconds (statusline stdin) or ISO string (oauth/usage cache).
+// Returns "45m → 14:09" — time left until reset + local wall-clock reset time.
+function formatReset(resetsAt) {
+  if (resetsAt == null) return '';
+  const t = typeof resetsAt === 'number' ? resetsAt * 1000 : Date.parse(resetsAt);
+  if (!t || isNaN(t)) return '';
+  const mins = Math.round((t - Date.now()) / 60000);
+  if (mins <= 0) return '';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const dur = h > 0 ? `${h}h${String(m).padStart(2, '0')}m` : `${m}m`;
+  const d = new Date(t);
+  const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${dur} → ${clock}`;
+}
+
+/**
+ * Read the cached api/oauth/usage response and kick off a detached background
+ * refresh when the cache is older than USAGE_CACHE_TTL_MS. Never blocks and
+ * never throws — the render path only ever touches the local cache file.
+ */
+function readUsageCache(claudeDir) {
+  const cachePath = path.join(claudeDir, 'cache', 'claude-usage.json');
+  let cached = null;
+  let stale = true;
+  try {
+    stale = Date.now() - fs.statSync(cachePath).mtimeMs > USAGE_CACHE_TTL_MS;
+    cached = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  } catch (e) {}
+  if (stale) {
+    // Lock file throttles spawns so overlapping renders don't stack fetches.
+    const lockPath = path.join(os.tmpdir(), 'claude-usage-fetch.lock');
+    let locked = false;
+    try { locked = Date.now() - fs.statSync(lockPath).mtimeMs < 30_000; } catch (e) {}
+    if (!locked) {
+      try {
+        fs.writeFileSync(lockPath, String(process.pid));
+        const fetcher = path.join(claudeDir, 'scripts', 'usage-fetch.sh');
+        if (fs.existsSync(fetcher)) {
+          const child = require('child_process').spawn(fetcher, [], { detached: true, stdio: 'ignore' });
+          child.unref();
+        }
+      } catch (e) {}
+    }
+  }
+  return cached;
+}
+
+/**
+ * Build the usage segment: " │ 5h 60% ↻2h07m │ wk 31% · Fable 53%".
+ * Session + weekly come from statusline stdin (data.rate_limits) when present
+ * (subscription plans only, populated after the first API response), falling
+ * back to the cached endpoint data. The per-model weekly slice exists only in
+ * the endpoint response (limits[] entries with kind === "weekly_scoped").
+ */
+function formatUsage(data, claudeDir) {
+  const cached = readUsageCache(claudeDir);
+  const rl = data.rate_limits;
+
+  let fiveHour = rl?.five_hour?.used_percentage;
+  let fiveHourReset = rl?.five_hour?.resets_at;
+  let weekly = rl?.seven_day?.used_percentage;
+  if (fiveHour == null && cached?.five_hour) {
+    fiveHour = cached.five_hour.utilization;
+    fiveHourReset = cached.five_hour.resets_at;
+  }
+  if (weekly == null && cached?.seven_day) weekly = cached.seven_day.utilization;
+
+  const scopedLimits = (cached?.limits || []).filter(
+    l => l && l.kind === 'weekly_scoped' && l.percent != null && l.scope?.model?.display_name
+  );
+
+  const parts = [];
+  if (fiveHour != null) {
+    const pct = Math.round(fiveHour);
+    const reset = formatReset(fiveHourReset);
+    parts.push(`\x1b[${usageColor(pct)}m5h ${pct}%\x1b[0m${reset ? ` \x1b[36m↻${reset}\x1b[0m` : ''}`);
+  }
+  const weekParts = [];
+  if (weekly != null) {
+    const pct = Math.round(weekly);
+    weekParts.push(`\x1b[${usageColor(pct)}mwk ${pct}%\x1b[0m`);
+  }
+  for (const l of scopedLimits) {
+    const pct = Math.round(l.percent);
+    weekParts.push(`\x1b[${usageColor(pct)}m${l.scope.model.display_name} ${pct}%\x1b[0m`);
+  }
+  if (weekParts.length) parts.push(weekParts.join(' \x1b[2m·\x1b[0m '));
+  return parts.length ? ` │ ${parts.join(' │ ')}` : '';
+}
+
 // --- stdin ------------------------------------------------------------------
 
 function runStatusline() {
@@ -351,10 +453,17 @@ function runStatusline() {
         ? `\x1b[2m${gsdStateStr}\x1b[0m`
         : null;
 
+    // Plan usage segment (5h session / weekly / per-model weekly). Never let
+    // it break the rest of the line.
+    let usage = '';
+    try {
+      usage = formatUsage(data, claudeDir);
+    } catch (e) {}
+
     if (middle) {
-      process.stdout.write(`${gsdUpdate}\x1b[2m${model}\x1b[0m │ ${middle} │ \x1b[2m${dirname}\x1b[0m${ctx}${lastCmdSuffix}`);
+      process.stdout.write(`${gsdUpdate}\x1b[2m${model}\x1b[0m │ ${middle} │ \x1b[2m${dirname}\x1b[0m${ctx}${usage}${lastCmdSuffix}`);
     } else {
-      process.stdout.write(`${gsdUpdate}\x1b[2m${model}\x1b[0m │ \x1b[2m${dirname}\x1b[0m${ctx}${lastCmdSuffix}`);
+      process.stdout.write(`${gsdUpdate}\x1b[2m${model}\x1b[0m │ \x1b[2m${dirname}\x1b[0m${ctx}${usage}${lastCmdSuffix}`);
     }
   } catch (e) {
     // Silent fail - don't break statusline on parse errors
@@ -366,6 +475,7 @@ function runStatusline() {
 module.exports = {
   readGsdState, parseStateMd, formatGsdState,
   readGsdConfig, getConfigValue, readLastSlashCommand,
+  usageColor, formatReset, readUsageCache, formatUsage,
 };
 
 /**
