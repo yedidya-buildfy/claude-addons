@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # tab-status — נקודה צבעונית על ה‑tab של הטרמינל ב‑VS Code
 
 כל סשן של Claude Code מקבל קידומת של עיגול צבעוני על כותרת ה‑tab בטרמינל של VS Code, שמשקפת במבט אחד את המצב הנוכחי של Claude:
@@ -76,3 +78,5 @@ ps -ef | grep tab-watcher | grep -v grep       # running watchers
 אם `paint_ok=0` באופן עקבי, ה‑watcher לא מצליח לכתוב ל‑`/dev/<tty>` — בדוק שמכשיר ה‑TTY קיים וניתן לכתיבה.
 
 אם אין watcher רץ לסשן שאמור להיות לו אחד, פשוט שלח פרומפט באותו טרמינל — הסקריפט יתקן את עצמו ע"י הרצת watcher חדש.
+
+</div>

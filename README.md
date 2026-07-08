@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # claude-addons
 
 תוספים קטנים ל‑[Claude Code](https://claude.com/claude-code) על macOS + VS Code:
@@ -60,3 +62,5 @@ cd claude-addons
 ## רישיון
 
 הקוד של הריפו עצמו הוא MIT — ראו [`LICENSE`](./LICENSE). ה‑statusline של GSD המצורף הוא גם MIT, בזכויות יוצרים של Lex Christopherson — ראו [`statusline-gsd/LICENSE`](./statusline-gsd/LICENSE) ו‑[`statusline-gsd/ATTRIBUTION.md`](./statusline-gsd/ATTRIBUTION.md).
+
+</div>

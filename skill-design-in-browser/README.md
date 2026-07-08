@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # skill-design-in-browser
 
 A Claude Code skill that designs UI **in the browser** before touching real code:
@@ -25,3 +27,5 @@ Restart Claude sessions so the skill loads.
 ## Tip
 Drop a per-project copy under `<project>/.claude/skills/design-in-browser/SKILL.md`
 to add project-specific paths, tokens, and a gold-standard example mockup to copy.
+
+</div>

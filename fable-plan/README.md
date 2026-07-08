@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # fable-plan — תכנון בפייבל, ביצוע בסונט
 
 מצב מודל היברידי ל-Claude Code: **Fable 5 במצב תכנון (plan mode), Sonnet 5 בביצוע**. המודל החכם והיקר חושב על התוכנית; המודל המהיר והזול מבצע אותה.
@@ -25,3 +27,5 @@ alias fplan='ANTHROPIC_DEFAULT_OPUS_MODEL=claude-fable-5 claude --model opusplan
 ## הסרה
 
 מחק את שורת ה-alias מ-`~/.zshrc`.
+
+</div>

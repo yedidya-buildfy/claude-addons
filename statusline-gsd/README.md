@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # statusline-gsd — ה‑statusline של GSD, מצורף
 
 התיקייה הזו מצרפת את `gsd-statusline.js` מ‑[פרויקט GSD](https://github.com/gsd-build/get-shit-done) כך שסקריפט ההתקנה יכול להשתיל אותו ל‑`~/.claude/` בלי שתצטרך להתקין את כל הפצת GSD המלאה.
@@ -52,3 +54,5 @@ Fable 5 │ dashbord │ ████░░░░░░ 48% │ 5h 60% ↻2h07m 
 זה עותק נוחות בקובץ אחד. אם אתה רוצה את חוויית GSD ה**מלאה** — תהליכי תכנון, פקודות slash כמו `/gsd-plan-phase`, ה‑hook מסוג PostToolUse לניטור קונטקסט, בודק העדכונים, תוסף הסקילים — התקן את GSD ישירות מהמקור: https://github.com/gsd-build/get-shit-done
 
 אני לא קשור ל‑TÂCHES או ל‑Lex Christopherson. החבילה הזו קיימת רק כי אני מוצא את ה‑statusline שימושי באמת ורציתי שהריפו שלי יהיה עצמאי.
+
+</div>
