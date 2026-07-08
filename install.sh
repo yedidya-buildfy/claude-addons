@@ -151,12 +151,17 @@ if confirm "Install GSD statusline?"; then
 fi
 
 # --- fable-plan ---
-cyan "[5/5] fable-plan (Fable 5 plans, Sonnet 5 executes — via /model opusplan)"
+cyan "[5/5] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
 if confirm "Install fable-plan?"; then
-  backup "$CLAUDE_SETTINGS"
-  cat "$ROOT/fable-plan/settings.json.snippet" | json_merge "$CLAUDE_SETTINGS"
-  green "    set env.ANTHROPIC_DEFAULT_OPUS_MODEL=claude-fable-5 in ~/.claude/settings.json"
-  dim "    usage: new session → /model opusplan → plan mode = Fable 5, execution = Sonnet 5"
+  if grep -q "alias fplan=" "$ZSHRC" 2>/dev/null; then
+    dim "    fplan alias already in ~/.zshrc, skipping"
+  else
+    backup "$ZSHRC"
+    cat "$ROOT/fable-plan/zshrc.snippet" >> "$ZSHRC"
+    green "    appended fplan alias to ~/.zshrc (run \`source ~/.zshrc\` to load)"
+  fi
+  dim "    usage: fplan → plan mode = Fable 5 (1M context), execution = Sonnet 5"
+  dim "    scoped per-session — plain \`claude\` sessions keep real Opus on /model opus"
 fi
 
 echo

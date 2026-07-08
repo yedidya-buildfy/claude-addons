@@ -4,27 +4,24 @@
 
 ## איך זה עובד
 
-ל-Claude Code יש מצב מובנה בשם `opusplan` — "Opus in plan mode, else Sonnet". משתנה הסביבה `ANTHROPIC_DEFAULT_OPUS_MODEL` קובע לאיזה מודל ה-alias "opus" מתורגם. ההתקנה מוסיפה ל-`~/.claude/settings.json`:
+ל-Claude Code יש מצב מובנה בשם `opusplan` — "Opus in plan mode, else Sonnet". משתנה הסביבה `ANTHROPIC_DEFAULT_OPUS_MODEL` קובע לאיזה מודל ה-alias "opus" מתורגם. ההתקנה מוסיפה alias ל-`~/.zshrc`:
 
-```json
-{
-  "env": {
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-fable-5"
-  }
-}
+```bash
+alias fplan='ANTHROPIC_DEFAULT_OPUS_MODEL=claude-fable-5 claude --model opusplan'
 ```
 
-ומעכשיו `opusplan` בפועל = פייבל בתכנון (עם קונטקסט 1M), סונט 5 בביצוע.
+ה-env מוזרק **רק לסשן שנפתח דרך `fplan`** — סשני `claude` רגילים לא מושפעים, ו-`/model opus` בהם עדיין נותן אופוס אמיתי.
+
+(האלטרנטיבה — env גלובלי ב-`~/.claude/settings.json` — עובדת גם, ואז `/model opusplan` נותן פייבל+סונט מכל סשן; המחיר: כל בחירת "opus" הופכת לפייבל, ואופוס אמיתי זמין רק לפי ID מלא `claude-opus-4-8`.)
 
 ## שימוש
 
-1. פתח סשן **חדש** (ה-env נטען בהפעלת סשן).
-2. `/model opusplan` (או `/model` → "Opus Plan Mode"), או מהטרמינל: `claude --model opusplan`.
-3. `shift+tab` ל-plan mode → פייבל 5. אישור התוכנית ויציאה לביצוע → סונט 5 אוטומטית.
-4. חזרה לפייבל מלא: `/model fable`.
+1. `source ~/.zshrc` (פעם אחת אחרי ההתקנה).
+2. `fplan` במקום `claude`.
+3. `shift+tab` ל-plan mode → פייבל 5 (קונטקסט 1M). אישור התוכנית ויציאה לביצוע → סונט 5 אוטומטית.
 
 אם מותקן `statusline-gsd`, שם המודל בסטטוסליין מתחלף לפי המצב — ככה רואים שזה עובד.
 
-## תופעת לוואי
+## הסרה
 
-כל בחירה של "Opus" (גם `/model opus` רגיל) תתורגם לפייבל 5 כל עוד ה-env מוגדר. אם אתה כן רוצה אופוס אמיתי לפעמים — הסר את המפתח מ-`settings.json` או בחר את המודל לפי ID מלא.
+מחק את שורת ה-alias מ-`~/.zshrc`.
