@@ -49,6 +49,19 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
   ' "$CLAUDE_SETTINGS"
   green "  stripped tab-status hooks from ~/.claude/settings.json"
+
+  # fable-plan: remove the opus→fable alias override if it's ours
+  node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (cfg.env && cfg.env.ANTHROPIC_DEFAULT_OPUS_MODEL === "claude-fable-5") {
+      delete cfg.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+      if (Object.keys(cfg.env).length === 0) delete cfg.env;
+    }
+    fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
+  ' "$CLAUDE_SETTINGS"
+  green "  removed fable-plan env override from ~/.claude/settings.json"
 fi
 
 # Remove terminal.integrated.tabs.title from VS Code if it matches our value
