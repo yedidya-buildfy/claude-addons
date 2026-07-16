@@ -202,6 +202,17 @@ function usageColor(pct) {
   return '31';
 }
 
+// 10-segment block bar, same style as the context-window meter.
+function buildBar(pct) {
+  const filled = Math.floor(pct / 10);
+  return '█'.repeat(filled) + '░'.repeat(10 - filled);
+}
+
+// Fixed per-category colors (category identity, not severity like usageColor).
+const SESSION_COLOR = '36';   // cyan
+const WEEKLY_COLOR = '35';    // magenta
+const MODEL_COLORS = ['33', '34', '32', '31']; // rotate for scoped-model entries
+
 // Accepts epoch seconds (statusline stdin) or ISO string (oauth/usage cache).
 // Returns "45m → 14:09" — time left until reset + local wall-clock reset time.
 function formatReset(resetsAt) {
@@ -278,18 +289,17 @@ function formatUsage(data, claudeDir) {
   if (fiveHour != null) {
     const pct = Math.round(fiveHour);
     const reset = formatReset(fiveHourReset);
-    parts.push(`\x1b[${usageColor(pct)}m5h ${pct}%\x1b[0m${reset ? ` \x1b[36m↻${reset}\x1b[0m` : ''}`);
+    parts.push(`\x1b[${SESSION_COLOR}m5h ${buildBar(pct)} ${pct}%\x1b[0m${reset ? ` \x1b[36m↻${reset}\x1b[0m` : ''}`);
   }
-  const weekParts = [];
   if (weekly != null) {
     const pct = Math.round(weekly);
-    weekParts.push(`\x1b[${usageColor(pct)}mwk ${pct}%\x1b[0m`);
+    parts.push(`\x1b[${WEEKLY_COLOR}mwk ${buildBar(pct)} ${pct}%\x1b[0m`);
   }
-  for (const l of scopedLimits) {
+  scopedLimits.forEach((l, i) => {
     const pct = Math.round(l.percent);
-    weekParts.push(`\x1b[${usageColor(pct)}m${l.scope.model.display_name} ${pct}%\x1b[0m`);
-  }
-  if (weekParts.length) parts.push(weekParts.join(' \x1b[2m·\x1b[0m '));
+    const color = MODEL_COLORS[i % MODEL_COLORS.length];
+    parts.push(`\x1b[${color}m${l.scope.model.display_name} ${buildBar(pct)} ${pct}%\x1b[0m`);
+  });
   return parts.length ? ` │ ${parts.join(' │ ')}` : '';
 }
 
