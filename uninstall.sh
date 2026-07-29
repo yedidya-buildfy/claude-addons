@@ -26,7 +26,7 @@ fi
 # Remove scripts + skill
 rm -f "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh" "$CLAUDE_DIR/scripts/tn"
 rm -f "$CLAUDE_DIR/scripts/usage-fetch.sh" "$CLAUDE_DIR/cache/claude-usage.json"
-rm -f "$CLAUDE_DIR/scripts/sticky-prompt.sh" "$CLAUDE_DIR/scripts/sticky-claude"
+rm -f "$CLAUDE_DIR/scripts/sticky-claude"
 rm -rf "$CLAUDE_DIR/skills/tab-name"
 green "  removed ~/.claude/scripts/{tab.sh,tab-watcher.sh,tn,usage-fetch.sh,sticky-claude} and ~/.claude/skills/tab-name/"
 
@@ -37,7 +37,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     const file = process.argv[1];
     const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
     if (cfg.hooks) {
-      const isOurs = h => ["tab.sh", "sticky-prompt.sh"].some(s => JSON.stringify(h).includes(s));
+      const isOurs = h => JSON.stringify(h).includes("tab.sh");
       for (const event of Object.keys(cfg.hooks)) {
         cfg.hooks[event] = cfg.hooks[event].filter(group => {
           group.hooks = (group.hooks || []).filter(h => !isOurs(h));
@@ -49,7 +49,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     }
     fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
   ' "$CLAUDE_SETTINGS"
-  green "  stripped tab-status + sticky-prompt hooks from ~/.claude/settings.json"
+  green "  stripped tab-status hooks from ~/.claude/settings.json"
 
   # fable-plan: remove the opus→fable alias override if it's ours
   node -e '

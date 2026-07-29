@@ -1,27 +1,119 @@
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh white" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh white"
+          }
+        ]
+      }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh red" } ] },
-      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh remind-name" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh red"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/scripts/tab-autoname.py"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh remind-name"
+          }
+        ]
+      }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh green" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh green"
+          }
+        ]
+      }
     ],
     "PreToolUse": [
-      { "matcher": "Agent", "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh bg-inc" } ] },
-      { "matcher": "AskUserQuestion", "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh blue" } ] }
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh bg-inc"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh blue"
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh plan-wait"
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      { "matcher": "AskUserQuestion", "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh red" } ] }
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh red"
+          }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh plan-done"
+          }
+        ]
+      }
     ],
     "SubagentStop": [
-      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh bg-dec" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh bg-dec"
+          }
+        ]
+      }
     ],
     "SessionEnd": [
-      { "hooks": [ { "type": "command", "command": "$HOME/.claude/scripts/tab.sh session-end" } ] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/scripts/tab.sh session-end"
+          }
+        ]
+      }
     ]
   }
 }

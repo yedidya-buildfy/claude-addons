@@ -1,58 +1,70 @@
 ---
 name: tab-name
-description: Set the VS Code terminal tab to a short name that reflects the current conversation topic. Fires EARLY in any substantive working session (after 1–2 user turns once intent is clear) and AGAIN whenever the topic shifts. Picks a name on its own, applies it silently, and adds ONE short text-question at the end of the response so the user can override. Also fires on explicit requests. Trigger on /tab-name, "rename tab", "change tab name", "set tab name", "tab name", "שנה שם לטרמינל", "תן שם לטרמינל", "החלף שם", "תקרא לטאב".
-when_to_use: As soon as you can identify what the user is working on (usually their first or second substantive message), pick a 1–3 word name yourself, apply it, and ask a short open question at the end so they can correct it. Also re-fire when the topic shifts mid-session. Do NOT fire on greetings, throwaway questions, or if a manual override is already pinned (unless the user explicitly asks to rename). The default project-basename name (`dashbord`, etc.) is a placeholder — replace it as soon as you know what the session is about.
+description: Set the VS Code terminal tab to a short name that reflects the current conversation topic. Naming is normally automatic (a hook names the tab from the user's own prompt), so this skill is for EXPLICIT rename requests and for the fallback case where a hook message says the automatic naming failed. Trigger on /tab-name, "rename tab", "change tab name", "set tab name", "tab name", "שנה שם לטרמינל", "תן שם לטרמינל", "החלף שם", "תקרא לטאב".
+when_to_use: Fire when the user explicitly asks to rename the tab, or when a hook message reports that the automatic namer failed and the tab still shows the placeholder. Do NOT fire proactively otherwise — the hook already handles naming. Never rename over a pinned name unless the user asked.
 disable-model-invocation: false
 ---
 
 # Rename the VS Code terminal tab
 
-This addon paints a colored dot + short name on each VS Code terminal tab. The default name is the project directory basename — a placeholder. **Your job is to replace it with a topic-specific name as soon as you know what the session is about — with minimal friction.**
+This addon paints a colored dot + short name on each VS Code terminal tab. The default name is the project directory basename — a placeholder.
+
+**Naming is normally not your job.** A `UserPromptSubmit` hook (`tab-autoname.py`) reads the user's own prompt, asks a cheap model for a 2–3 word topic label in the language the user wrote in, and applies it. You step in only when:
+
+- the user explicitly asks for a rename, or
+- a hook message tells you the automatic namer failed and the tab is still on the placeholder.
+
+Everything below describes what to do in those two cases.
 
 ## The flow — low friction by default
 
 1. **Decide** on a 1–3 word name yourself (prefer 2 words). Skill-style, lowercase, descriptive.
-2. **Apply it silently** by running `~/.claude/scripts/tn "<name>"`. No announcement mid-response, no AskUserQuestion popup.
+2. **Apply it silently** by running `~/.claude/scripts/tn --auto "<name>"`. The `--auto` flag marks it as an AI guess (NOT pinned) so you can still refine it on topic shifts. No announcement mid-response, no AskUserQuestion popup.
 3. **At the end of your normal response**, add ONE short sentence — a plain open-ended question, like:
    > `(Renamed tab to "auth bug" — want a different one?)`
 
    That's it. One line. Question mark. Don't make it a separate paragraph or use any AskUserQuestion tool.
-4. **If the user disagrees or suggests a different name** in their next message, apply it immediately with `tn "<their name>"`. Acknowledge briefly. Move on.
+4. **If the user disagrees or suggests a different name** in their next message, apply it immediately with `tn "<their name>"` (no `--auto` — a name the user dictated is pinned). Acknowledge briefly. Move on.
 
 The point: the user almost never has to engage with the rename. The name just appears, and they can correct it any time with a few words.
 
-## When to fire — be proactive
-
-Fire as soon as you can answer "what is this session about?" in 1–3 words. Usually within the first one or two substantive messages.
+## When to fire
 
 | Situation | Action |
 |---|---|
-| First substantive message gives clear intent | Apply name now + one-line confirm at end |
-| User asks a specific topical question | Apply name now + one-line confirm at end |
-| User just said "hi" / sent a screenshot with no context | Wait one more turn |
-| Topic clearly shifted ("now let me work on the auth bug instead") | Apply NEW name + one-line confirm at end |
-| User says `"rename tab to payplus"` (specific name) | Apply `tn "payplus"` directly — no question, no confirmation needed |
-| User says `"rename tab"` / `/tab-name` (no name) | Apply your best guess + one-line confirm at end |
+| Automatic naming is working (the usual case) | Do nothing — the hook owns it |
+| A hook message says the automatic namer failed | `tn --auto` your best guess + one-line confirm at end |
+| User says `"rename tab to payplus"` (specific name) | `tn "payplus"` directly (pinned) — no question, no confirmation |
+| User says `"rename tab"` / `/tab-name` (no name) | `tn --auto` your best guess + one-line confirm at end |
 | You already named the tab AND topic hasn't changed | Do nothing |
-| Manual override pinned by `tn` AND user didn't ask | Respect it, do nothing |
+| **Name is pinned** (`<session>.pinned` exists) AND user didn't ask | Respect it, do nothing — never `tn --auto` over a pin |
 
 ## Use AskUserQuestion only if explicitly asked
 
 If the user says `"give me options for the tab name"` or `"let me pick between names"`, then use `AskUserQuestion` with 3 candidates. Otherwise, just pick and apply — that's the default path.
 
-## Check first — is a manual override already pinned?
+## Check first — is the name pinned by the human?
+
+Resolve this terminal's session via the watcher's reverse map, then test for a pin marker:
 
 ```bash
-cat ~/.claude/terminal-state/tty.$(ps -o tty= -p $$ | tr -d ' ').name 2>/dev/null
+sd=~/.claude/terminal-state
+t=$(ps -o tty= -p $$ | tr -d ' ')
+sess=$(cat "$sd/tty.$t.session" 2>/dev/null)
+[ -f "$sd/$sess.pinned" ] && echo PINNED || echo free
 ```
 
-- Empty → proceed.
-- Non-empty AND user didn't explicitly ask to rename → respect it; do nothing.
-- Non-empty AND user explicitly asked → proceed; your new name replaces the override.
+- `free` → proceed with `tn --auto`.
+- `PINNED` AND user didn't explicitly ask to rename → respect it; do nothing.
+- `PINNED` AND user explicitly asked → proceed; `tn "<name>"` (re-pins to the new name).
+
+A pin only suppresses AI auto-renaming. The colored status dot keeps updating either way — it's painted separately by `tab-watcher.sh`.
 
 ## Name style — 1–3 words, prefer 2, skill-like
 
-**Good:** `payplus`, `auth bug`, `tab dots`, `claude addons`, `docs cleanup`, `code review`, `migrations`, `context bar`, `whatsapp`, `claude api`
+**Two words is the target, three is the maximum, one only when it is genuinely enough — and write it in the language the user is writing in.** A Hebrew conversation gets a Hebrew name.
+
+**Good:** `payplus`, `auth bug`, `tab dots`, `claude addons`, `docs cleanup`, `דשבורד וילות`, `תיקון הרשאות`, `claude api`
 
 **Bad:**
 - Long sentences: `fix-the-payplus-integration-webhook`

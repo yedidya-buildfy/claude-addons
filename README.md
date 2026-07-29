@@ -6,8 +6,8 @@
 
 | תוסף | מה זה עושה |
 |---|---|
-| [**tab-status**](./tab-status) | נקודה צבעונית (⚪🔴🔵🟡🩵🟢) על ה‑tab של הטרמינל ב‑VS Code, שמראה אם Claude פנוי, עובד, מחכה לך, מחכה לסוכן רקע (🟡), או מריץ shell של Bash ברקע (🩵). |
-| [**skill-tab-name**](./skill-tab-name) | סקיל ל‑Claude Code שבוחר לבד שם קצר ל‑tab (1–3 מילים) לפי מה שהשיחה עוסקת בו. שקט — בלי חלון קופץ; שאלה פתוחה אחת בסוף התשובה כדי שתוכל לעקוף. |
+| [**tab-status**](./tab-status) | נקודה צבעונית (⚪🔴🟣🟠🔵🟡🟤🟢) על ה‑tab של הטרמינל ב‑VS Code, שמראה אם Claude פנוי, עובד, בונה תוכנית (🟣), מחכה להחלטה שלך על תוכנית (🟠), מחכה לתשובה שלך (🔵), מחכה לסוכן רקע (🟡), או מריץ shell של Bash ברקע (🟤). |
+| [**skill-tab-name**](./skill-tab-name) | מסלול הגיבוי לשמות ה‑tab: `tab-status` נותן שם אוטומטית מתוך הפרומפט שלך, והסקיל הזה נכנס לפעולה כשאתה מבקש שם במפורש, או כשהקריאה האוטומטית נכשלה. |
 | [**skill-design-in-browser**](./skill-design-in-browser) | סקיל ל‑Claude Code שמעצב UI בדפדפן לפני נגיעה בקוד: בונה mockup HTML עצמאי עם 2–3 גרסאות בלשוניות, פותח בדפדפן לאיטרציה, ומיישם ל‑React/וכו׳ רק אחרי שאתה מאשר. משתמש ב‑impeccable או בכל סקיל UI/UX אם מותקן. |
 | [**statusline-gsd**](./statusline-gsd) | משתיל את ה‑statusline של [פרויקט GSD](https://github.com/gsd-build/get-shit-done) — שם המודל, המשימה הנוכחית, ומד ניצול הקונטקסט בתחתית כל סשן של Claude — בתוספת מקומית של ניצול התוכנית כמו `/usage`: סשן 5 שעות (+זמן לאיפוס), שבועי, ושבועי פר‑מודל (Fable). |
 | [**sticky-prompt**](./sticky-prompt) | תיבת ההודעה שלך עצמה ננעצת בראש הטרמינל של VS Code, במקום פקודת ה‑shell שפתחה את הסשן. גוללים מעל ההודעה האחרונה והנעוץ הופך לזו שמעליה; לחיצה עליו קופצת חזרה להודעה. עוטף שמריץ את Claude מאחורי פסאודו‑טרמינל ומזריק סימונים לתוך הפלט שלו. |
@@ -49,6 +49,7 @@ cd claude-addons
 │   ├── tab.sh                 ← from tab-status/
 │   ├── tab-watcher.sh         ← from tab-status/
 │   ├── tn                     ← from tab-status/
+│   ├── tab-dots-selftest.sh   ← from tab-status/
 │   └── sticky-claude          ← from sticky-prompt/
 ├── skills/tab-name/
 │   └── SKILL.md               ← from skill-tab-name/

@@ -24,7 +24,9 @@ fi
 
 state_file="$state_dir/$session.state"
 bg_file="$state_dir/$session.bg"
+bg_hint_file="$state_dir/$session.bg_hint"
 name_file="$state_dir/$session.name"
+plan_wait_file="$state_dir/$session.plan_wait"
 
 get_bg() { cat "$bg_file" 2>/dev/null || echo 0; }
 set_bg() { echo "$1" > "$bg_file"; }
@@ -61,7 +63,7 @@ ensure_watcher() {
 
 case "$action" in
   white)
-    p=$(prev_state); echo white > "$state_file"; set_bg 0
+    p=$(prev_state); echo white > "$state_file"; set_bg 0; rm -f "$bg_hint_file"
     ensure_watcher
     log_line "state: $p → white"
     # Inject a reminder about the tab-name skill into Claude's session context.
@@ -79,41 +81,48 @@ JSON
     ;;
 
   red)
-    p=$(prev_state); echo red > "$state_file"
+    # A new prompt means any pending plan decision is over — clears the ⏸ badge
+    # even when the user answered by hitting Escape (no PostToolUse fires then).
+    p=$(prev_state); echo red > "$state_file"; rm -f "$plan_wait_file"
     ensure_watcher
     log_line "state: $p → red"
     ;;
 
   remind-name)
-    # Re-inject the tab-name reminder on every UserPromptSubmit, but only
-    # while no manual override exists for this TTY. Stops once a name is
-    # pinned (by Claude or by `tn`). Fixes the "skill fires only at
-    # SessionStart and gets forgotten in long sessions" problem.
+    # Fallback only. tab-autoname.py names the tab from the user's own prompt
+    # via a cheap model call, so the assistant is not in that loop at all. It
+    # is asked to step in only when that call actually failed (gateway down,
+    # network off) and the tab still carries the placeholder.
     [ -f "$HOME/.claude/skills/tab-name/SKILL.md" ] || exit 0
-
-    pid=$$; tty_dev=""
-    for _ in 1 2 3 4 5 6 7 8; do
-      t=$(ps -o tty= -p "$pid" 2>/dev/null | tr -d ' ')
-      if [ -n "$t" ] && [ "$t" != "??" ]; then
-        tty_dev="$t"
-        break
-      fi
-      pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
-      [ -z "$pid" ] && break
-    done
-    [ -z "$tty_dev" ] && exit 0
-
-    if [ ! -f "$state_dir/tty.$tty_dev.name" ]; then
-      log_line "remind-name: no override for $tty_dev — injecting reminder"
-      cat <<'JSON'
+    [ -f "$state_dir/$session.pinned" ] && exit 0
+    [ "$(cat "$state_dir/$session.namer" 2>/dev/null)" = "fail" ] || exit 0
+    cur=$(cat "$name_file" 2>/dev/null)
+    placeholder=$(basename "${CLAUDE_PROJECT_DIR:-$PWD}")
+    if [ -n "$cur" ] && [ "$cur" != "$placeholder" ]; then
+      exit 0
+    fi
+    log_line "remind-name: still placeholder '$cur' — injecting reminder"
+    cat <<'JSON'
 {
   "hookSpecificOutput": {
     "hookEventName": "UserPromptSubmit",
-    "additionalContext": "[claude-addons] The VS Code tab still shows the default project basename — the `tab-name` skill has not been applied yet. If you can describe what this session is about in 1-3 words, pick a name now and apply it silently with `~/.claude/scripts/tn \"<name>\"`, then add a one-line text-question at the end of your response (e.g. `(Renamed tab to \"auth bug\" — different one?)`). If the topic still isn't clear, skip — this reminder will fire again on the next prompt."
+    "additionalContext": "[claude-addons] This terminal tab still shows the placeholder project name — the `tab-name` skill has not been applied yet. If you can now describe what this session is about in 1-3 words, apply it silently with `~/.claude/scripts/tn --auto \"<name>\"` (the --auto flag leaves it unpinned so you can refine it later), then add a one-line text-question at the end of your response (e.g. `(Renamed tab to \"auth bug\" — different one?)`). If the topic still isn't clear, skip — this fires again next prompt."
   }
 }
 JSON
-    fi
+    ;;
+
+  plan-wait)
+    # ExitPlanMode is about to block on the user's approve/reject choice.
+    : > "$plan_wait_file"
+    ensure_watcher
+    log_line "plan awaiting decision"
+    ;;
+
+  plan-done)
+    rm -f "$plan_wait_file"
+    ensure_watcher
+    log_line "plan decision made"
     ;;
 
   blue)
@@ -140,18 +149,22 @@ JSON
     is_bg=$(echo "$input" | python3 -c 'import sys,json
 try: print(str(json.load(sys.stdin).get("tool_input",{}).get("run_in_background",False)).lower())
 except: pass' 2>/dev/null)
+    log_line "bg-inc fired: run_in_background='$is_bg'"
     if [ "$is_bg" = "true" ]; then
       set_bg $(( $(get_bg) + 1 ))
+      : > "$bg_hint_file"
       ensure_watcher
-      log_line "bg++ now=$(get_bg)"
+      log_line "bg++ now=$(get_bg) hint=$(stat -f %m "$bg_hint_file" 2>/dev/null)"
     fi
     ;;
 
   bg-dec)
-    cur=$(get_bg)
-    [ "$cur" -gt 0 ] && set_bg $((cur - 1))
+    # SubagentStop fires for foreground agents too, and may fire more than
+    # once per task. The watcher now reads Claude's authoritative
+    # pendingBackgroundAgentCount from the session transcript, so this hook is
+    # only a wake-up/log event.
     ensure_watcher
-    log_line "bg-- now=$(get_bg)"
+    log_line "bg-dec ignored; watcher owns bg count now=$(get_bg)"
     ;;
 
   session-end)
@@ -160,7 +173,7 @@ except: pass' 2>/dev/null)
       kill "$wpid" 2>/dev/null
       log_line "killed watcher pid=$wpid"
     fi
-    rm -f "$state_file" "$bg_file" "$name_file" "$state_dir/$session.watcher_pid"
+    rm -f "$state_file" "$bg_file" "$bg_hint_file" "$name_file" "$plan_wait_file" "$state_dir/$session.namer" "$state_dir/$session.watcher_pid" "$state_dir/$session.pinned"
     log_line "cleaned up session"
     ;;
 

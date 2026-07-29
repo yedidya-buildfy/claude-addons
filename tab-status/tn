@@ -4,11 +4,18 @@
 # up to find the controlling TTY in case the subprocess has no direct one.
 #
 # Usage:
-#   tn <name>    set tab name to "<dot> <name>"
-#   tn           clear override; auto-name (project basename) takes over
+#   tn <name>          PIN tab name (human). AI stops auto-renaming it.
+#   tn --auto <name>   set name WITHOUT pinning (used by Claude's tab-name skill)
+#   tn                 clear pin + override; auto-name (project basename) returns
+#
+# The colored status dot is painted separately by tab-watcher.sh and keeps
+# updating regardless of the pin — only AI auto-renaming is suppressed.
 
 state_dir="$HOME/.claude/terminal-state"
 mkdir -p "$state_dir"
+
+auto=0
+if [ "$1" = "--auto" ]; then auto=1; shift; fi
 
 pid=$$; tty_dev=""
 for _ in 1 2 3 4 5 6 7 8; do
@@ -26,10 +33,34 @@ if [ -z "$tty_dev" ]; then
   exit 1
 fi
 
-if [ -z "$1" ]; then
-  rm -f "$state_dir/tty.$tty_dev.name"
-  echo "tn: cleared override for $tty_dev"
+# Target the live Claude session on this TTY (stable across TTY-number reuse by
+# VS Code). Fall back to the legacy per-TTY file only for non-Claude shells.
+sess=$(cat "$state_dir/tty.$tty_dev.session" 2>/dev/null)
+if [ -n "$sess" ] && [ -f "$state_dir/$sess.state" ]; then
+  target="$state_dir/$sess.name"; pin="$state_dir/$sess.pinned"; in_session=1
 else
-  echo "$1" > "$state_dir/tty.$tty_dev.name"
-  echo "tn: tab → '$1' (visible within ~300ms)"
+  target="$state_dir/tty.$tty_dev.name"; pin="$state_dir/tty.$tty_dev.pinned"; in_session=0
+fi
+
+if [ -z "$1" ]; then
+  rm -f "$pin"
+  if [ "$in_session" = 1 ]; then
+    basename "$PWD" > "$target"   # restore auto-name (project basename)
+  else
+    rm -f "$target"
+  fi
+  echo "tn: cleared pin + override for $tty_dev"
+else
+  echo "$1" > "$target"
+  if [ "$auto" = 1 ]; then
+    echo "tn: tab → '$1' (auto, not pinned)"
+  else
+    touch "$pin"   # human pin → tab-name skill must not override
+    echo "tn: tab → '$1' (pinned; AI will not rename)"
+  fi
+  # Only a live session has a watcher painting the title, so outside one this
+  # wrote a file nobody reads. Say so instead of looking like it worked.
+  if [ "$in_session" = 0 ]; then
+    echo "tn: warning — no live Claude session on $tty_dev, so nothing is painting this tab" >&2
+  fi
 fi

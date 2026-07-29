@@ -5,7 +5,7 @@ For maximum reliability, append this to your `~/.claude/CLAUDE.md`. The skill au
 ```markdown
 ## Skills to invoke proactively
 
-- **`tab-name`** — As soon as you can identify what the current session is about in 1–3 words (usually after the user's first or second substantive message), invoke this skill. Pick a short name yourself, apply silently via `~/.claude/scripts/tn "<name>"`, and add **one short text-question** at the end of your response so the user can override (e.g. `(Renamed tab to "auth bug" — want a different one?)`). Re-fire on topic shifts. See `~/.claude/skills/tab-name/SKILL.md` for full rules. Don't be cautious — the default project-basename name is a placeholder, your job is to replace it.
+- **`tab-name`** — Tab naming is automatic and is NOT your job. A hook reads my prompt, asks a cheap model for a 2–3 word topic label in the language I wrote in, and applies it. Do **not** proactively rename the tab, and do not add a "renamed tab to…" line to your responses. Only act when I explicitly ask for a rename, or when a hook message tells you the automatic naming failed — then invoke the skill and follow `~/.claude/skills/tab-name/SKILL.md`.
 ```
 
 `install.sh` offers to do this automatically.

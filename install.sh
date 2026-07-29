@@ -70,8 +70,10 @@ if confirm "Install tab-status?"; then
   cp "$ROOT/tab-status/tab.sh" "$CLAUDE_DIR/scripts/tab.sh"
   cp "$ROOT/tab-status/tab-watcher.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh"
   cp "$ROOT/tab-status/tn" "$CLAUDE_DIR/scripts/tn"
-  chmod +x "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh" "$CLAUDE_DIR/scripts/tn"
-  green "    copied scripts → ~/.claude/scripts/ (tab.sh, tab-watcher.sh, tn)"
+  cp "$ROOT/tab-status/tab-dots-selftest.sh" "$CLAUDE_DIR/scripts/tab-dots-selftest.sh"
+  cp "$ROOT/tab-status/tab-autoname.py" "$CLAUDE_DIR/scripts/tab-autoname.py"
+  chmod +x "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh" "$CLAUDE_DIR/scripts/tn" "$CLAUDE_DIR/scripts/tab-dots-selftest.sh"
+  green "    copied scripts → ~/.claude/scripts/ (tab.sh, tab-watcher.sh, tn, tab-dots-selftest.sh, tab-autoname.py)"
 
   backup "$CLAUDE_SETTINGS"
   cat "$ROOT/tab-status/settings.json.snippet" | json_merge "$CLAUDE_SETTINGS"
