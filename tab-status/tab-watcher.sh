@@ -1,6 +1,6 @@
 #!/bin/bash
 # Long-running paint loop for one Claude session. Spawned by tab.sh on
-# SessionStart. Reads state every 300ms and writes OSC to the TTY — overwrites
+# SessionStart. Reads state every 20ms and writes OSC to the TTY — overwrites
 # Claude Code's own competing title writes. Exits cleanly when its state file
 # is removed (by tab.sh session-end) or if the claude parent process disappears.
 
@@ -166,6 +166,9 @@ max_ticks=2160000  # ~12h at 20ms
 last_state=""
 last_name=""
 last_dot=""
+last_title=""
+last_paint_tick=-1000
+paint_ok=0
 bg=0
 bg_last_check=-1000
 bgsh=0
@@ -254,11 +257,19 @@ while [ "$ticks" -lt "$max_ticks" ]; do
     last_dot="$dot"
   fi
 
-  if [ -w "/dev/$tty_dev" ]; then
-    printf '\033]0;%s %s\a' "$dot" "$name" > "/dev/$tty_dev" 2>/dev/null
-    paint_ok=1
-  else
-    paint_ok=0
+  # Paint on change, plus a slow reclaim tick. Writing the identical title 50
+  # times a second made the tab visibly flicker; 5 Hz is still fast enough to
+  # take the title back from Claude Code's own OSC writes without a visible gap.
+  title="$dot $name"
+  if [ "$title" != "$last_title" ] || [ "$((ticks - last_paint_tick))" -ge 10 ]; then
+    if [ -w "/dev/$tty_dev" ]; then
+      printf '\033]0;%s\a' "$title" > "/dev/$tty_dev" 2>/dev/null
+      paint_ok=1
+    else
+      paint_ok=0
+    fi
+    last_title="$title"
+    last_paint_tick=$ticks
   fi
 
   # heartbeat: one line every 300 ticks (~6s at 20ms) — just for liveness check
