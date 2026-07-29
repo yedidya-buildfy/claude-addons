@@ -88,6 +88,29 @@ JSON
     log_line "state: $p → red"
     ;;
 
+  remind-name)
+    # SessionStart is too early to name a tab — nobody has said what the
+    # session is about yet. So nudge again on each prompt, but ONLY while the
+    # tab still carries the placeholder (the project basename) and the human
+    # hasn't pinned a name. Renaming silences this for the rest of the session.
+    [ -f "$HOME/.claude/skills/tab-name/SKILL.md" ] || exit 0
+    [ -f "$state_dir/$session.pinned" ] && exit 0
+    cur=$(cat "$name_file" 2>/dev/null)
+    placeholder=$(basename "${CLAUDE_PROJECT_DIR:-$PWD}")
+    if [ -n "$cur" ] && [ "$cur" != "$placeholder" ]; then
+      exit 0
+    fi
+    log_line "remind-name: still placeholder '$cur' — injecting reminder"
+    cat <<'JSON'
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "[claude-addons] This terminal tab still shows the placeholder project name — the `tab-name` skill has not been applied yet. If you can now describe what this session is about in 1-3 words, apply it silently with `~/.claude/scripts/tn --auto \"<name>\"` (the --auto flag leaves it unpinned so you can refine it later), then add a one-line text-question at the end of your response (e.g. `(Renamed tab to \"auth bug\" — different one?)`). If the topic still isn't clear, skip — this fires again next prompt."
+  }
+}
+JSON
+    ;;
+
   plan-wait)
     # ExitPlanMode is about to block on the user's approve/reject choice.
     : > "$plan_wait_file"

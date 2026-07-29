@@ -21,11 +21,14 @@ plan_wait_file="$state_dir/$session.plan_wait"
 # stale names onto recycled TTY numbers — see tn.)
 session_map="$state_dir/tty.$tty_dev.session"
 echo "$session" > "$session_map"
+# The map deliberately OUTLIVES this watcher. Deleting it on exit meant that
+# between a watcher dying and the next hook respawning it, `tn` could not tell
+# which session this terminal belongs to, so a rename landed in a file nobody
+# reads and silently did nothing. A stale map is harmless: tn ignores one whose
+# session has no state file, and the next session on this TTY overwrites it.
 # Must exit on TERM/INT — a bare trap without exit resumes the loop, so the
 # watcher would survive `kill` (tab.sh session-end uses SIGTERM) and orphan.
-cleanup() { rm -f "$session_map"; }
-trap cleanup EXIT
-trap 'cleanup; exit 0' TERM INT
+trap 'exit 0' TERM INT
 
 echo "[$(date '+%H:%M:%S')] START session=$session tty=$tty_dev watcher_pid=$$" >> "$log"
 
