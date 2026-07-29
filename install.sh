@@ -63,7 +63,7 @@ cyan "claude-addons installer"
 echo
 
 # --- tab-status ---
-cyan "[1/5] tab-status (colored dot on VS Code terminal tabs)"
+cyan "[1/6] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
@@ -99,7 +99,7 @@ fi
 echo
 
 # --- skill-tab-name ---
-cyan "[2/5] skill-tab-name (Claude picks tab names automatically)"
+cyan "[2/6] skill-tab-name (Claude picks tab names automatically)"
 if confirm "Install the \`tab-name\` skill?"; then
   mkdir -p "$CLAUDE_DIR/skills/tab-name"
   cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
@@ -123,7 +123,7 @@ fi
 echo
 
 # --- skill-design-in-browser ---
-cyan "[3/5] skill-design-in-browser (design UI in the browser before coding)"
+cyan "[3/6] skill-design-in-browser (design UI in the browser before coding)"
 if confirm "Install the `design-in-browser` skill?"; then
   mkdir -p "$CLAUDE_DIR/skills/design-in-browser"
   cp "$ROOT/skill-design-in-browser/SKILL.md" "$CLAUDE_DIR/skills/design-in-browser/SKILL.md"
@@ -135,7 +135,7 @@ fi
 echo
 
 # --- statusline-gsd ---
-cyan "[4/5] statusline-gsd (model + task + context bar + plan usage at bottom)"
+cyan "[4/6] statusline-gsd (model + task + context bar + plan usage at bottom)"
 if confirm "Install GSD statusline?"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   green "    copied gsd-statusline.js → ~/.claude/"
@@ -151,7 +151,7 @@ if confirm "Install GSD statusline?"; then
 fi
 
 # --- fable-plan ---
-cyan "[5/5] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
+cyan "[5/6] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
 if confirm "Install fable-plan?"; then
   if grep -q "alias fplan=" "$ZSHRC" 2>/dev/null; then
     dim "    fplan alias already in ~/.zshrc, skipping"
@@ -162,6 +162,38 @@ if confirm "Install fable-plan?"; then
   fi
   dim "    usage: fplan → plan mode = Fable 5 (1M context), execution = Sonnet 5"
   dim "    scoped per-session — plain \`claude\` sessions keep real Opus on /model opus"
+fi
+
+echo
+
+# --- sticky-prompt ---
+cyan "[6/6] sticky-prompt (the message you sent pinned to the top of the terminal)"
+if confirm "Install sticky-prompt?"; then
+  mkdir -p "$CLAUDE_DIR/scripts"
+  cp "$ROOT/sticky-prompt/sticky-claude" "$CLAUDE_DIR/scripts/sticky-claude"
+  chmod +x "$CLAUDE_DIR/scripts/sticky-claude"
+  green "    copied sticky-claude → ~/.claude/scripts/"
+
+  if [ -f "$VSCODE_SETTINGS" ]; then
+    backup "$VSCODE_SETTINGS"
+    cat "$ROOT/sticky-prompt/vscode-settings.snippet" | json_merge "$VSCODE_SETTINGS"
+    green "    capped terminal sticky scroll at 3 rows in VS Code settings"
+  else
+    dim "    VS Code user settings not found — sticky scroll stays at its 5-row default"
+  fi
+
+  if grep -q "sticky-claude" "$ZSHRC" 2>/dev/null; then
+    dim "    claude alias already in ~/.zshrc, skipping"
+  elif confirm "Point the \`claude\` command at the wrapper (alias in ~/.zshrc)?"; then
+    backup "$ZSHRC"
+    echo "" >> "$ZSHRC"
+    cat "$ROOT/sticky-prompt/zshrc.snippet" >> "$ZSHRC"
+    green "    appended claude alias to ~/.zshrc (run \`source ~/.zshrc\` to load)"
+  fi
+
+  dim "    marks the message block in Claude's own output, so the marks land on it"
+  dim "    \`command claude\` still runs Claude Code directly, without the wrapper"
+  dim "    requires VS Code shell integration + terminal sticky scroll (both on by default)"
 fi
 
 echo
