@@ -89,12 +89,13 @@ JSON
     ;;
 
   remind-name)
-    # SessionStart is too early to name a tab — nobody has said what the
-    # session is about yet. So nudge again on each prompt, but ONLY while the
-    # tab still carries the placeholder (the project basename) and the human
-    # hasn't pinned a name. Renaming silences this for the rest of the session.
+    # Fallback only. tab-autoname.py names the tab from the user's own prompt
+    # via a cheap model call, so the assistant is not in that loop at all. It
+    # is asked to step in only when that call actually failed (gateway down,
+    # network off) and the tab still carries the placeholder.
     [ -f "$HOME/.claude/skills/tab-name/SKILL.md" ] || exit 0
     [ -f "$state_dir/$session.pinned" ] && exit 0
+    [ "$(cat "$state_dir/$session.namer" 2>/dev/null)" = "fail" ] || exit 0
     cur=$(cat "$name_file" 2>/dev/null)
     placeholder=$(basename "${CLAUDE_PROJECT_DIR:-$PWD}")
     if [ -n "$cur" ] && [ "$cur" != "$placeholder" ]; then
@@ -172,7 +173,7 @@ except: pass' 2>/dev/null)
       kill "$wpid" 2>/dev/null
       log_line "killed watcher pid=$wpid"
     fi
-    rm -f "$state_file" "$bg_file" "$bg_hint_file" "$name_file" "$plan_wait_file" "$state_dir/$session.watcher_pid" "$state_dir/$session.pinned"
+    rm -f "$state_file" "$bg_file" "$bg_hint_file" "$name_file" "$plan_wait_file" "$state_dir/$session.namer" "$state_dir/$session.watcher_pid" "$state_dir/$session.pinned"
     log_line "cleaned up session"
     ;;
 
