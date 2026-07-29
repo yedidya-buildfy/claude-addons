@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""UserPromptSubmit hook: name the terminal tab from the user's own prompt.
+"""UserPromptSubmit hook: keep the terminal tab named after what the user is doing.
 
-Deterministic code owns the naming, not the assistant in the session. This
-reads the prompt off the hook payload, asks a cheap model for a short topic
-label, and writes it into the tab-status name file. The assistant is only a
-fallback: on failure this leaves a marker that tab.sh's remind-name reads.
+Deterministic code owns the naming, not the assistant in the session. This runs
+on every prompt and asks a cheap model one question: given the tab's current
+name and the newest message, does the name still fit? The usual answer is KEEP
+and nothing happens; a genuine change of subject gets a new label. The
+assistant is only a fallback: on failure this leaves a marker that tab.sh's
+remind-name reads.
 
 Runs the network call in a detached child so the hook returns instantly — a
 UserPromptSubmit hook blocks the turn until it exits, and the first call
@@ -26,14 +28,31 @@ TIMEOUT = float(os.environ.get("TAB_NAME_TIMEOUT", "40"))
 MAX_WORDS = 3
 
 PROMPT = (
-    "You name terminal tabs. Given a user's message to a coding assistant, reply with a short "
-    "topic label naming what the session is about.\n"
-    "- Two words is the target. Three is the hard maximum. One word only when it is genuinely enough.\n"
-    "- Write the label in THE SAME LANGUAGE the user wrote their message in. A Hebrew message gets a "
-    "Hebrew label. Keep a product or tool name in its original spelling.\n"
-    "- Lowercase unless it is a proper noun. No quotes, no punctuation, no explanation — the label alone.\n"
-    "- If the message reveals no work topic (a greeting, a thank-you, a throwaway one-liner), "
-    "reply with exactly: NONE"
+    "You maintain the name of a terminal tab. You get the tab's current name and the newest message "
+    "the user sent to a coding assistant working in that tab. Reply with ONE line and nothing else.\n"
+    "\n"
+    "LANGUAGE RULE — THE MOST IMPORTANT ONE: the label must be written in the same language as the "
+    "user's message. If the message is in Hebrew, the label MUST be in Hebrew letters. Never translate "
+    "a Hebrew message into an English label. Product and tool names keep their original spelling.\n"
+    "\n"
+    "What to reply:\n"
+    "- KEEP — the current name still covers what the user is working on. Follow-ups, confirmations, "
+    "corrections, and short messages that add no new subject are all KEEP.\n"
+    "- A new label — the user moved to different work. Naming a different bug, feature, file or area "
+    "than the current name IS different work, even when the sentence is short.\n"
+    "- NONE — there is no current name yet and this message reveals no work topic (a greeting, a "
+    "thank-you, a throwaway one-liner).\n"
+    "\n"
+    "Label shape: two words is the target, three is the hard maximum, one only when it is genuinely "
+    "enough. Lowercase unless it is a proper noun. No quotes, no punctuation, no explanation.\n"
+    "\n"
+    "Examples:\n"
+    "current: (none yet) | message: תוסיף טבלת הכנסות לדשבורד של הוילות -> דשבורד וילות\n"
+    "current: דשבורד וילות | message: תוסיף גם עמודת רווח -> KEEP\n"
+    "current: דשבורד וילות | message: אוקיי מעולה תדחף הכל -> KEEP\n"
+    "current: דשבורד וילות | message: עכשיו בוא נתקן את הבאג שמנתק משתמשים -> באג התנתקות\n"
+    "current: auth bug | message: now let's write the deployment docs -> deployment docs\n"
+    "current: (none yet) | message: היי מה נשמע -> NONE"
 )
 
 
@@ -45,7 +64,9 @@ def mark(session, status):
         pass
 
 
-def ask(text):
+def ask(current, text):
+    text = ("Current tab name: %s\n\nNewest user message:\n%s"
+            % (current or "(none yet — the tab is unnamed)", text))
     body = json.dumps({
         "model": MODEL,
         "max_tokens": 24,
@@ -66,7 +87,7 @@ def clean(raw):
     name = (raw or "").strip().strip('"\'' + "`")
     name = name.splitlines()[0] if name else ""
     name = re.sub(r"[.,:;!?]+$", "", name).strip()
-    if not name or name.upper() == "NONE":
+    if not name or name.upper() in ("NONE", "KEEP"):
         return ""
     words = name.split()
     if len(words) > MAX_WORDS:
@@ -94,8 +115,8 @@ def main():
     except OSError:
         current = ""
     placeholder = os.path.basename(hook.get("cwd") or os.getcwd())
-    if current and current != placeholder:
-        return                                    # already carries a real name
+    if current == placeholder:
+        current = ""                              # the folder name is not a real name
 
     # Detach: the parent must return now or the user waits on the network call.
     if os.fork() > 0:
@@ -106,12 +127,14 @@ def main():
         os.dup2(null, fd)
 
     try:
-        name = clean(ask(prompt[:2000]))
+        name = clean(ask(current, prompt[:2000]))
     except Exception:
         mark(session, "fail")                     # lets the assistant fall back in
         os._exit(0)
-    if not name:
-        mark(session, "none")                     # nothing nameable yet; retry next prompt
+    if not name or name == current:
+        # KEEP, or nothing nameable yet. Either way the tab stays as it is and
+        # the question gets asked again on the next prompt.
+        mark(session, "ok" if current else "none")
         os._exit(0)
     try:
         with open(name_file, "w", encoding="utf-8") as f:
@@ -129,6 +152,8 @@ def selftest():
         ("דשבורד וילות", "דשבורד וילות"),      # non-latin passes through
         ("NONE", ""),                        # nothing nameable
         ("none", ""),
+        ("KEEP", ""),                        # name still fits — no write
+        ("Keep", ""),
         ("", ""),
         ("a b c d", ""),                     # over the word limit → refuse
         ("Sure! The label is: auth bug", ""),  # chatty answer → refuse
