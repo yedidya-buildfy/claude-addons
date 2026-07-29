@@ -118,6 +118,8 @@ tn                    # משחרר את הנעיצה, חזרה לשם האוטו
 | `TAB_NAME_MODEL` | `auto/best-free` |
 | `TAB_NAME_TIMEOUT` | `40` שניות |
 
+אם התשובה של המודל לא עוברת את הסינון, נשלחת פנייה חוזרת אחת עם תיקון. כל החלטה נרשמת ב‑`~/.claude/terminal-state/autoname.log` יחד עם התשובה הגולמית — שם רואים בדיוק למה tab מסוים לא קיבל שם, במקום לנחש.
+
 בדיקה עצמית של הסינון: `python3 ~/.claude/scripts/tab-autoname.py --selftest`
 
 ### שלוש הסיבות שהשם לא נתפס
@@ -137,6 +139,7 @@ tail -f ~/.claude/terminal-state/watcher.log   # heartbeat every ~6 s, includes 
 tail -f ~/.claude/terminal-state/hooks.log     # every hook fire
 ps -ef | grep tab-watcher | grep -v grep       # running watchers
 ~/.claude/scripts/tab-dots-selftest.sh         # קריאת יומן השיחה: בדיקה עצמית
+tail -f ~/.claude/terminal-state/autoname.log  # כל החלטת שם + התשובה הגולמית של המודל
 ```
 
 אחרי עריכה של `tab-watcher.sh` צריך לסגור את ה‑watchers הרצים (`pkill -f tab-watcher.sh`) — כל אחד מהם מריץ עותק של הקוד הישן בזיכרון. הם נדלקים מחדש לבד ב‑hook הבא של כל סשן.

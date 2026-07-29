@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 
 STATE = os.path.expanduser("~/.claude/terminal-state")
@@ -40,8 +41,9 @@ PROMPT = (
     "corrections, and short messages that add no new subject are all KEEP.\n"
     "- A new label — the user moved to different work. Naming a different bug, feature, file or area "
     "than the current name IS different work, even when the sentence is short.\n"
-    "- NONE — there is no current name yet and this message reveals no work topic (a greeting, a "
-    "thank-you, a throwaway one-liner).\n"
+    "- NONE — there is no current name yet AND the message asks for nothing at all: a greeting, a "
+    "thank-you, a bare acknowledgement. Any actual request counts as a topic and gets a label, "
+    "however small or playful the request is.\n"
     "\n"
     "Label shape: two words is the target, three is the hard maximum, one only when it is genuinely "
     "enough. Lowercase unless it is a proper noun. No quotes, no punctuation, no explanation.\n"
@@ -64,16 +66,36 @@ def mark(session, status):
         pass
 
 
-def ask(current, text):
+def note(session, current, prompt, raw, decision):
+    """One line per decision. Without the raw answer, a tab that failed to get
+    named is indistinguishable from one the model deliberately left alone."""
+    try:
+        with open(os.path.join(STATE, "autoname.log"), "a", encoding="utf-8") as f:
+            f.write("[%s] %s current=%r prompt=%r raw=%r → %s\n" % (
+                time.strftime("%H:%M:%S"), session[:8], current,
+                prompt[:60], (raw or "")[:80], decision))
+    except OSError:
+        pass
+
+
+def ask(current, text, retry_of=None):
     text = ("Current tab name: %s\n\nNewest user message:\n%s"
             % (current or "(none yet — the tab is unnamed)", text))
+    messages = [{"role": "system", "content": PROMPT},
+                {"role": "user", "content": text}]
+    if retry_of is not None:
+        # Small models drift into a sentence. One corrective turn is cheaper
+        # than losing the name and leaving the tab on the folder placeholder.
+        messages += [{"role": "assistant", "content": retry_of},
+                     {"role": "user", "content": "That is not a valid answer. Reply with KEEP, "
+                                                 "or NONE, or a label of at most three words — "
+                                                 "the answer alone, nothing else."}]
     body = json.dumps({
         "model": MODEL,
         "max_tokens": 24,
         "temperature": 0,
         "stream": False,   # the gateway streams SSE by default, which is not JSON
-        "messages": [{"role": "system", "content": PROMPT},
-                     {"role": "user", "content": text}],
+        "messages": messages,
     }).encode("utf-8")
     req = urllib.request.Request(API, body, {"Content-Type": "application/json",
                                              "Authorization": "Bearer local"})
@@ -127,18 +149,25 @@ def main():
         os.dup2(null, fd)
 
     try:
-        name = clean(ask(current, prompt[:2000]))
+        raw = ask(current, prompt[:2000])
+        name = clean(raw)
+        if not name and (raw or "").strip().upper() not in ("KEEP", "NONE"):
+            raw = ask(current, prompt[:2000], retry_of=raw)   # answer was malformed
+            name = clean(raw)
     except Exception:
+        note(session, current, prompt, None, "fail")
         mark(session, "fail")                     # lets the assistant fall back in
         os._exit(0)
     if not name or name == current:
         # KEEP, or nothing nameable yet. Either way the tab stays as it is and
         # the question gets asked again on the next prompt.
+        note(session, current, prompt, raw, "keep" if current else "none")
         mark(session, "ok" if current else "none")
         os._exit(0)
     try:
         with open(name_file, "w", encoding="utf-8") as f:
             f.write(name + "\n")
+        note(session, current, prompt, raw, "set " + name)
         mark(session, "ok")
     except OSError:
         pass
