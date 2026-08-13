@@ -63,7 +63,7 @@ cyan "claude-addons installer"
 echo
 
 # --- tab-status ---
-cyan "[1/6] tab-status (colored dot on VS Code terminal tabs)"
+cyan "[1/7] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
@@ -101,7 +101,7 @@ fi
 echo
 
 # --- skill-tab-name ---
-cyan "[2/6] skill-tab-name (Claude picks tab names automatically)"
+cyan "[2/7] skill-tab-name (Claude picks tab names automatically)"
 if confirm "Install the \`tab-name\` skill?"; then
   mkdir -p "$CLAUDE_DIR/skills/tab-name"
   cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
@@ -125,7 +125,7 @@ fi
 echo
 
 # --- skill-design-in-browser ---
-cyan "[3/6] skill-design-in-browser (design UI in the browser before coding)"
+cyan "[3/7] skill-design-in-browser (design UI in the browser before coding)"
 if confirm "Install the `design-in-browser` skill?"; then
   mkdir -p "$CLAUDE_DIR/skills/design-in-browser"
   cp "$ROOT/skill-design-in-browser/SKILL.md" "$CLAUDE_DIR/skills/design-in-browser/SKILL.md"
@@ -137,7 +137,7 @@ fi
 echo
 
 # --- statusline-gsd ---
-cyan "[4/6] statusline-gsd (model + task + context bar + plan usage at bottom)"
+cyan "[4/7] statusline-gsd (model + task + context bar + plan usage at bottom)"
 if confirm "Install GSD statusline?"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   green "    copied gsd-statusline.js → ~/.claude/"
@@ -153,7 +153,7 @@ if confirm "Install GSD statusline?"; then
 fi
 
 # --- fable-plan ---
-cyan "[5/6] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
+cyan "[5/7] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
 if confirm "Install fable-plan?"; then
   if grep -q "alias fplan=" "$ZSHRC" 2>/dev/null; then
     dim "    fplan alias already in ~/.zshrc, skipping"
@@ -169,7 +169,7 @@ fi
 echo
 
 # --- sticky-prompt ---
-cyan "[6/6] sticky-prompt (the message you sent pinned to the top of the terminal)"
+cyan "[6/7] sticky-prompt (the message you sent pinned to the top of the terminal)"
 if confirm "Install sticky-prompt?"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/sticky-prompt/sticky-claude" "$CLAUDE_DIR/scripts/sticky-claude"
@@ -196,6 +196,64 @@ if confirm "Install sticky-prompt?"; then
   dim "    marks the message block in Claude's own output, so the marks land on it"
   dim "    \`command claude\` still runs Claude Code directly, without the wrapper"
   dim "    requires VS Code shell integration + terminal sticky scroll (both on by default)"
+fi
+
+echo
+
+# --- multi-model ---
+cyan "[7/7] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
+if confirm "Install multi-model?"; then
+  if ! command -v brew >/dev/null 2>&1; then
+    dim "    Homebrew not found — multi-model needs it to install the proxy. Skipping."
+  else
+    BREW_PREFIX="$(brew --prefix)"
+    PROXY_CONF="$BREW_PREFIX/etc/cliproxyapi.conf"
+    PROXY_AUTH_DIR="$HOME/.cli-proxy-api"
+
+    if brew list cliproxyapi >/dev/null 2>&1; then
+      dim "    cliproxyapi already installed"
+    else
+      brew install cliproxyapi
+      green "    installed cliproxyapi"
+    fi
+
+    mkdir -p "$PROXY_AUTH_DIR"
+    if [ ! -f "$PROXY_AUTH_DIR/local-key" ]; then
+      head -c 24 /dev/urandom | base64 | tr -d '/+=' | cut -c1-32 > "$PROXY_AUTH_DIR/local-key"
+      chmod 600 "$PROXY_AUTH_DIR/local-key"
+      green "    generated a local proxy key → ~/.cli-proxy-api/local-key"
+    else
+      dim "    reusing the existing local proxy key"
+    fi
+
+    backup "$PROXY_CONF"
+    sed "s|__LOCAL_KEY__|$(cat "$PROXY_AUTH_DIR/local-key")|" \
+      "$ROOT/multi-model/config.template.yaml" > "$PROXY_CONF"
+    green "    wrote proxy config → $PROXY_CONF (127.0.0.1 only)"
+
+    mkdir -p "$CLAUDE_DIR/scripts"
+    cp "$ROOT/multi-model/ccx" "$CLAUDE_DIR/scripts/ccx"
+    cp "$ROOT/multi-model/ccx-models.py" "$CLAUDE_DIR/scripts/ccx-models.py"
+    chmod +x "$CLAUDE_DIR/scripts/ccx"
+    green "    copied ccx + ccx-models.py → ~/.claude/scripts/"
+
+    if grep -q "claude-addons: multi-model" "$ZSHRC" 2>/dev/null; then
+      dim "    ~/.zshrc already wired up, skipping"
+    elif confirm "Point \`claude\` at the multi-model launcher in ~/.zshrc?"; then
+      backup "$ZSHRC"
+      # sticky-prompt aliases claude to its own wrapper; ours calls that
+      # wrapper underneath, so the later alias has to win.
+      sed -i.tmp '/^alias claude=.*sticky-claude"$/d' "$ZSHRC" && rm -f "$ZSHRC.tmp"
+      cat "$ROOT/multi-model/zshrc.snippet" >> "$ZSHRC"
+      green "    \`claude\` now shows every provider's models (run \`source ~/.zshrc\` to load)"
+      dim "    turn it off any time with \`ccx off\`, back on with \`ccx on\`"
+    fi
+
+    brew services start cliproxyapi >/dev/null 2>&1 || true
+    green "    started the proxy (loopback only, key required)"
+    dim "    next: run \`ccx --login\`, finish each sign-in in the browser, then \`ccx --refresh\`"
+    dim "    \`claude\` itself is untouched and keeps its own login"
+  fi
 fi
 
 echo

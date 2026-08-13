@@ -11,6 +11,7 @@
 | [**skill-design-in-browser**](./skill-design-in-browser) | סקיל ל‑Claude Code שמעצב UI בדפדפן לפני נגיעה בקוד: בונה mockup HTML עצמאי עם 2–3 גרסאות בלשוניות, פותח בדפדפן לאיטרציה, ומיישם ל‑React/וכו׳ רק אחרי שאתה מאשר. משתמש ב‑impeccable או בכל סקיל UI/UX אם מותקן. |
 | [**statusline-gsd**](./statusline-gsd) | משתיל את ה‑statusline של [פרויקט GSD](https://github.com/gsd-build/get-shit-done) — שם המודל, המשימה הנוכחית, ומד ניצול הקונטקסט בתחתית כל סשן של Claude — בתוספת מקומית של ניצול התוכנית כמו `/usage`: סשן 5 שעות (+זמן לאיפוס), שבועי, ושבועי פר‑מודל (Fable). |
 | [**sticky-prompt**](./sticky-prompt) | תיבת ההודעה שלך עצמה ננעצת בראש הטרמינל של VS Code, במקום פקודת ה‑shell שפתחה את הסשן. גוללים מעל ההודעה האחרונה והנעוץ הופך לזו שמעליה; לחיצה עליו קופצת חזרה להודעה. עוטף שמריץ את Claude מאחורי פסאודו‑טרמינל ומזריק סימונים לתוך הפלט שלו. |
+| [**multi-model**](./multi-model) | מריץ את Claude Code — עם הסקילים, ההוקים והכלים שלך — על המודלים של המנויים האחרים שלך: ChatGPT/Codex, Grok, ו‑Antigravity של גוגל. התחברות דרך המנוי בלבד (OAuth בדפדפן), בלי שום מפתח API. `claude` עצמו הוא נקודת הכניסה, ומתג (`ccx on` / `ccx off`, דלוק כברירת מחדל) קובע אם הסשן עובר דרך שרת מקומי שמאזין רק ל‑127.0.0.1; אם השרת לא זמין הסשן נפתח בדרך הרגילה במקום להיכשל. תפריט `/model` מציג רק את הדור הנוכחי של כל קו מודלים — אופוס אחד, סונט אחד, Gemini Pro אחד, גרוק אחד — מקובצים קלוד ← ChatGPT ← Antigravity ← גרוק. אין רשימת מודלים קשיחה: גרסה חדשה נכנסת לבד והישנה נעלמת. ברירת המחדל וה‑effort נזכרים כרגיל, בזוג נפרד משלו, וגודל הקונטקסט נלקח מהספק עצמו (Gemini 1M, גרוק 500k) במקום מ‑200k שמונחים כברירת מחדל. כשהמתג כבוי `claude` מתנהג בדיוק כמו קודם. |
 | [**fable-plan**](./fable-plan) | מצב מודל היברידי: Fable 5 מתכנן (plan mode, קונטקסט 1M), Sonnet 5 מבצע. alias בשם `fplan` שפותח סשן `opusplan` עם פייבל במקום אופוס — תחום לסשן בלבד, לא נוגע בשאר. |
 
 כולם עצמאיים — אפשר להתקין כל שילוב. אין ביניהם תלויות קשיחות, אבל `skill-tab-name` כן משתמש ב‑CLI בשם `tn` שמותקן ע"י `tab-status`, אז הוא הכי שימושי כששניהם מותקנים.
@@ -50,7 +51,9 @@ cd claude-addons
 │   ├── tab-watcher.sh         ← from tab-status/
 │   ├── tn                     ← from tab-status/
 │   ├── tab-dots-selftest.sh   ← from tab-status/
-│   └── sticky-claude          ← from sticky-prompt/
+│   ├── sticky-claude          ← from sticky-prompt/
+│   ├── ccx                    ← from multi-model/
+│   └── ccx-models.py          ← from multi-model/
 ├── skills/tab-name/
 │   └── SKILL.md               ← from skill-tab-name/
 ├── gsd-statusline.js          ← from statusline-gsd/
@@ -60,6 +63,9 @@ cd claude-addons
 ~/.zshrc                       ← optional `tn` shell wrapper appended
 ~/Library/Application Support/Code/User/settings.json
                                ← terminal.integrated.tabs.title added
+
+$(brew --prefix)/etc/cliproxyapi.conf   ← from multi-model/ (loopback only)
+~/.cli-proxy-api/                       ← multi-model provider logins + local key
 ```
 
 ## רישיון

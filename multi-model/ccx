@@ -1,0 +1,422 @@
+#!/bin/bash
+# ccx — Claude Code, running on your other subscriptions' models.
+#
+# Starts the ordinary Claude Code harness (same settings, skills, hooks, tools,
+# permissions, history) but points it at a local CLIProxyAPI bound to
+# 127.0.0.1, which talks to Codex / xAI / Antigravity / Claude / Kimi using
+# OAuth logins from your existing subscriptions. No API keys anywhere.
+#
+# Plain `claude` is untouched and keeps its own login and its own default model.
+
+set -euo pipefail
+
+PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
+BIN="$PREFIX/opt/cliproxyapi/bin/cliproxyapi"
+CONF="$PREFIX/etc/cliproxyapi.conf"
+AUTH_DIR="$HOME/.cli-proxy-api"
+KEY_FILE="$AUTH_DIR/local-key"
+CATALOGUE="$AUTH_DIR/ccx-catalogue.json"
+MODELS_PY="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/ccx-models.py"
+PORT=8317
+BASE="http://127.0.0.1:$PORT"
+
+# Claude Code keeps the model and effort you chose last in its user settings.
+# That file is shared with plain `claude`, and a proxy-only model left there
+# breaks it ("There's an issue with the selected model"). So ccx keeps its own
+# pair, swaps them in for the session, and hands yours back on the way out.
+SETTINGS="$HOME/.claude/settings.json"
+CCX_DEFAULTS="$AUTH_DIR/ccx-defaults.json"
+STASH="$AUTH_DIR/claude-defaults.stash.json"
+
+# When `claude` itself is routed through here, this decides whether a session
+# goes through the proxy or straight to Anthropic. Missing file means on.
+MODE_FILE="$AUTH_DIR/ccx-mode"
+mode_on() { [ "$(cat "$MODE_FILE" 2>/dev/null || echo on)" != "off" ]; }
+
+red()  { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+dim()  { printf '\033[2m%s\033[0m\n' "$*" >&2; }
+cyan() { printf '\033[36m%s\033[0m\n' "$*" >&2; }
+
+usage() {
+  cat >&2 <<'USAGE'
+ccx — Claude Code on your other subscriptions
+
+  ccx                        launch; /model remembers your last pick, as usual
+  ccx MODEL                  launch with MODEL as the default from now on
+  ccx -l | --list            models the menu shows right now
+  ccx --list --all           every model the proxy reaches, hidden ones marked
+  ccx --refresh              re-apply the current-generation filter
+  ccx --agents               rewrite the per-provider subagents
+  ccx --login [PROVIDER]     OAuth sign-in. PROVIDER: claude codex xai
+                             antigravity kimi. Omit to be asked for each.
+  ccx --logout PROVIDER      forget that provider's sign-in, so the next
+                             --login can use a different account
+  ccx on | off | mode        whether plain `claude` uses the other providers
+  ccx --status               proxy + per-provider login status
+  ccx --update               update the proxy, restart it
+  ccx --restart              restart the proxy
+  ccx ... -- ARGS            everything after -- is passed to claude
+
+The menu lists only the current generation of each model line — one Opus, one
+Sonnet, one Gemini Pro, one Grok — in provider order: Claude, ChatGPT,
+Antigravity, Grok. Superseded versions are hidden as new ones appear.
+USAGE
+}
+
+require_key() {
+  [ -f "$KEY_FILE" ] || { red "No local proxy key at $KEY_FILE — run the claude-addons installer."; return 1; }
+  KEY="$(cat "$KEY_FILE")"
+}
+
+proxy_up() { curl -s -m 3 -o /dev/null "$BASE/v1/models" 2>/dev/null; }
+
+ensure_proxy() {
+  proxy_up && return 0
+  dim "starting cliproxyapi…"
+  brew services start cliproxyapi >/dev/null 2>&1 || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 1
+    proxy_up && return 0
+  done
+  red "Proxy did not come up on $BASE."
+  red "Check:  brew services info cliproxyapi   and   tail -f $AUTH_DIR/logs/main.log"
+  return 1
+}
+
+# Anthropic shape, because only that one carries display names — and the
+# version shown there is the one that decides what the menu keeps.
+fetch_models() {
+  curl -s -m 10 -H "x-api-key: $KEY" -H "anthropic-version: 2023-06-01" \
+       "$BASE/v1/models?limit=1000"
+}
+
+models_py() { fetch_models | python3 "$MODELS_PY" "$@"; }
+
+# Teaches the proxy which models to stop offering, so the menu Claude Code
+# discovers is already trimmed. A no-op once it matches.
+sync_filter() {
+  local r
+  r="$(fetch_models | python3 "$MODELS_PY" sync "$CONF" "$CATALOGUE")"
+  if [ "$r" = "changed" ]; then
+    dim "model list changed — re-applying the current-generation filter"
+    sleep 2   # the proxy reloads its config on change
+  fi
+}
+
+# A full rebuild. Hidden models are absent from the proxy's list, so the only
+# way to see the real catalogue again is to drop the filter first and let the
+# proxy reload before asking.
+refresh_filter() {
+  if [ "$(python3 "$MODELS_PY" clear "$CONF")" = "changed" ]; then
+    # Restart rather than wait out a reload. Reading the list while the proxy
+    # is still half-way through picking up the cleared config seeds an
+    # incomplete catalogue, and models that should have been reconsidered
+    # quietly stay hidden.
+    dim "rebuilding the model list…"
+    brew services restart cliproxyapi >/dev/null 2>&1 || true
+    for _ in $(seq 1 20); do sleep 1; proxy_up && break; done
+  fi
+  rm -f "$CATALOGUE"
+  sync_filter
+  write_agents
+}
+
+# One subagent per non-Claude provider, so you can hand a job to GPT, Gemini or
+# Grok from inside an ordinary session and watch it run in the agents panel.
+AGENT_DIR="$HOME/.claude/agents"
+write_agents() {
+  fetch_models | python3 "$MODELS_PY" agents "$AGENT_DIR" | while read -r l; do dim "  agent $l"; done
+}
+
+# --- default model / effort handoff --------------------------------------
+json_get() { python3 -c "
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: d={}
+print(json.dumps({k:d[k] for k in ('model','effortLevel') if k in d}))
+" "$1"; }
+
+json_apply() { python3 -c "
+import json,sys
+path,incoming=sys.argv[1],json.loads(sys.argv[2])
+try: d=json.load(open(path))
+except Exception: d={}
+for k in ('model','effortLevel'):
+    d.pop(k,None)
+    if k in incoming: d[k]=incoming[k]
+json.dump(d,open(path,'w'),indent=2)
+" "$1" "$2"; }
+
+# The stash records which process is holding your settings. A session killed
+# outright never runs its handback, and without an owner check that orphaned
+# stash would make every later session decline to restore — leaving a proxy
+# model sitting in the shared settings for good.
+stash_owner_alive() {
+  local pid
+  pid="$(python3 -c "
+import json,sys
+try: print(json.load(open(sys.argv[1])).get('_ccx_pid') or '')
+except Exception: pass" "$STASH" 2>/dev/null)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+OWNS_STASH=0
+swap_in() {
+  [ -f "$SETTINGS" ] || return 0
+  if [ -f "$STASH" ] && stash_owner_alive; then
+    dim "another ccx session is running — leaving the shared defaults to it"
+  elif [ -f "$STASH" ]; then
+    # Left behind by a session that was killed. Its copy of your settings is
+    # the good one — the live file still holds whatever that session was using.
+    dim "recovering the defaults a previous session left behind"
+    python3 -c "
+import json,os,sys
+p=sys.argv[1]
+d=json.load(open(p)); d['_ccx_pid']=int(sys.argv[2])
+json.dump(d,open(p,'w'))" "$STASH" "$$"
+    OWNS_STASH=1
+  else
+    json_get "$SETTINGS" | python3 -c "
+import json,sys
+d=json.load(sys.stdin); d['_ccx_pid']=int(sys.argv[1])
+print(json.dumps(d))" "$$" > "$STASH"
+    OWNS_STASH=1
+  fi
+  local mine='{}'
+  [ -s "$CCX_DEFAULTS" ] && mine="$(cat "$CCX_DEFAULTS")"
+  json_apply "$SETTINGS" "$mine"
+}
+
+swap_out() {
+  [ -f "$SETTINGS" ] || return 0
+  # Whatever the session settled on becomes ccx's default next time.
+  json_get "$SETTINGS" > "$CCX_DEFAULTS"
+  if [ "$OWNS_STASH" = 1 ] && [ -f "$STASH" ]; then
+    json_apply "$SETTINGS" "$(cat "$STASH")"
+    rm -f "$STASH"
+  fi
+}
+
+# The real Claude Code, behind the sticky-prompt wrapper when it is installed.
+launch_claude() {
+  if [ -x "$HOME/.claude/scripts/sticky-claude" ]; then
+    "$HOME/.claude/scripts/sticky-claude" "$@"
+  else
+    command claude "$@"
+  fi
+}
+
+do_login() {
+  local p="${1:-}" flag
+  case "$p" in
+    claude)      flag="-claude-login" ;;
+    codex|gpt)   flag="-codex-login" ;;
+    xai|grok)    flag="-xai-login" ;;
+    antigravity|google|gemini) flag="-antigravity-login" ;;
+    kimi)        flag="-kimi-login" ;;
+    *) red "unknown provider '$p' (claude codex xai antigravity kimi)"; exit 1 ;;
+  esac
+  cyan "→ $p: a browser window will open. Finish the sign-in there."
+  "$BIN" -config "$CONF" "$flag"
+}
+
+# ---- argument handling -------------------------------------------------
+CLAUDE_ARGS=()
+MODELS=()
+LIST_ARGS=()
+CMD=run
+
+AS_CLAUDE=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --as-claude) AS_CLAUDE=1; shift ;;
+    on|off)    CMD=mode; MODES="$1"; shift ;;
+    mode)      CMD=mode; MODES=""; shift ;;
+    -l|--list) CMD=list; shift ;;
+    --all)     LIST_ARGS+=(--all); shift ;;
+    --refresh) CMD=refresh; shift ;;
+    --agents)  CMD=agents; shift ;;
+    --status)  CMD=status; shift ;;
+    --update)  CMD=update; shift ;;
+    --restart) CMD=restart; shift ;;
+    --logout)  CMD=logout; shift
+               if [ $# -gt 0 ] && [ "${1:0:1}" != "-" ]; then MODELS=("$1"); shift; fi ;;
+    --login)   CMD=login; shift
+               if [ $# -gt 0 ] && [ "${1:0:1}" != "-" ]; then MODELS=("$1"); shift; fi ;;
+    --)        shift; CLAUDE_ARGS=("$@"); break ;;
+    -*)        red "unknown option $1"; usage; exit 1 ;;
+    *)         MODELS+=("$1"); shift ;;
+  esac
+done
+
+case "$CMD" in
+  mode)
+    if [ -n "${MODES:-}" ]; then
+      printf '%s\n' "$MODES" > "$MODE_FILE"
+      if [ "$MODES" = off ]; then
+        cyan "multi-model: OFF — \`claude\` now goes straight to Anthropic, Claude models only"
+      else
+        cyan "multi-model: ON — \`claude\` now shows every provider's models"
+      fi
+    else
+      mode_on && cyan "multi-model: ON" || cyan "multi-model: OFF"
+    fi
+    exit 0 ;;
+  update)
+    brew update >/dev/null 2>&1 || true
+    brew upgrade cliproxyapi || dim "already at the newest version"
+    brew services restart cliproxyapi
+    require_key || exit 1; ensure_proxy || exit 1; sync_filter
+    cyan "$("$BIN" -h 2>&1 | head -1)"
+    exit 0 ;;
+  restart)
+    brew services restart cliproxyapi; exit 0 ;;
+  refresh)
+    require_key || exit 1; ensure_proxy || exit 1; refresh_filter
+    cyan "filter rebuilt"; models_py list; exit 0 ;;
+  agents)
+    require_key || exit 1; ensure_proxy || exit 1; write_agents
+    cyan "subagents written to $AGENT_DIR"; exit 0 ;;
+  logout)
+    [ ${#MODELS[@]} -gt 0 ] || { red "which provider? e.g. ccx --logout antigravity"; exit 1; }
+    case "${MODELS[0]}" in
+      claude) pat=claude ;; codex|gpt) pat=codex ;; xai|grok) pat=xai ;;
+      antigravity|google|gemini) pat=antigravity ;; kimi) pat=kimi ;;
+      *) red "unknown provider '${MODELS[0]}'"; exit 1 ;;
+    esac
+    found=0
+    for f in "$AUTH_DIR/$pat"*.json; do
+      [ -e "$f" ] || continue
+      mv "$f" "$f.removed.$(date +%Y-%m-%d-%H%M%S)"
+      cyan "forgot: $(basename "$f")"
+      found=1
+    done
+    [ $found = 1 ] || dim "nothing was signed in for ${MODELS[0]}"
+    dim "the old file was renamed, not deleted — delete it yourself once the new sign-in works"
+    dim "now run:  ccx --login ${MODELS[0]}"
+    exit 0 ;;
+  login)
+    require_key || exit 1
+    if [ ${#MODELS[@]} -gt 0 ]; then
+      do_login "${MODELS[0]}"
+    else
+      for p in claude codex xai antigravity; do
+        read -r -p "  sign in to $p? [y/N] " a </dev/tty
+        case "$a" in y|Y) do_login "$p" ;; esac
+      done
+    fi
+    proxy_up && sync_filter
+    dim "auth files: $AUTH_DIR"
+    exit 0 ;;
+  status)
+    require_key || exit 1
+    mode_on && cyan "multi-model: ON  (\`claude\` uses every provider)" \
+             || cyan "multi-model: OFF (\`claude\` goes straight to Anthropic)"
+    if proxy_up; then cyan "proxy: up on $BASE"; else red "proxy: down"; fi
+    echo
+    # ccx keeps its own state next to the auth files; only the latter are logins.
+    ls -1 "$AUTH_DIR"/*.json 2>/dev/null | grep -v '/ccx-\|/claude-defaults' \
+      | sed 's|.*/|  logged in: |' \
+      || echo "  no provider logins yet — run: ccx --login"
+    [ -s "$CCX_DEFAULTS" ] && { echo; echo "  ccx default: $(cat "$CCX_DEFAULTS")"; }
+    if [ -f "$STASH" ]; then
+      if stash_owner_alive; then
+        echo "  a ccx session is running and is holding your shared defaults"
+      else
+        red "  a killed session left your shared defaults swapped out"
+        red "  run any ccx session, or ./uninstall.sh, to put them back"
+      fi
+    fi
+    echo
+    models_py list 2>/dev/null || true
+    exit 0 ;;
+  list)
+    require_key || exit 1; ensure_proxy || exit 1
+    models_py list ${LIST_ARGS[@]+"${LIST_ARGS[@]}"}
+    exit 0 ;;
+esac
+
+# ---- run ---------------------------------------------------------------
+
+# When `claude` itself routes through here, a broken proxy must never stop a
+# session starting — the whole point of the toggle is that the native path is
+# always there. So every step that can fail is allowed to fail, and we drop
+# through to plain Claude Code instead of exiting.
+setup_proxy_session() {
+  require_key          || return 1
+  ensure_proxy         || return 1
+  sync_filter          || true
+
+  CATALOGUE_JSON="$(fetch_models)" || return 1
+  [ -n "$CATALOGUE_JSON" ] || return 1
+
+  # A model named on the command line becomes the standing default, the same
+  # way picking one in /model does. Nothing forces the model per-session, so
+  # Claude Code's own "remember my last pick" behaviour is what drives it.
+  if [ ${#MODELS[@]} -gt 0 ]; then
+    printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" check "${MODELS[0]}" || return 1
+    python3 -c "
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: d={}
+d['model']=sys.argv[2]
+json.dump(d,open(sys.argv[1],'w'),indent=2)
+" "$CCX_DEFAULTS" "${MODELS[0]}"
+    cyan "default model set to ${MODELS[0]}"
+  fi
+
+  # Take the context size from the provider rather than letting Claude Code
+  # fall back to the 200k it assumes for every model it does not ship itself.
+  local current="" window=""
+  [ ${#MODELS[@]} -gt 0 ] && current="${MODELS[0]}"
+  if [ -z "$current" ] && [ -s "$CCX_DEFAULTS" ]; then
+    current="$(python3 -c "
+import json,sys
+try: print(json.load(open(sys.argv[1])).get('model') or '')
+except Exception: pass" "$CCX_DEFAULTS")"
+  fi
+  if [ -n "$current" ]; then
+    window="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" window "$current" || true)"
+    if [ -n "$window" ]; then
+      export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$window"
+      dim "context window: $((window / 1000))k (as reported for $current)"
+    fi
+  fi
+
+  export ANTHROPIC_BASE_URL="$BASE"
+  export ANTHROPIC_AUTH_TOKEN="$KEY"
+  # Let Claude Code pull the catalogue from the proxy itself, so the menu lists
+  # every model it can reach rather than a handful pushed in through slots.
+  export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
+  unset ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_MODEL
+  return 0
+}
+
+if [ "$AS_CLAUDE" = 1 ] && ! mode_on; then
+  launch_claude ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}
+  exit $?
+fi
+
+if [ "$AS_CLAUDE" = 1 ]; then
+  set +e
+  setup_proxy_session
+  ok=$?
+  set -e
+  if [ $ok -ne 0 ]; then
+    red "multi-model is on but the local proxy is not usable — starting plain Claude Code instead."
+    red "check it with:  ccx --status     turn this off with:  ccx off"
+    unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN \
+          CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY CLAUDE_CODE_MAX_CONTEXT_TOKENS
+    launch_claude ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}
+    exit $?
+  fi
+else
+  setup_proxy_session || exit 1
+fi
+
+swap_in
+trap swap_out EXIT INT TERM
+
+launch_claude ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}

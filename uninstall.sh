@@ -82,6 +82,31 @@ if [ -f "$VSCODE_SETTINGS" ]; then
   green "  reverted terminal.integrated.tabs.title + stickyScroll.maxLineCount in VS Code settings"
 fi
 
+# multi-model: remove the launcher and stop the proxy, but keep the OAuth
+# logins in ~/.cli-proxy-api — re-signing in to every provider is a real cost
+# to redo, and they are useless to anyone without the local key anyway.
+rm -f "$CLAUDE_DIR/scripts/ccx" "$CLAUDE_DIR/scripts/ccx-models.py"
+rm -f "$HOME/.cli-proxy-api/ccx-catalogue.json" "$HOME/.cli-proxy-api/ccx-defaults.json" "$HOME/.cli-proxy-api/ccx-mode"
+rm -f "$HOME/.claude/agents/ask-chatgpt.md" "$HOME/.claude/agents/ask-antigravity.md" "$HOME/.claude/agents/ask-grok.md" "$HOME/.claude/agents/ask-kimi.md"
+if command -v brew >/dev/null 2>&1 && brew list cliproxyapi >/dev/null 2>&1; then
+  brew services stop cliproxyapi >/dev/null 2>&1 || true
+  green "  removed ccx and stopped the model proxy"
+  dim "  the proxy itself is still installed: brew uninstall cliproxyapi"
+  dim "  provider logins kept at ~/.cli-proxy-api/ — delete that folder to sign out"
+  if [ -f "$HOME/.cli-proxy-api/claude-defaults.stash.json" ]; then
+    node -e '
+      const fs=require("fs"), s=process.env.HOME+"/.claude/settings.json", b=process.env.HOME+"/.cli-proxy-api/claude-defaults.stash.json";
+      const cfg=JSON.parse(fs.readFileSync(s,"utf8")), back=JSON.parse(fs.readFileSync(b,"utf8"));
+      for (const k of ["model","effortLevel"]) { delete cfg[k]; if (k in back) cfg[k]=back[k]; }
+      fs.writeFileSync(s, JSON.stringify(cfg,null,2)+"\n");
+    '
+    rm -f "$HOME/.cli-proxy-api/claude-defaults.stash.json"
+    green "  restored your own default model and effort into ~/.claude/settings.json"
+  fi
+else
+  green "  removed ccx"
+fi
+
 # Clean state dir
 rm -rf "$CLAUDE_DIR/terminal-state"
 green "  removed ~/.claude/terminal-state/"

@@ -1,0 +1,12 @@
+
+# claude-addons: multi-model — put ~/.claude/scripts on PATH so `ccx` is callable
+case ":$PATH:" in
+  *":$HOME/.claude/scripts:"*) ;;
+  *) export PATH="$HOME/.claude/scripts:$PATH" ;;
+esac
+
+# claude-addons: multi-model — `claude` shows every provider's models when the
+# toggle is on, and goes straight to Anthropic when it is off (`ccx off`).
+# If the local proxy is ever unusable this falls back to plain Claude Code
+# rather than failing to start.
+alias claude="$HOME/.claude/scripts/ccx --as-claude --"
