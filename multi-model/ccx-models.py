@@ -393,6 +393,9 @@ def main():
 
     if mode == "upgrade":
         wanted = sys.argv[2]
+        if wanted == "opusplan[1m]":
+            print(wanted)
+            return
         m = match(wanted)
         if not m:
             print(wanted.replace("[1m]", ""))
@@ -402,7 +405,11 @@ def main():
 
     if mode == "picker":
         seen = set()
-        options = []
+        options = [{
+            "model": "opusplan[1m]",
+            "label": "Fable Plan → Opus",
+            "description": "Fable plans, Opus executes · 1M context",
+        }]
         for m in order(models):
             if BLOCKED.search(m["name"]):
                 continue

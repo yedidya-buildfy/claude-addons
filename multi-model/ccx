@@ -445,6 +445,10 @@ json.dump(d,open(sys.argv[1],'w'),indent=2)
 
   export ANTHROPIC_BASE_URL="$BASE"
   export ANTHROPIC_AUTH_TOKEN="$KEY"
+  # The hybrid picker row uses Claude Code's built-in opusplan handoff: the
+  # Opus slot plans with Fable, then the Sonnet slot executes with Opus.
+  export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-fable-5[1m]"
+  export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-opus-5[1m]"
   # Let Claude Code pull the catalogue from the proxy itself, so the menu lists
   # every model it can reach rather than a handful pushed in through slots.
   export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1

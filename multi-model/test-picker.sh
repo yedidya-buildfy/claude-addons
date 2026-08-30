@@ -274,6 +274,8 @@ U=$(echo "$FAKE" | python3 ccx-models.py upgrade claude-haiku-4-5-20251001)
 [ "$U" = "claude-haiku-4-5-20251001" ] && say 1 "Haiku is not given a 1M form" || say 0 "Haiku upgrade wrong: '$U'"
 U=$(echo "$FAKE" | python3 ccx-models.py upgrade claude-grok-46)
 [ "$U" = "claude-grok-46[1m]" ] && say 1 "the client alias still maps back to Grok" || say 0 "alias upgrade wrong: '$U'"
+U=$(echo "$FAKE" | python3 ccx-models.py upgrade 'opusplan[1m]')
+[ "$U" = "opusplan[1m]" ] && say 1 "the hybrid keeps its 1M id across relaunches" || say 0 "hybrid upgrade wrong: '$U'"
 
 PICK=$(echo "$FAKE" | python3 ccx-models.py picker)
 echo "$PICK" | python3 -c "
@@ -286,8 +288,26 @@ assert 'claude-grok-46[1m]' in ids, ids
 assert 'claude-gemini-pro[1m]' in ids, ids
 assert 'claude-haiku-4-5-20251001' in ids, ids
 assert 'claude-haiku-4-5-20251001[1m]' not in ids, ids
-" && say 1 "the picker lists large-window ids with [1m] and Haiku without" \
+hybrid=p['options'][0]
+assert hybrid == {
+    'model': 'opusplan[1m]',
+    'label': 'Fable Plan → Opus',
+    'description': 'Fable plans, Opus executes · 1M context',
+}, hybrid
+" && say 1 "the picker lists large-window ids and the Fable-to-Opus hybrid" \
   || say 0 "the picker list is wrong"
+
+NOFABLE=$(python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+d['data']=[m for m in d['data'] if m.get('id') != 'claude-fable-5']
+print(json.dumps(d))" <<<"$FAKE")
+echo "$NOFABLE" | python3 ccx-models.py picker | python3 -c "
+import json,sys
+p=json.load(sys.stdin)
+assert p['options'][0]['model']=='opusplan[1m]', p
+" && say 1 "the hybrid stays in the picker when Fable is temporarily unavailable" \
+  || say 0 "the hybrid disappeared with Fable unavailable"
 
 echo
 [ $fail -eq 0 ] && echo "all checks passed" || { echo "FAILURES"; exit 1; }
