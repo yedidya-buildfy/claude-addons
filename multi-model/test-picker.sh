@@ -95,8 +95,8 @@ echo
 echo "providers keep their own identity despite the disguised ids:"
 LIST="$(echo "$FAKE" | python3 ccx-models.py list)"
 ORDER="$(grep -E '^(Claude|ChatGPT|Antigravity|Grok)$' <<<"$LIST" | tr '\n' ' ')"
-[ "$ORDER" = "Claude ChatGPT Antigravity Grok " ] \
-  && echo "  ok   Claude, ChatGPT, Antigravity, Grok" \
+[ "$ORDER" = "ChatGPT Antigravity Grok Claude " ] \
+  && echo "  ok   ChatGPT, Antigravity, Grok, Claude" \
   || { echo "  FAIL wrong grouping/order: $ORDER"; fail=1; }
 
 echo
@@ -164,6 +164,26 @@ assert d['model']=='opus[1m]', d
 assert d['effortLevel']=='xhigh', d
 assert d['other']==1, 'unrelated settings must survive'
 " "$TMPS" && say 1 "your own model, effort and other settings come back" || say 0 "your own model, effort and other settings come back"
+# The large-window picker is swapped in for the session and must not stay
+# behind for plain claude afterwards.
+python3 -c "
+import json,sys
+p, stash, picker = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+d=json.load(open(p))
+json.dump({k:d[k] for k in ('model','effortLevel','modelPicker') if k in d}, open(stash,'w'))
+d['modelPicker']=picker
+json.dump(d,open(p,'w'))
+back=json.load(open(stash))
+for k in ('model','effortLevel','modelPicker'):
+    d.pop(k,None)
+    if k in back: d[k]=back[k]
+json.dump(d,open(p,'w'))
+d=json.load(open(p))
+assert 'modelPicker' not in d, d
+assert d['other']==1
+" "$TMPS" "$STASHF" '{"replaceBuiltInOptions":true,"options":[{"model":"claude-grok-46[1m]","label":"Grok 4.6"}]}' \
+  && say 1 "the large-window picker is removed when the session ends" \
+  || say 0 "the large-window picker is removed when the session ends"
 rm -f "$TMPS" "$STASHF" "$MINE"
 
 echo "the toggle decides whether plain \`claude\` uses the proxy:"
@@ -214,12 +234,14 @@ W=$(echo "$FAKE" | python3 ccx-models.py window grok-4.6)
 [ "$W" = 500000 ] && say 1 "Grok reports 500k, not the assumed 200k" || say 0 "Grok window wrong: '$W'"
 W=$(echo "$FAKE" | python3 ccx-models.py window claude-haiku-4-5-20251001)
 [ "$W" = 200000 ] && say 1 "a genuinely-200k model still reads 200k" || say 0 "Haiku window wrong: '$W'"
-# A model with no reported size must produce nothing, so the launcher leaves
-# Claude Code to its own behaviour rather than exporting an empty setting.
+# When the provider omits a size, the family default is used so /model still
+# opens a large window instead of Claude Code's 200k guess.
 W=$(echo "$FAKE" | python3 ccx-models.py window gpt-5.5)
-[ -z "$W" ] && say 1 "a model with no reported size sets nothing" || say 0 "unreported size leaked: '$W'"
+[ "$W" = 921000 ] && say 1 "an unreported GPT size falls back to the family window" || say 0 "GPT family window wrong: '$W'"
 W=$(echo "$FAKE" | python3 ccx-models.py window not-a-model)
 [ -z "$W" ] && say 1 "an unknown model sets nothing" || say 0 "unknown model leaked: '$W'"
+W=$(echo "$FAKE" | python3 ccx-models.py window --max)
+[ "$W" = 1048576 ] && say 1 "the largest family window is Gemini's 1M" || say 0 "max window wrong: '$W'"
 
 echo
 echo "one subagent is written per non-Claude provider:"
@@ -230,15 +252,42 @@ for want in ask-chatgpt ask-antigravity ask-grok; do
 done
 [ -f "$AG/ask-claude.md" ] && say 0 "there must be no Claude agent — that is the main loop" \
                            || say 1 "no pointless Claude agent"
-grep -q "^model: grok-4.6$" "$AG/ask-grok.md" && say 1 "pinned to the current model id" || say 0 "pinned to the current model id"
+grep -q "^model: claude-grok-46\[1m\]$" "$AG/ask-grok.md" && say 1 "pinned to the current model id" || say 0 "pinned to the current model id"
 grep -q "^name: ask-grok$" "$AG/ask-grok.md" && say 1 "front matter is real YAML, not escaped text" || say 0 "front matter is real YAML, not escaped text"
 grep -q '\\n' "$AG/ask-grok.md" && say 0 "literal escape sequences leaked into the file" || say 1 "no literal escape sequences"
 # A provider's fast tier can be a generation ahead of its heavy tier; the newer
 # model is the one the agent should run on.
-grep -q "^model: gemini-3.6-flash-high$" "$AG/ask-antigravity.md" \
+grep -q "^model: gemini-3.6-flash-high\[1m\]$" "$AG/ask-antigravity.md" \
   && say 1 "picks the newest model, even when it is the fast tier (3.6 Flash over 3.1 Pro)" \
   || say 0 "picks the newest model (got: $(grep '^model:' "$AG/ask-antigravity.md"))"
 rm -rf "$AG"
+
+echo
+echo "a /model pick keeps the suffix that opens the large window:"
+U=$(echo "$FAKE" | python3 ccx-models.py upgrade grok-4.6)
+[ "$U" = "claude-grok-46[1m]" ] && say 1 "Grok 500k is listed with [1m]" || say 0 "Grok upgrade wrong: '$U'"
+U=$(echo "$FAKE" | python3 ccx-models.py upgrade gemini-pro-agent)
+[ "$U" = "claude-gemini-pro[1m]" ] && say 1 "Gemini Pro is listed with [1m]" || say 0 "Gemini upgrade wrong: '$U'"
+U=$(echo "$FAKE" | python3 ccx-models.py upgrade claude-opus-5)
+[ "$U" = "claude-opus-5[1m]" ] && say 1 "Opus without a reported size still gets [1m]" || say 0 "Opus upgrade wrong: '$U'"
+U=$(echo "$FAKE" | python3 ccx-models.py upgrade claude-haiku-4-5-20251001)
+[ "$U" = "claude-haiku-4-5-20251001" ] && say 1 "Haiku is not given a 1M form" || say 0 "Haiku upgrade wrong: '$U'"
+U=$(echo "$FAKE" | python3 ccx-models.py upgrade claude-grok-46)
+[ "$U" = "claude-grok-46[1m]" ] && say 1 "the client alias still maps back to Grok" || say 0 "alias upgrade wrong: '$U'"
+
+PICK=$(echo "$FAKE" | python3 ccx-models.py picker)
+echo "$PICK" | python3 -c "
+import json,sys
+p=json.load(sys.stdin)
+assert p.get('replaceBuiltInOptions') is True, p
+ids=[r['model'] for r in p['options']]
+assert any(i.endswith('[1m]') for i in ids), ids
+assert 'claude-grok-46[1m]' in ids, ids
+assert 'claude-gemini-pro[1m]' in ids, ids
+assert 'claude-haiku-4-5-20251001' in ids, ids
+assert 'claude-haiku-4-5-20251001[1m]' not in ids, ids
+" && say 1 "the picker lists large-window ids with [1m] and Haiku without" \
+  || say 0 "the picker list is wrong"
 
 echo
 [ $fail -eq 0 ] && echo "all checks passed" || { echo "FAILURES"; exit 1; }

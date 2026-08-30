@@ -53,7 +53,9 @@ cd claude-addons
 │   ├── tab-dots-selftest.sh   ← from tab-status/
 │   ├── sticky-claude          ← from sticky-prompt/
 │   ├── ccx                    ← from multi-model/
-│   └── ccx-models.py          ← from multi-model/
+│   ├── ccx-models.py          ← from multi-model/
+│   ├── ccx-rewrite.js         ← from multi-model/
+│   └── sanitize-schema.js     ← from multi-model/
 ├── skills/tab-name/
 │   └── SKILL.md               ← from skill-tab-name/
 ├── gsd-statusline.js          ← from statusline-gsd/

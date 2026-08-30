@@ -56,11 +56,11 @@ BLOCKED = re.compile(
 TIERS = ["opus", "sonnet", "haiku", "fable", "pro", "flash"]
 
 PROVIDERS = [
-    ("Claude", re.compile(r"claude", re.I)),
     ("ChatGPT", re.compile(r"(gpt|codex)", re.I)),
     ("Antigravity", re.compile(r"gemini", re.I)),
     ("Grok", re.compile(r"grok", re.I)),
     ("Kimi", re.compile(r"kimi", re.I)),
+    ("Claude", re.compile(r"claude", re.I)),
 ]
 
 # owned_by value -> the proxy's name for that sign-in channel
@@ -73,6 +73,42 @@ CHANNELS = {
 }
 
 BLOCK_KEY = "oauth-excluded-models"
+
+# Client-facing ids must be short claude-* tokens or Claude Code's /model
+# picker drops them. Keep this in sync with oauth-model-alias in the proxy config.
+CLIENT_ALIASES = {
+    "gemini-3.7-flash-high": "claude-gemini-flash",
+    "gemini-pro-agent": "claude-gemini-pro",
+    "grok-4.6": "claude-grok-46",
+    "gpt-5.6-sol": "claude-gpt-sol",
+    "gpt-5.6-terra": "claude-gpt-terra",
+    "gpt-5.6-luna": "claude-gpt-luna",
+}
+
+# Claude Code only understands 200k vs 1M for claude-* ids, and only the
+# [1m] suffix opens the large window. The live proxy list often omits
+# max_input_tokens, so family sizes fill in when the provider is silent.
+FAMILY_WINDOWS = (
+    ("haiku", 200_000),
+    ("gemini", 1_048_576),
+    ("grok", 500_000),
+    ("gpt", 921_000),
+    ("codex", 921_000),
+    ("claude", 1_000_000),
+)
+
+ALIAS_LABELS = {
+    "claude-gemini-flash": "Gemini 3.7 Flash",
+    "claude-gemini-pro": "Gemini 3.1 Pro",
+    "claude-grok-46": "Grok 4.6",
+    "claude-gpt-sol": "GPT 5.6 Sol",
+    "claude-gpt-terra": "GPT 5.6 Terra",
+    "claude-gpt-luna": "GPT 5.6 Luna",
+    "claude-fable-5": "Claude Fable 5",
+    "claude-opus-5": "Claude Opus 5",
+    "claude-sonnet-5": "Claude Sonnet 5",
+    "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
+}
 
 AGENT_TEMPLATE = """---
 name: {slug}
@@ -97,7 +133,69 @@ def plain_id(mid):
     return mid.split(CLOAK, 1)[1][::-1] if CLOAK in mid else mid
 
 
-def provider_of(text):
+def blob_of(m):
+    return " ".join(p for p in (m.get("name"), m.get("id"), m.get("raw_id")) if p)
+
+
+def listed_id(m):
+    """The short claude-* id the client should send, never a disguised token."""
+    alias = CLIENT_ALIASES.get(m["id"])
+    if alias:
+        return alias
+    rid = m.get("raw_id") or m["id"]
+    if CLOAK in str(rid):
+        return CLIENT_ALIASES.get(plain_id(rid), m["id"])
+    return rid
+
+
+def is_haiku(m):
+    return "haiku" in blob_of(m).lower()
+
+
+def guessed_window(m):
+    if m.get("window"):
+        return int(m["window"])
+    low = blob_of(m).lower()
+    for word, size in FAMILY_WINDOWS:
+        if word in low:
+            return size
+    if m.get("provider") == "Claude":
+        return 1_000_000
+    return None
+
+
+def max_id(m):
+    """Id that makes Claude Code use this model's largest usable window.
+
+    For claude-* names the only per-model switch is the [1m] suffix (1M vs
+    200k). Anything above 200k therefore gets the suffix, except Haiku.
+    """
+    listed = listed_id(m).replace("[1m]", "")
+    win = guessed_window(m)
+    if win and win > 200_000 and not is_haiku(m):
+        return listed + "[1m]"
+    return listed
+
+
+def label_of(m):
+    listed = listed_id(m).replace("[1m]", "")
+    if listed in ALIAS_LABELS:
+        return ALIAS_LABELS[listed]
+    name = m.get("name") or ""
+    if name and " " in name:
+        return name
+    pretty = re.sub(r"-\d{8}$", "", listed)
+    return pretty.replace("-", " ").title()
+
+
+def window_label(win):
+    if win >= 1_000_000:
+        return "1M context"
+    return "%dk context" % (win // 1000)
+
+
+def provider_of(*parts):
+    text = " ".join(p for p in parts if p)
     for name, pat in PROVIDERS:
         if pat.search(text):
             return name
@@ -137,13 +235,14 @@ def load():
         out.append(
             {
                 "id": plain_id(mid),
+                "raw_id": mid,
                 "name": name,
                 "channel": CHANNELS.get(m.get("owned_by", ""), m.get("owned_by", "")),
                 # Named off the display name only. The disguised ids all begin
                 # with a Claude prefix, so reading them here would file every
                 # provider's models under Claude and collapse the families
                 # into one -- which silently drops whole providers.
-                "provider": provider_of(name),
+                "provider": provider_of(name, plain_id(mid), mid),
                 "tier": tier_of(name),
                 "version": version_of(name),
                 # Each provider reports its own context size. Claude Code only
@@ -225,6 +324,13 @@ def remember(path, live):
     except Exception:
         known = {}
     for m in live:
+        old = known.get(slot(m))
+        if old:
+            if not m.get("window") and old.get("window"):
+                m = dict(m, window=old["window"])
+            old_name, new_name = old.get("name") or "", m.get("name") or ""
+            if old_name and (not new_name or new_name == m["id"]):
+                m = dict(m, name=old_name)
         known[slot(m)] = m
     with open(path, "w") as fh:
         json.dump(sorted(known.values(), key=lambda m: (m["channel"], m["id"])), fh, indent=1)
@@ -252,20 +358,66 @@ def main():
 
     keep = frontier(models)
 
+    def match(wanted):
+        key = wanted.replace("[1m]", "")
+        if CLOAK in key:
+            key = plain_id(key)
+        key = CLIENT_ALIASES.get(key, key)
+        for m in models:
+            if m["id"] == key or plain_id(m["id"]) == key or m.get("raw_id") == key:
+                return m
+            if listed_id(m) == key or CLIENT_ALIASES.get(m["id"]) == key:
+                return m
+        return None
+
     if mode == "check":
         wanted = sys.argv[2]
-        if wanted in {m["id"] for m in models}:
+        if match(wanted):
             sys.exit(0)
         sys.stderr.write("the proxy cannot reach %r -- run  ccx --list\n" % wanted)
         sys.exit(2)
 
     if mode == "window":
         wanted = sys.argv[2]
-        for m in models:
-            if m["id"] == wanted and m["window"]:
-                print(int(m["window"]))
-                return
-        return  # unknown: print nothing, and leave Claude Code to its own guess
+        if wanted == "--max":
+            windows = [guessed_window(m) for m in (keep or models)]
+            windows = [w for w in windows if w]
+            if windows:
+                print(max(windows))
+            return
+        m = match(wanted)
+        win = guessed_window(m) if m else None
+        if win:
+            print(int(win))
+        return
+
+    if mode == "upgrade":
+        wanted = sys.argv[2]
+        m = match(wanted)
+        if not m:
+            print(wanted.replace("[1m]", ""))
+            return
+        print(max_id(m))
+        return
+
+    if mode == "picker":
+        seen = set()
+        options = []
+        for m in order(models):
+            if BLOCKED.search(m["name"]):
+                continue
+            lid = listed_id(m)
+            if lid in seen:
+                continue
+            seen.add(lid)
+            row = {"model": max_id(m), "label": label_of(m)}
+            win = guessed_window(m)
+            if win:
+                row["description"] = window_label(win)
+            options.append(row)
+        json.dump({"replaceBuiltInOptions": True, "options": options}, sys.stdout)
+        sys.stdout.write("\n")
+        return
 
     if mode == "list":
         show = models if "--all" in sys.argv else keep
@@ -311,7 +463,7 @@ def main():
             slug = "ask-" + provider.lower()
             with open(os.path.join(target, slug + ".md"), "w") as fh:
                 fh.write(AGENT_TEMPLATE.format(
-                    slug=slug, provider=provider, model=m["id"], name=m["name"]))
+                    slug=slug, provider=provider, model=max_id(m), name=m["name"]))
             written.append("%s -> %s" % (slug, m["name"]))
         for line in written:
             print(line)

@@ -16,9 +16,15 @@ CONF="$PREFIX/etc/cliproxyapi.conf"
 AUTH_DIR="$HOME/.cli-proxy-api"
 KEY_FILE="$AUTH_DIR/local-key"
 CATALOGUE="$AUTH_DIR/ccx-catalogue.json"
-MODELS_PY="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/ccx-models.py"
+SCRIPT_DIR="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")"
+MODELS_PY="$SCRIPT_DIR/ccx-models.py"
+REWRITE_JS="$SCRIPT_DIR/ccx-rewrite.js"
 PORT=8317
-BASE="http://127.0.0.1:$PORT"
+REWRITE_PORT=8316
+REWRITE_BASE="http://127.0.0.1:$REWRITE_PORT"
+REWRITE_PID="$AUTH_DIR/ccx-rewrite.pid"
+# Claude Code talks to the request cleaner; the cleaner talks to cliproxyapi.
+BASE="$REWRITE_BASE"
 
 # Claude Code keeps the model and effort you chose last in its user settings.
 # That file is shared with plain `claude`, and a proxy-only model left there
@@ -54,7 +60,7 @@ ccx — Claude Code on your other subscriptions
   ccx on | off | mode        whether plain `claude` uses the other providers
   ccx --status               proxy + per-provider login status
   ccx --update               update the proxy, restart it
-  ccx --restart              restart the proxy
+  ccx --restart              restart the proxy and the request cleaner
   ccx ... -- ARGS            everything after -- is passed to claude
 
 The menu lists only the current generation of each model line — one Opus, one
@@ -68,19 +74,49 @@ require_key() {
   KEY="$(cat "$KEY_FILE")"
 }
 
-proxy_up() { curl -s -m 3 -o /dev/null "$BASE/v1/models" 2>/dev/null; }
+core_up() { curl -s -m 3 -o /dev/null "http://127.0.0.1:$PORT/v1/models" 2>/dev/null; }
+rewrite_up() { curl -s -m 3 -o /dev/null "$REWRITE_BASE/v1/models" 2>/dev/null; }
+proxy_up() { rewrite_up; }
+
+stop_rewrite() {
+  local pid
+  pid="$(cat "$REWRITE_PID" 2>/dev/null || true)"
+  if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || true; fi
+  rm -f "$REWRITE_PID"
+}
+
+ensure_rewrite() {
+  rewrite_up && return 0
+  [ -f "$REWRITE_JS" ] || { red "Missing request cleaner at $REWRITE_JS"; return 1; }
+  mkdir -p "$AUTH_DIR/logs"
+  stop_rewrite
+  dim "starting request cleaner on 127.0.0.1:${REWRITE_PORT}…"
+  CCX_REWRITE_PORT="$REWRITE_PORT" CCX_UPSTREAM_PORT="$PORT" \
+    nohup node "$REWRITE_JS" >> "$AUTH_DIR/logs/ccx-rewrite.log" 2>&1 &
+  echo $! > "$REWRITE_PID"
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    sleep 0.2
+    rewrite_up && return 0
+  done
+  red "Request cleaner did not come up on $REWRITE_BASE."
+  return 1
+}
 
 ensure_proxy() {
-  proxy_up && return 0
-  dim "starting cliproxyapi…"
-  brew services start cliproxyapi >/dev/null 2>&1 || true
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    sleep 1
-    proxy_up && return 0
-  done
-  red "Proxy did not come up on $BASE."
-  red "Check:  brew services info cliproxyapi   and   tail -f $AUTH_DIR/logs/main.log"
-  return 1
+  if ! core_up; then
+    dim "starting cliproxyapi…"
+    brew services start cliproxyapi >/dev/null 2>&1 || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      sleep 1
+      core_up && break
+    done
+    core_up || {
+      red "Proxy did not come up on http://127.0.0.1:$PORT."
+      red "Check:  brew services info cliproxyapi   and   tail -f $AUTH_DIR/logs/main.log"
+      return 1
+    }
+  fi
+  ensure_rewrite
 }
 
 # Anthropic shape, because only that one carries display names — and the
@@ -133,7 +169,7 @@ json_get() { python3 -c "
 import json,sys
 try: d=json.load(open(sys.argv[1]))
 except Exception: d={}
-print(json.dumps({k:d[k] for k in ('model','effortLevel') if k in d}))
+print(json.dumps({k:d[k] for k in ('model','effortLevel','modelPicker') if k in d}))
 " "$1"; }
 
 json_apply() { python3 -c "
@@ -141,7 +177,7 @@ import json,sys
 path,incoming=sys.argv[1],json.loads(sys.argv[2])
 try: d=json.load(open(path))
 except Exception: d={}
-for k in ('model','effortLevel'):
+for k in ('model','effortLevel','modelPicker'):
     d.pop(k,None)
     if k in incoming: d[k]=incoming[k]
 json.dump(d,open(path,'w'),indent=2)
@@ -268,11 +304,16 @@ case "$CMD" in
     brew update >/dev/null 2>&1 || true
     brew upgrade cliproxyapi || dim "already at the newest version"
     brew services restart cliproxyapi
+    stop_rewrite
     require_key || exit 1; ensure_proxy || exit 1; sync_filter
     cyan "$("$BIN" -h 2>&1 | head -1)"
     exit 0 ;;
   restart)
-    brew services restart cliproxyapi; exit 0 ;;
+    brew services restart cliproxyapi
+    stop_rewrite
+    require_key || exit 1
+    ensure_proxy || exit 1
+    exit 0 ;;
   refresh)
     require_key || exit 1; ensure_proxy || exit 1; refresh_filter
     cyan "filter rebuilt"; models_py list; exit 0 ;;
@@ -314,7 +355,8 @@ case "$CMD" in
     require_key || exit 1
     mode_on && cyan "multi-model: ON  (\`claude\` uses every provider)" \
              || cyan "multi-model: OFF (\`claude\` goes straight to Anthropic)"
-    if proxy_up; then cyan "proxy: up on $BASE"; else red "proxy: down"; fi
+    if core_up; then cyan "proxy: up on http://127.0.0.1:$PORT"; else red "proxy: down"; fi
+    if rewrite_up; then cyan "request cleaner: up on $REWRITE_BASE"; else red "request cleaner: down"; fi
     echo
     # ccx keeps its own state next to the auth files; only the latter are logins.
     ls -1 "$AUTH_DIR"/*.json 2>/dev/null | grep -v '/ccx-\|/claude-defaults' \
@@ -367,23 +409,39 @@ json.dump(d,open(sys.argv[1],'w'),indent=2)
     cyan "default model set to ${MODELS[0]}"
   fi
 
-  # Take the context size from the provider rather than letting Claude Code
-  # fall back to the 200k it assumes for every model it does not ship itself.
-  local current="" window=""
-  [ ${#MODELS[@]} -gt 0 ] && current="${MODELS[0]}"
-  if [ -z "$current" ] && [ -s "$CCX_DEFAULTS" ]; then
-    current="$(python3 -c "
+  # Claude Code guesses 200k for any id it does not ship. Non-claude ids honour
+  # CLAUDE_CODE_MAX_CONTEXT_TOKENS; native Claude 1M ids need a [1m] suffix
+  # (the env var is ignored for names that start with claude-).
+  local stored="" current="" window=""
+  CCX_TARGET_MODEL=""
+  [ -s "$CCX_DEFAULTS" ] && stored="$(python3 -c "
 import json,sys
 try: print(json.load(open(sys.argv[1])).get('model') or '')
 except Exception: pass" "$CCX_DEFAULTS")"
-  fi
+  current="${MODELS[0]:-$stored}"
+  window="${CCX_CONTEXT_TOKENS:-}"
   if [ -n "$current" ]; then
-    window="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" window "$current" || true)"
-    if [ -n "$window" ]; then
-      export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$window"
-      dim "context window: $((window / 1000))k (as reported for $current)"
-    fi
+    [ -n "$window" ] || window="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" window "$current" || true)"
+    CCX_TARGET_MODEL="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" upgrade "$current")"
   fi
+  [ -n "$window" ] || window="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" window --max || true)"
+  if [ -n "$window" ]; then
+    export CLAUDE_CODE_MAX_CONTEXT_TOKENS="$window"
+    dim "context window: $((window / 1000))k${current:+ for $current}"
+  fi
+  if [ -n "$CCX_TARGET_MODEL" ] && [ "$CCX_TARGET_MODEL" != "$stored" ]; then
+    python3 -c "
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: d={}
+d['model']=sys.argv[2]
+json.dump(d,open(sys.argv[1],'w'),indent=2)
+" "$CCX_DEFAULTS" "$CCX_TARGET_MODEL"
+  fi
+
+  # /model must keep the [1m] suffix or a mid-session switch falls back to
+  # 200k. The picker rows are the ids with that suffix already attached.
+  CCX_PICKER="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" picker || true)"
 
   export ANTHROPIC_BASE_URL="$BASE"
   export ANTHROPIC_AUTH_TOKEN="$KEY"
@@ -417,6 +475,24 @@ else
 fi
 
 swap_in
+if [ -n "${CCX_PICKER:-}" ]; then
+  printf '%s' "$CCX_PICKER" | python3 -c "
+import json,sys
+picker=json.load(sys.stdin)
+path=sys.argv[1]
+try: d=json.load(open(path))
+except Exception: d={}
+if picker.get('options'):
+    d['modelPicker']=picker
+    json.dump(d,open(path,'w'),indent=2)
+    open(path,'a').write('\n')
+" "$SETTINGS"
+fi
 trap swap_out EXIT INT TERM
+
+case " ${CLAUDE_ARGS[*]-} " in
+  *" --model "*|*" -m "*) ;;
+  *) if [ -n "${CCX_TARGET_MODEL:-}" ]; then CLAUDE_ARGS+=(--model "$CCX_TARGET_MODEL"); fi ;;
+esac
 
 launch_claude ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}

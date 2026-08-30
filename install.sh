@@ -234,8 +234,10 @@ if confirm "Install multi-model?"; then
     mkdir -p "$CLAUDE_DIR/scripts"
     cp "$ROOT/multi-model/ccx" "$CLAUDE_DIR/scripts/ccx"
     cp "$ROOT/multi-model/ccx-models.py" "$CLAUDE_DIR/scripts/ccx-models.py"
-    chmod +x "$CLAUDE_DIR/scripts/ccx"
-    green "    copied ccx + ccx-models.py → ~/.claude/scripts/"
+    cp "$ROOT/multi-model/ccx-rewrite.js" "$CLAUDE_DIR/scripts/ccx-rewrite.js"
+    cp "$ROOT/multi-model/sanitize-schema.js" "$CLAUDE_DIR/scripts/sanitize-schema.js"
+    chmod +x "$CLAUDE_DIR/scripts/ccx" "$CLAUDE_DIR/scripts/ccx-rewrite.js"
+    green "    copied ccx, models, and request cleaner → ~/.claude/scripts/"
 
     if grep -q "claude-addons: multi-model" "$ZSHRC" 2>/dev/null; then
       dim "    ~/.zshrc already wired up, skipping"
