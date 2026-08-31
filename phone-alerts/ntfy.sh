@@ -57,11 +57,17 @@ tab=$(head -1 "$HOME/.claude/terminal-state/$sid.name" 2>/dev/null)
 label="$proj"
 if [ -n "$tab" ] && [ "$tab" != "$proj" ]; then label="$proj · $tab"; fi
 
-# One prompt can trip two hooks at once (Notification + PreToolUse). Drop the
-# second one rather than queue it.
-stamp="$state/ntfy-cc-$sid"
+# One prompt raises attention twice: PreToolUse fires the moment the question
+# is asked, and Notification follows seconds later once Claude has been idle.
+# They say the same thing, so the first one wins and the rest of that window is
+# dropped. "Waiting for you" is one state, not two events.
+case "$1" in
+  need|ask|plan) class="attention"; window="${CLAUDE_NTFY_ATTENTION_WINDOW:-30}" ;;
+  *)             class="$1";        window="$GAP" ;;
+esac
+stamp="$state/ntfy-cc-$sid.$class"
 now=$(date +%s)
-if [ -f "$stamp" ] && [ $((now - $(cat "$stamp"))) -lt "$GAP" ]; then exit 0; fi
+if [ -f "$stamp" ] && [ $((now - $(cat "$stamp"))) -lt "$window" ]; then exit 0; fi
 printf '%s' "$now" > "$stamp"
 
 case "$1" in
