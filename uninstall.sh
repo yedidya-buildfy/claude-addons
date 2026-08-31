@@ -27,6 +27,7 @@ fi
 rm -f "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh" "$CLAUDE_DIR/scripts/tn"
 rm -f "$CLAUDE_DIR/scripts/usage-fetch.sh" "$CLAUDE_DIR/cache/claude-usage.json"
 rm -f "$CLAUDE_DIR/scripts/sticky-claude"
+rm -f "$CLAUDE_DIR/scripts/ntfy.sh"
 rm -rf "$CLAUDE_DIR/skills/tab-name"
 green "  removed ~/.claude/scripts/{tab.sh,tab-watcher.sh,tn,usage-fetch.sh,sticky-claude} and ~/.claude/skills/tab-name/"
 
@@ -37,7 +38,8 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     const file = process.argv[1];
     const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
     if (cfg.hooks) {
-      const isOurs = h => JSON.stringify(h).includes("tab.sh");
+      const isOurs = h => ["tab.sh", "tab-autoname.py", "ntfy.sh"]
+        .some(name => JSON.stringify(h).includes(name));
       for (const event of Object.keys(cfg.hooks)) {
         cfg.hooks[event] = cfg.hooks[event].filter(group => {
           group.hooks = (group.hooks || []).filter(h => !isOurs(h));
@@ -49,7 +51,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     }
     fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
   ' "$CLAUDE_SETTINGS"
-  green "  stripped tab-status hooks from ~/.claude/settings.json"
+  green "  stripped tab-status and phone-alerts hooks from ~/.claude/settings.json"
 
   # fable-plan: remove the opus→fable alias override if it's ours
   node -e '
@@ -80,6 +82,12 @@ if [ -f "$VSCODE_SETTINGS" ]; then
     fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n");
   ' "$VSCODE_SETTINGS"
   green "  reverted terminal.integrated.tabs.title + stickyScroll.maxLineCount in VS Code settings"
+fi
+
+# phone-alerts: keep ~/.claude/ntfy-topic so a reinstall lands on the same
+# topic and the phone stays subscribed. Delete it by hand to cut it loose.
+if [ -f "$CLAUDE_DIR/ntfy-topic" ]; then
+  dim "  ntfy topic kept at ~/.claude/ntfy-topic - delete it to stop for good"
 fi
 
 # multi-model: remove the launcher and stop the proxy, but keep the OAuth

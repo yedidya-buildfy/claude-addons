@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/scripts/ntfy.sh need", "async": true }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/scripts/ntfy.sh ask", "async": true }
+        ]
+      },
+      {
+        "matcher": "ExitPlanMode",
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/scripts/ntfy.sh plan", "async": true }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$HOME/.claude/scripts/ntfy.sh done", "async": true }
+        ]
+      }
+    ]
+  }
+}

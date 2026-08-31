@@ -63,7 +63,7 @@ cyan "claude-addons installer"
 echo
 
 # --- tab-status ---
-cyan "[1/7] tab-status (colored dot on VS Code terminal tabs)"
+cyan "[1/8] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
@@ -101,7 +101,7 @@ fi
 echo
 
 # --- skill-tab-name ---
-cyan "[2/7] skill-tab-name (Claude picks tab names automatically)"
+cyan "[2/8] skill-tab-name (Claude picks tab names automatically)"
 if confirm "Install the \`tab-name\` skill?"; then
   mkdir -p "$CLAUDE_DIR/skills/tab-name"
   cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
@@ -125,7 +125,7 @@ fi
 echo
 
 # --- skill-design-in-browser ---
-cyan "[3/7] skill-design-in-browser (design UI in the browser before coding)"
+cyan "[3/8] skill-design-in-browser (design UI in the browser before coding)"
 if confirm "Install the `design-in-browser` skill?"; then
   mkdir -p "$CLAUDE_DIR/skills/design-in-browser"
   cp "$ROOT/skill-design-in-browser/SKILL.md" "$CLAUDE_DIR/skills/design-in-browser/SKILL.md"
@@ -137,7 +137,7 @@ fi
 echo
 
 # --- statusline-gsd ---
-cyan "[4/7] statusline-gsd (model + task + context bar + plan usage at bottom)"
+cyan "[4/8] statusline-gsd (model + task + context bar + plan usage at bottom)"
 if confirm "Install GSD statusline?"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   green "    copied gsd-statusline.js → ~/.claude/"
@@ -153,7 +153,7 @@ if confirm "Install GSD statusline?"; then
 fi
 
 # --- fable-plan ---
-cyan "[5/7] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
+cyan "[5/8] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
 if confirm "Install fable-plan?"; then
   if grep -q "alias fplan=" "$ZSHRC" 2>/dev/null; then
     dim "    fplan alias already in ~/.zshrc, skipping"
@@ -169,7 +169,7 @@ fi
 echo
 
 # --- sticky-prompt ---
-cyan "[6/7] sticky-prompt (the message you sent pinned to the top of the terminal)"
+cyan "[6/8] sticky-prompt (the message you sent pinned to the top of the terminal)"
 if confirm "Install sticky-prompt?"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/sticky-prompt/sticky-claude" "$CLAUDE_DIR/scripts/sticky-claude"
@@ -201,7 +201,7 @@ fi
 echo
 
 # --- multi-model ---
-cyan "[7/7] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
+cyan "[7/8] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
 if confirm "Install multi-model?"; then
   if ! command -v brew >/dev/null 2>&1; then
     dim "    Homebrew not found — multi-model needs it to install the proxy. Skipping."
@@ -256,6 +256,29 @@ if confirm "Install multi-model?"; then
     dim "    next: run \`ccx --login\`, finish each sign-in in the browser, then \`ccx --refresh\`"
     dim "    \`claude\` itself is untouched and keeps its own login"
   fi
+fi
+
+# --- phone-alerts ---
+cyan "[8/8] phone-alerts (push to your phone when Claude needs you)"
+if confirm "Install phone-alerts?"; then
+  mkdir -p "$CLAUDE_DIR/scripts"
+  cp "$ROOT/phone-alerts/ntfy.sh" "$CLAUDE_DIR/scripts/ntfy.sh"
+  chmod +x "$CLAUDE_DIR/scripts/ntfy.sh"
+  green "    copied ntfy.sh -> ~/.claude/scripts/"
+
+  backup "$CLAUDE_SETTINGS"
+  cat "$ROOT/phone-alerts/settings.json.snippet" | json_merge "$CLAUDE_SETTINGS"
+  green "    merged hooks into ~/.claude/settings.json"
+
+  # The topic is a per-user secret: generated here, never in the repo, and
+  # kept by uninstall.sh so a reinstall keeps the same subscription.
+  if [ -s "$CLAUDE_DIR/ntfy-topic" ]; then
+    dim "    reusing the existing ntfy topic in ~/.claude/ntfy-topic"
+  else
+    "$CLAUDE_DIR/scripts/ntfy.sh" --setup
+  fi
+  dim "    subscribe to that topic in the ntfy app to start receiving alerts"
+  dim "    anyone who knows the topic can read your alerts - keep it private"
 fi
 
 echo
