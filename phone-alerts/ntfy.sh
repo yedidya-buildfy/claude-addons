@@ -43,14 +43,14 @@ cwd=$(printf '%s' "$in" | jq -r '.cwd // ""')
 sid=$(printf '%s' "$in" | jq -r '.session_id // "x"')
 proj=$(printf '%s' "$cwd" | sed 's|/*$||; s|.*/||')
 
-# A background agent runs in a worktree named after its own id. Nobody wants to
-# read that, so climb to the repo the worktree belongs to.
-case "$proj" in
-  agent-*)
-    g=$(cd "$cwd" 2>/dev/null && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-    if [ -n "$g" ]; then proj=$(basename "$(dirname "$g")"); else proj=""; fi ;;
+# A background agent runs in a worktree named after its own id. It has no
+# terminal you could return to, so it never needs your attention: stay silent.
+case "$cwd" in
+  */.claude/worktrees/agent-*) exit 0 ;;
 esac
-[ -n "$proj" ] || proj="claude"
+case "$proj" in
+  agent-*) exit 0 ;;
+esac
 
 # Tab name, as set by tn/tab.sh. Append it unless it is just the folder name.
 tab=$(head -1 "$HOME/.claude/terminal-state/$sid.name" 2>/dev/null)
@@ -77,7 +77,21 @@ case "$1" in
                 | [.message.content[]? | select(.type == "text") | .text]
                 | join(" ") | gsub("\\s+"; " ")
                 | select(length > 0) ] | last | .[0:180]' 2>/dev/null)
-        [ -n "$msg" ] && [ "$msg" != "null" ] || msg="סיים לעבוד" ;;
+        [ -n "$msg" ] && [ "$msg" != "null" ] || msg="סיים לעבוד"
+        # A turn can end with subagents or background shells still running;
+        # Claude will be woken again when they report. That later end is the
+        # one worth telling you about, so say nothing yet.
+        pending=$(jq -rs '
+          ([ .[] | select(.type == "assistant") | .message.content[]?
+             | select(.type == "tool_use")
+             | select(.name == "Agent" or .name == "Task"
+                      or (.name == "Bash" and .input.run_in_background == true))
+             | .id ]) as $started
+          | ([ .[] | select(.type == "user") | .message.content[]?
+               | select(.type == "tool_result") | .tool_use_id ]) as $finished
+          | ($started - $finished) | length' "$tp" 2>/dev/null)
+        case "$pending" in ''|*[!0-9]*) pending=0 ;; esac
+        if [ "$pending" -gt 0 ]; then exit 0; fi ;;
   *)    exit 0 ;;
 esac
 
