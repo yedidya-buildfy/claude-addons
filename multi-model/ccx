@@ -30,7 +30,8 @@ BASE="$REWRITE_BASE"
 # That file is shared with plain `claude`, and a proxy-only model left there
 # breaks it ("There's an issue with the selected model"). So ccx keeps its own
 # pair, swaps them in for the session, and hands yours back on the way out.
-SETTINGS="$HOME/.claude/settings.json"
+export CLAUDE_CONFIG_DIR="$HOME/.claude-ccx"
+SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
 CCX_DEFAULTS="$AUTH_DIR/ccx-defaults.json"
 STASH="$AUTH_DIR/claude-defaults.stash.json"
 
@@ -159,7 +160,7 @@ refresh_filter() {
 
 # One subagent per non-Claude provider, so you can hand a job to GPT, Gemini or
 # Grok from inside an ordinary session and watch it run in the agents panel.
-AGENT_DIR="$HOME/.claude/agents"
+AGENT_DIR="$CLAUDE_CONFIG_DIR/agents"
 write_agents() {
   fetch_models | python3 "$MODELS_PY" agents "$AGENT_DIR" | while read -r l; do dim "  agent $l"; done
 }
@@ -235,6 +236,16 @@ swap_out() {
 
 # The real Claude Code, behind the sticky-prompt wrapper when it is installed.
 launch_claude() {
+  local has_skip=0
+  for arg in "$@"; do
+    if [ "$arg" = "--dangerously-skip-permissions" ]; then
+      has_skip=1
+      break
+    fi
+  done
+  if [ $has_skip -eq 0 ]; then
+    set -- --dangerously-skip-permissions "$@"
+  fi
   if [ -x "$HOME/.claude/scripts/sticky-claude" ]; then
     "$HOME/.claude/scripts/sticky-claude" "$@"
   else
@@ -281,6 +292,7 @@ while [ $# -gt 0 ]; do
                if [ $# -gt 0 ] && [ "${1:0:1}" != "-" ]; then MODELS=("$1"); shift; fi ;;
     --login)   CMD=login; shift
                if [ $# -gt 0 ] && [ "${1:0:1}" != "-" ]; then MODELS=("$1"); shift; fi ;;
+    --dangerously-skip-permissions) shift ;;
     --)        shift; CLAUDE_ARGS=("$@"); break ;;
     -*)        red "unknown option $1"; usage; exit 1 ;;
     *)         MODELS+=("$1"); shift ;;
@@ -390,6 +402,7 @@ setup_proxy_session() {
   require_key          || return 1
   ensure_proxy         || return 1
   sync_filter          || true
+  write_agents >/dev/null 2>&1 || true
 
   CATALOGUE_JSON="$(fetch_models)" || return 1
   [ -n "$CATALOGUE_JSON" ] || return 1
@@ -446,9 +459,12 @@ json.dump(d,open(sys.argv[1],'w'),indent=2)
   export ANTHROPIC_BASE_URL="$BASE"
   export ANTHROPIC_AUTH_TOKEN="$KEY"
   # The hybrid picker row uses Claude Code's built-in opusplan handoff: the
-  # Opus slot plans with Fable, then the Sonnet slot executes with Opus.
-  export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-fable-5[1m]"
-  export ANTHROPIC_DEFAULT_SONNET_MODEL="claude-opus-5[1m]"
+  # Opus slot plans with the latest Fable, then the Sonnet slot executes with the latest Opus.
+  local fable_model opus_model
+  fable_model="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" latest fable 2>/dev/null || true)"
+  opus_model="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" latest opus 2>/dev/null || true)"
+  export ANTHROPIC_DEFAULT_OPUS_MODEL="${fable_model:-claude-fable-5-1[1m]}"
+  export ANTHROPIC_DEFAULT_SONNET_MODEL="${opus_model:-claude-opus-5[1m]}"
   # Let Claude Code pull the catalogue from the proxy itself, so the menu lists
   # every model it can reach rather than a handful pushed in through slots.
   export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1

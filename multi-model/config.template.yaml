@@ -54,8 +54,12 @@ claude-code:
 
 oauth-model-alias:
   antigravity:
-    - name: "gemini-3.7-flash-high"
+    - name: "gemini-3.8-flash-high"
       alias: "claude-gemini-flash"
+      display-name: "Gemini 3.8 Flash"
+      force-mapping: true
+    - name: "gemini-3.7-flash-high"
+      alias: "claude-gemini-37-flash"
       display-name: "Gemini 3.7 Flash"
       force-mapping: true
     - name: "gemini-pro-agent"
