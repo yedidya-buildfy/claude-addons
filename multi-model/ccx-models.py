@@ -154,6 +154,36 @@ def is_haiku(m):
     return "haiku" in blob_of(m).lower()
 
 
+def codex_subscription_windows():
+    """Return Codex model maxima plus the current main-line fallback."""
+    path = os.path.expanduser("~/.codex/models_cache.json")
+    try:
+        models = json.load(open(path)).get("models", [])
+    except Exception:
+        return {}, None
+    exact = {}
+    for model in models:
+        slug = model.get("slug")
+        maximum = model.get("max_context_window")
+        if slug and maximum:
+            exact[slug.lower()] = int(maximum)
+    return exact, exact.get("gpt-reserve")
+
+
+def model_slug(name):
+    return re.sub(r"[^a-z0-9.]+", "-", name.lower()).strip("-")
+
+
+def subscription_window(provider, name, mid, proxy_window):
+    low = (name + " " + mid).lower()
+    if "astra" in low:
+        return 1_050_000
+    if provider == "ChatGPT":
+        # Preserve standard 921k window for GPT models, never downgrade to 872k
+        return max(proxy_window or 0, 921_000)
+    return proxy_window
+
+
 def guessed_window(m):
     if m.get("window"):
         return int(m["window"])
@@ -180,12 +210,12 @@ def max_id(m):
 
 
 def label_of(m):
-    listed = listed_id(m).replace("[1m]", "")
-    if listed in ALIAS_LABELS:
-        return ALIAS_LABELS[listed]
     name = m.get("name") or ""
     if name and " " in name:
         return name
+    listed = listed_id(m).replace("[1m]", "")
+    if listed in ALIAS_LABELS:
+        return ALIAS_LABELS[listed]
     pretty = re.sub(r"-\d{8}$", "", listed)
     return pretty.replace("-", " ").title()
 
@@ -234,6 +264,7 @@ def load():
         if not mid:
             continue
         name = m.get("display_name") or mid
+        provider = provider_of(name, plain_id(mid), mid)
         out.append(
             {
                 "id": plain_id(mid),
@@ -244,13 +275,13 @@ def load():
                 # with a Claude prefix, so reading them here would file every
                 # provider's models under Claude and collapse the families
                 # into one -- which silently drops whole providers.
-                "provider": provider_of(name, plain_id(mid), mid),
+                "provider": provider,
                 "tier": tier_of(name),
                 "version": version_of(name),
-                # Each provider reports its own context size. Claude Code only
-                # ships sizes for Anthropic models and assumes 200k for the
-                # rest, which compacts sessions long before they are full.
-                "window": m.get("max_input_tokens"),
+                # Prefer subscription maximum over provider's cheaper default.
+                "window": subscription_window(
+                    provider, name, mid, m.get("max_input_tokens")
+                ),
             }
         )
     return out
