@@ -317,7 +317,7 @@ case "$CMD" in
     brew upgrade cliproxyapi || dim "already at the newest version"
     brew services restart cliproxyapi
     stop_rewrite
-    require_key || exit 1; ensure_proxy || exit 1; sync_filter
+    require_key || exit 1; ensure_proxy || exit 1; refresh_filter
     cyan "$("$BIN" -h 2>&1 | head -1)"
     exit 0 ;;
   restart)
