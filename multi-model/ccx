@@ -398,7 +398,29 @@ esac
 # session starting — the whole point of the toggle is that the native path is
 # always there. So every step that can fail is allowed to fail, and we drop
 # through to plain Claude Code instead of exiting.
+# Periodic background check to keep Claude Code and cliproxyapi fresh
+bg_check() {
+  local stamp="$AUTH_DIR/last_bg_check"
+  local now
+  now="$(date +%s)"
+  local last=0
+  [ -f "$stamp" ] && last="$(cat "$stamp" 2>/dev/null || echo 0)"
+  # Run at most once every 6 hours
+  if (( now - last < 21600 )); then
+    return 0
+  fi
+  echo "$now" > "$stamp"
+
+  (
+    claude update >/dev/null 2>&1 || true
+    if brew outdated cliproxyapi 2>/dev/null | grep -q "cliproxyapi"; then
+      brew upgrade cliproxyapi >/dev/null 2>&1 || true
+    fi
+  ) >/dev/null 2>&1 &
+}
+
 setup_proxy_session() {
+  bg_check
   require_key          || return 1
   ensure_proxy         || return 1
   sync_filter          || true
