@@ -54,9 +54,53 @@ json_merge() {
         }
       }
     }
+    if (incoming.env?.CLAUDE_CODE_DISABLE_TERMINAL_TITLE === "1") {
+      // Replace only our title hooks, preserving other hooks in shared entries.
+      const owned = /^(?:python3 )?(?:\$HOME\/\.claude|~\/\.claude)\/scripts\/(?:tab\.sh|tab-autoname\.py)(?: |$)/;
+      for (const [event, entries] of Object.entries(target.hooks || {})) {
+        target.hooks[event] = entries.map(entry => ({...entry,
+          hooks: entry.hooks.filter(hook => !owned.test(hook.command || ""))
+        })).filter(entry => entry.hooks.length);
+        if (!target.hooks[event].length) delete target.hooks[event];
+      }
+    }
     merge(target, incoming);
-    fs.writeFileSync(file, JSON.stringify(target, null, 2) + "\n");
+    const temporary = file + ".tmp." + process.pid;
+    fs.writeFileSync(temporary, JSON.stringify(target, null, 2) + "\n", {mode: fs.statSync(file).mode & 0o777});
+    fs.renameSync(temporary, file);
   ' "$file" "$incoming"
+}
+
+update_tab_shell() {
+  python3 - "$ZSHRC" "$ROOT/tab-status/zshrc.snippet" <<'PY'
+from pathlib import Path
+import re
+import sys
+p = Path(sys.argv[1])
+source = p.read_text()
+wrapper = Path(sys.argv[2]).read_text().rstrip()
+legacy = r'''tn() {
+  local state_dir="$HOME/.claude/terminal-state"
+  mkdir -p "$state_dir"
+  local tty_dev=$(ps -o tty= -p $$ 2>/dev/null | tr -d ' ')
+  [ -n "$tty_dev" ] && [ "$tty_dev" != "??" ] || { echo "tn: no TTY" >&2; return 1; }
+  if [ -z "$1" ]; then
+    rm -f "$state_dir/tty.$tty_dev.name"
+    printf '\033]0;\a'
+  else
+    echo "$1" > "$state_dir/tty.$tty_dev.name"
+    printf '\033]0;🟢 %s\a' "$1"
+  fi
+}'''
+if legacy in source:
+    source = source.replace(legacy, wrapper, 1)
+elif re.search(r'^tn\s*\(\)', source, re.M):
+    print('    existing tn wrapper left unchanged (not the known legacy version)')
+    sys.exit(0)
+else:
+    source += '\n' + wrapper + '\n'
+p.write_text(source)
+PY
 }
 
 cyan "claude-addons installer"
@@ -67,6 +111,12 @@ cyan "[1/8] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
+  for script in tab.sh tab-watcher.sh tab-state.py tn tab-dots-selftest.sh tab-autoname.py test_tab_status.py test_tab_naming.py; do
+    backup "$CLAUDE_DIR/scripts/$script"
+  done
+  cp "$ROOT/tab-status/tab-state.py" "$CLAUDE_DIR/scripts/tab-state.py"
+  cp "$ROOT/tab-status/test_tab_status.py" "$CLAUDE_DIR/scripts/test_tab_status.py"
+  cp "$ROOT/tab-status/test_tab_naming.py" "$CLAUDE_DIR/scripts/test_tab_naming.py"
   cp "$ROOT/tab-status/tab.sh" "$CLAUDE_DIR/scripts/tab.sh"
   cp "$ROOT/tab-status/tab-watcher.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh"
   cp "$ROOT/tab-status/tn" "$CLAUDE_DIR/scripts/tn"
@@ -77,7 +127,12 @@ if confirm "Install tab-status?"; then
 
   backup "$CLAUDE_SETTINGS"
   cat "$ROOT/tab-status/settings.json.snippet" | json_merge "$CLAUDE_SETTINGS"
-  green "    merged hooks into ~/.claude/settings.json"
+  green "    migrated tab hooks and disabled native title/progress writers"
+  if [ -f "$HOME/.claude-ccx/settings.json" ]; then
+    backup "$HOME/.claude-ccx/settings.json"
+    cat "$ROOT/tab-status/settings.json.snippet" | json_merge "$HOME/.claude-ccx/settings.json"
+    green "    migrated the existing ccx profile without changing its models"
+  fi
 
   if [ -f "$VSCODE_SETTINGS" ]; then
     backup "$VSCODE_SETTINGS"
@@ -87,12 +142,11 @@ if confirm "Install tab-status?"; then
     dim "    VS Code user settings not found — skipping (install VS Code first)"
   fi
 
-  if [ -f "$ZSHRC" ] && ! grep -q "^tn()" "$ZSHRC" 2>/dev/null; then
-    if confirm "Append the \`tn\` shell wrapper to ~/.zshrc?"; then
+  if [ -f "$ZSHRC" ]; then
+    if confirm "Install/update the known \`tn\` shell wrapper in ~/.zshrc?"; then
       backup "$ZSHRC"
-      echo "" >> "$ZSHRC"
-      cat "$ROOT/tab-status/zshrc.snippet" >> "$ZSHRC"
-      green "    appended tn wrapper to ~/.zshrc (run \`source ~/.zshrc\` to load)"
+      update_tab_shell
+      green "    checked tn wrapper (open a new terminal to load)"
     fi
   fi
 

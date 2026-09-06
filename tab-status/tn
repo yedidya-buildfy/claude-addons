@@ -1,66 +1,120 @@
-#!/bin/bash
-# Set or clear the tab name override for the current terminal. Callable from
-# any shell (zsh `tn` wraps this) OR from Claude Code's Bash tool — walks PPID
-# up to find the controlling TTY in case the subprocess has no direct one.
-#
-# Usage:
-#   tn <name>          PIN tab name (human). AI stops auto-renaming it.
-#   tn --auto <name>   set name WITHOUT pinning (used by Claude's tab-name skill)
-#   tn                 clear pin + override; auto-name (project basename) returns
-#
-# The colored status dot is painted separately by tab-watcher.sh and keeps
-# updating regardless of the pin — only AI auto-renaming is suppressed.
+#!/usr/bin/env python3
+"""Set/pin a tab name; --auto respects pins; no name clears the override.
 
-state_dir="$HOME/.claude/terminal-state"
-mkdir -p "$state_dir"
+Executable from any shell (do not source or run through bash). Walk PPIDs to
+find the controlling TTY even when Claude's Bash subprocess has no direct one.
+The watcher alone paints the colored status dot.
+"""
+import fcntl
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import unicodedata
+import uuid
 
-auto=0
-if [ "$1" = "--auto" ]; then auto=1; shift; fi
 
-pid=$$; tty_dev=""
-for _ in 1 2 3 4 5 6 7 8; do
-  t=$(ps -o tty= -p "$pid" 2>/dev/null | tr -d ' ')
-  if [ -n "$t" ] && [ "$t" != "??" ]; then
-    tty_dev="$t"
-    break
-  fi
-  pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
-  [ -z "$pid" ] && break
-done
+def read(path):
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
-if [ -z "$tty_dev" ]; then
-  echo "tn: no TTY" >&2
-  exit 1
-fi
 
-# Target the live Claude session on this TTY (stable across TTY-number reuse by
-# VS Code). Fall back to the legacy per-TTY file only for non-Claude shells.
-sess=$(cat "$state_dir/tty.$tty_dev.session" 2>/dev/null)
-if [ -n "$sess" ] && [ -f "$state_dir/$sess.state" ]; then
-  target="$state_dir/$sess.name"; pin="$state_dir/$sess.pinned"; in_session=1
-else
-  target="$state_dir/tty.$tty_dev.name"; pin="$state_dir/tty.$tty_dev.pinned"; in_session=0
-fi
+def atomic_write(path, text):
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".name-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
-if [ -z "$1" ]; then
-  rm -f "$pin"
-  if [ "$in_session" = 1 ]; then
-    basename "$PWD" > "$target"   # restore auto-name (project basename)
-  else
-    rm -f "$target"
-  fi
-  echo "tn: cleared pin + override for $tty_dev"
-else
-  echo "$1" > "$target"
-  if [ "$auto" = 1 ]; then
-    echo "tn: tab → '$1' (auto, not pinned)"
-  else
-    touch "$pin"   # human pin → tab-name skill must not override
-    echo "tn: tab → '$1' (pinned; AI will not rename)"
-  fi
-  # Only a live session has a watcher painting the title, so outside one this
-  # wrote a file nobody reads. Say so instead of looking like it worked.
-  if [ "$in_session" = 0 ]; then
-    echo "tn: warning — no live Claude session on $tty_dev, so nothing is painting this tab" >&2
-  fi
-fi
+
+def sanitize(text):
+    # Keep in sync with tab-autoname.py; these entrypoints install separately.
+    text = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$)", "", text)
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    text = "".join(" " if c.isspace() else c for c in text
+                   if c.isspace() or not unicodedata.category(c).startswith("C"))
+    text = " ".join(text.split())
+    return text.lstrip("🟢🔴🟡🟠🔵🟣⚫⚪🟤●○◉•·️ ").strip()
+
+
+def main():
+    state = Path.home() / ".claude/terminal-state"
+    state.mkdir(parents=True, exist_ok=True)
+    args = sys.argv[1:]
+    auto = bool(args and args[0] == "--auto")
+    if auto:
+        args = args[1:]
+    requested = args[0] if args else ""
+    name = sanitize(requested)
+    if requested and not name:
+        print("tn: name contains no visible text", file=sys.stderr)
+        return 1
+
+    pid, tty = os.getpid(), ""
+    for _ in range(8):
+        try:
+            tty = subprocess.check_output(["ps", "-o", "tty=", "-p", str(pid)],
+                                          stderr=subprocess.DEVNULL, text=True).strip()
+            if tty and tty not in ("??", "?"):
+                break
+            pid = int(subprocess.check_output(["ps", "-o", "ppid=", "-p", str(pid)],
+                                              stderr=subprocess.DEVNULL, text=True).strip())
+            tty = ""
+        except (OSError, ValueError, subprocess.CalledProcessError):
+            tty = ""
+            break
+    if not tty or not re.fullmatch(r"[A-Za-z0-9_-]+", tty):
+        print("tn: no TTY", file=sys.stderr)
+        return 1
+
+    mapping = state / ("tty." + tty + ".session")
+    session = read(mapping)
+    in_session = (bool(re.fullmatch(r"[A-Za-z0-9_-]+", session))
+                  and (state / (session + ".state")).exists())
+    key = session if in_session else "tty." + tty
+    target = state / (key + ".name")
+    pin = state / (key + ".pinned")
+    # Session-end and the autonamer share this lock. Never remove the lock file.
+    with (state / (key + ".name.lock")).open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if in_session and (not (state / (session + ".state")).exists()
+                           or read(mapping) != session):
+            print("tn: session ended or changed; try again", file=sys.stderr)
+            return 1
+        if auto and pin.exists():
+            print("tn: kept pinned tab name")
+            return 0
+        # Also invalidate reset-to-the-same-name, which a value check cannot see.
+        atomic_write(state / (key + ".name-generation"), uuid.uuid4().hex)
+        if not name:
+            pin.unlink(missing_ok=True)
+            if in_session:
+                atomic_write(target, sanitize(Path.cwd().name))
+            else:
+                target.unlink(missing_ok=True)
+            print("tn: cleared pin + override for " + tty)
+        else:
+            atomic_write(target, name)
+            if not auto:
+                atomic_write(pin, "")
+            print("tn: tab → %r (%s)" % (name, "auto, not pinned" if auto
+                                        else "pinned; AI will not rename"))
+            if not in_session:
+                print("tn: warning — no live Claude session on " + tty
+                      + ", so nothing is painting this tab", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except OSError as exc:
+        print("tn: " + str(exc), file=sys.stderr)
+        sys.exit(1)

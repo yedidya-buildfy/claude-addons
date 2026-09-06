@@ -1,119 +1,27 @@
 {
+  "env": {
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
+  },
+  "terminalProgressBarEnabled": false,
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh white"
-          }
-        ]
-      }
-    ],
+    "SessionStart": [{"hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh white"}]}],
     "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh red"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 $HOME/.claude/scripts/tab-autoname.py"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh remind-name"
-          }
-        ]
-      }
+      {"hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh red"}]},
+      {"hooks": [{"type": "command", "command": "python3 $HOME/.claude/scripts/tab-autoname.py"}]}
     ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh green"
-          }
-        ]
-      }
-    ],
+    "Stop": [{"hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh green"}]}],
+    "StopFailure": [{"hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh failure"}]}],
     "PreToolUse": [
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh bg-inc"
-          }
-        ]
-      },
-      {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh blue"
-          }
-        ]
-      },
-      {
-        "matcher": "ExitPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh plan-wait"
-          }
-        ]
-      }
+      {"matcher": "*", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh working"}]},
+      {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh blue"}]},
+      {"matcher": "ExitPlanMode", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh plan-wait"}]}
     ],
+    "PostToolUseFailure": [{"matcher": "Agent|Task|SendMessage", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh tool-error"}]}],
     "PostToolUse": [
-      {
-        "matcher": "AskUserQuestion",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh red"
-          }
-        ]
-      },
-      {
-        "matcher": "ExitPlanMode",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh plan-done"
-          }
-        ]
-      }
+      {"matcher": "Agent|Task|SendMessage", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh tool-result"}]},
+      {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh red"}]},
+      {"matcher": "ExitPlanMode", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh plan-done"}]}
     ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh bg-dec"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/scripts/tab.sh session-end"
-          }
-        ]
-      }
-    ]
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh session-end"}]}]
   }
 }

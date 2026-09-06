@@ -15,12 +15,16 @@ through a cold gateway route can take ~15s.
 Overridable: TAB_NAME_API, TAB_NAME_MODEL, TAB_NAME_TIMEOUT.
 """
 
+import fcntl
 import json
 import os
 import re
 import sys
+import tempfile
 import time
+import unicodedata
 import urllib.request
+import uuid
 
 STATE = os.path.expanduser("~/.claude/terminal-state")
 API = os.environ.get("TAB_NAME_API", "http://localhost:20128/v1/chat/completions")
@@ -58,12 +62,38 @@ PROMPT = (
 )
 
 
-def mark(session, status):
+def read(path):
     try:
-        with open(os.path.join(STATE, session + ".namer"), "w", encoding="utf-8") as f:
-            f.write(status + "\n")
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()
     except OSError:
-        pass
+        return ""
+
+
+def atomic_write(path, text):
+    fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".name-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def sanitize(text):
+    # Remove whole terminal escape sequences, not just ESC (OSC can set titles).
+    text = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$)", "", text)
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+    text = "".join(" " if c.isspace() else c for c in text
+                   if c.isspace() or not unicodedata.category(c).startswith("C"))
+    text = " ".join(text.split())
+    # Status belongs to the watcher; repeated pasted badges must not multiply it.
+    return text.lstrip("🟢🔴🟡🟠🔵🟣⚫⚪🟤●○◉•·️ ").strip()
+
+
+def mark(session, status):
+    atomic_write(os.path.join(STATE, session + ".namer"), status)
 
 
 def note(session, current, prompt, raw, decision):
@@ -108,6 +138,7 @@ def clean(raw):
     """A label we would be willing to show. Returns '' to mean 'no name'."""
     name = (raw or "").strip().strip('"\'' + "`")
     name = name.splitlines()[0] if name else ""
+    name = sanitize(name)
     name = re.sub(r"[.,:;!?]+$", "", name).strip()
     if not name or name.upper() in ("NONE", "KEEP"):
         return ""
@@ -123,52 +154,70 @@ def main():
         hook = json.load(sys.stdin)
     except Exception:
         return
-    session = hook.get("session_id") or ""
-    prompt = (hook.get("prompt") or "").strip()
-    if not session or not prompt:
+    if not isinstance(hook, dict):
         return
+    session = hook.get("session_id") or ""
+    prompt = hook.get("prompt") or ""
+    if (not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", session)
+            or not isinstance(prompt, str) or not prompt.strip()):
+        return
+    prompt = prompt.strip()
 
     name_file = os.path.join(STATE, session + ".name")
-    if os.path.exists(os.path.join(STATE, session + ".pinned")):
-        return                                    # the human named it — hands off
+    pin_file = os.path.join(STATE, session + ".pinned")
+    live_file = os.path.join(STATE, session + ".state")
+    generation_file = os.path.join(STATE, session + ".name-generation")
+    lock_file = os.path.join(STATE, session + ".name.lock")
+    generation = uuid.uuid4().hex
     try:
-        with open(name_file, encoding="utf-8") as f:
-            current = f.read().strip()
+        # Register before detaching: child scheduling must not reorder prompts.
+        # tn and session-end use this same persistent lock; never unlink it.
+        with open(lock_file, "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if not os.path.exists(live_file) or os.path.exists(pin_file):
+                return
+            original = read(name_file)
+            atomic_write(generation_file, generation)
     except OSError:
-        current = ""
+        return
     placeholder = os.path.basename(hook.get("cwd") or os.getcwd())
-    if current == placeholder:
-        current = ""                              # the folder name is not a real name
+    current = "" if original == placeholder else original
 
-    # Detach: the parent must return now or the user waits on the network call.
+    # No lock is held across the slow network request.
     if os.fork() > 0:
         return
     os.setsid()
     null = os.open(os.devnull, os.O_RDWR)
     for fd in (0, 1, 2):
         os.dup2(null, fd)
+    if null > 2:
+        os.close(null)
 
+    raw, name, failed = None, "", False
     try:
         raw = ask(current, prompt[:2000])
         name = clean(raw)
         if not name and (raw or "").strip().upper() not in ("KEEP", "NONE"):
-            raw = ask(current, prompt[:2000], retry_of=raw)   # answer was malformed
+            raw = ask(current, prompt[:2000], retry_of=raw)
             name = clean(raw)
     except Exception:
-        note(session, current, prompt, None, "fail")
-        mark(session, "fail")                     # lets the assistant fall back in
-        os._exit(0)
-    if not name or name == current:
-        # KEEP, or nothing nameable yet. Either way the tab stays as it is and
-        # the question gets asked again on the next prompt.
-        note(session, current, prompt, raw, "keep" if current else "none")
-        mark(session, "ok" if current else "none")
-        os._exit(0)
+        failed = True
     try:
-        with open(name_file, "w", encoding="utf-8") as f:
-            f.write(name + "\n")
-        note(session, current, prompt, raw, "set " + name)
-        mark(session, "ok")
+        with open(lock_file, "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if (not os.path.exists(live_file) or os.path.exists(pin_file)
+                    or read(generation_file) != generation or read(name_file) != original):
+                return                          # obsolete response, including its marker
+            if failed:
+                note(session, current, prompt, None, "fail")
+                mark(session, "fail")
+            elif not name or name == current:
+                note(session, current, prompt, raw, "keep" if current else "none")
+                mark(session, "ok" if current else "none")
+            else:
+                atomic_write(name_file, name)
+                note(session, current, prompt, raw, "set " + name)
+                mark(session, "ok")
     except OSError:
         pass
     os._exit(0)
