@@ -26,14 +26,9 @@ REWRITE_PID="$AUTH_DIR/ccx-rewrite.pid"
 # Claude Code talks to the request cleaner; the cleaner talks to cliproxyapi.
 BASE="$REWRITE_BASE"
 
-# Claude Code keeps the model and effort you chose last in its user settings.
-# That file is shared with plain `claude`, and a proxy-only model left there
-# breaks it ("There's an issue with the selected model"). So ccx keeps its own
-# pair, swaps them in for the session, and hands yours back on the way out.
+# ccx keeps its own settings in ~/.claude-ccx, independent of plain `claude` (~/.claude).
 export CLAUDE_CONFIG_DIR="$HOME/.claude-ccx"
 SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
-CCX_DEFAULTS="$AUTH_DIR/ccx-defaults.json"
-STASH="$AUTH_DIR/claude-defaults.stash.json"
 
 # When `claude` itself is routed through here, this decides whether a session
 # goes through the proxy or straight to Anthropic. Missing file means on.
@@ -165,74 +160,6 @@ write_agents() {
   fetch_models | python3 "$MODELS_PY" agents "$AGENT_DIR" | while read -r l; do dim "  agent $l"; done
 }
 
-# --- default model / effort handoff --------------------------------------
-json_get() { python3 -c "
-import json,sys
-try: d=json.load(open(sys.argv[1]))
-except Exception: d={}
-print(json.dumps({k:d[k] for k in ('model','effortLevel','modelPicker') if k in d}))
-" "$1"; }
-
-json_apply() { python3 -c "
-import json,sys
-path,incoming=sys.argv[1],json.loads(sys.argv[2])
-try: d=json.load(open(path))
-except Exception: d={}
-for k in ('model','effortLevel','modelPicker'):
-    d.pop(k,None)
-    if k in incoming: d[k]=incoming[k]
-json.dump(d,open(path,'w'),indent=2)
-" "$1" "$2"; }
-
-# The stash records which process is holding your settings. A session killed
-# outright never runs its handback, and without an owner check that orphaned
-# stash would make every later session decline to restore — leaving a proxy
-# model sitting in the shared settings for good.
-stash_owner_alive() {
-  local pid
-  pid="$(python3 -c "
-import json,sys
-try: print(json.load(open(sys.argv[1])).get('_ccx_pid') or '')
-except Exception: pass" "$STASH" 2>/dev/null)"
-  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
-}
-
-OWNS_STASH=0
-swap_in() {
-  [ -f "$SETTINGS" ] || return 0
-  if [ -f "$STASH" ] && stash_owner_alive; then
-    dim "another ccx session is running — leaving the shared defaults to it"
-  elif [ -f "$STASH" ]; then
-    # Left behind by a session that was killed. Its copy of your settings is
-    # the good one — the live file still holds whatever that session was using.
-    dim "recovering the defaults a previous session left behind"
-    python3 -c "
-import json,os,sys
-p=sys.argv[1]
-d=json.load(open(p)); d['_ccx_pid']=int(sys.argv[2])
-json.dump(d,open(p,'w'))" "$STASH" "$$"
-    OWNS_STASH=1
-  else
-    json_get "$SETTINGS" | python3 -c "
-import json,sys
-d=json.load(sys.stdin); d['_ccx_pid']=int(sys.argv[1])
-print(json.dumps(d))" "$$" > "$STASH"
-    OWNS_STASH=1
-  fi
-  local mine='{}'
-  [ -s "$CCX_DEFAULTS" ] && mine="$(cat "$CCX_DEFAULTS")"
-  json_apply "$SETTINGS" "$mine"
-}
-
-swap_out() {
-  [ -f "$SETTINGS" ] || return 0
-  # Whatever the session settled on becomes ccx's default next time.
-  json_get "$SETTINGS" > "$CCX_DEFAULTS"
-  if [ "$OWNS_STASH" = 1 ] && [ -f "$STASH" ]; then
-    json_apply "$SETTINGS" "$(cat "$STASH")"
-    rm -f "$STASH"
-  fi
-}
 
 # The real Claude Code, behind the sticky-prompt wrapper when it is installed.
 launch_claude() {
@@ -374,14 +301,9 @@ case "$CMD" in
     ls -1 "$AUTH_DIR"/*.json 2>/dev/null | grep -v '/ccx-\|/claude-defaults' \
       | sed 's|.*/|  logged in: |' \
       || echo "  no provider logins yet — run: ccx --login"
-    [ -s "$CCX_DEFAULTS" ] && { echo; echo "  ccx default: $(cat "$CCX_DEFAULTS")"; }
-    if [ -f "$STASH" ]; then
-      if stash_owner_alive; then
-        echo "  a ccx session is running and is holding your shared defaults"
-      else
-        red "  a killed session left your shared defaults swapped out"
-        red "  run any ccx session, or ./uninstall.sh, to put them back"
-      fi
+    if [ -s "$SETTINGS" ]; then
+      cur_model="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('model') or '')" "$SETTINGS" 2>/dev/null || true)"
+      [ -n "$cur_model" ] && echo "  current default model: $cur_model"
     fi
     echo
     models_py list 2>/dev/null || true
@@ -430,8 +352,7 @@ setup_proxy_session() {
   [ -n "$CATALOGUE_JSON" ] || return 1
 
   # A model named on the command line becomes the standing default, the same
-  # way picking one in /model does. Nothing forces the model per-session, so
-  # Claude Code's own "remember my last pick" behaviour is what drives it.
+  # way picking one in /model does.
   if [ ${#MODELS[@]} -gt 0 ]; then
     printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" check "${MODELS[0]}" || return 1
     python3 -c "
@@ -440,7 +361,7 @@ try: d=json.load(open(sys.argv[1]))
 except Exception: d={}
 d['model']=sys.argv[2]
 json.dump(d,open(sys.argv[1],'w'),indent=2)
-" "$CCX_DEFAULTS" "${MODELS[0]}"
+" "$SETTINGS" "${MODELS[0]}"
     cyan "default model set to ${MODELS[0]}"
   fi
 
@@ -449,10 +370,10 @@ json.dump(d,open(sys.argv[1],'w'),indent=2)
   # (the env var is ignored for names that start with claude-).
   local stored="" current="" window=""
   CCX_TARGET_MODEL=""
-  [ -s "$CCX_DEFAULTS" ] && stored="$(python3 -c "
+  [ -s "$SETTINGS" ] && stored="$(python3 -c "
 import json,sys
 try: print(json.load(open(sys.argv[1])).get('model') or '')
-except Exception: pass" "$CCX_DEFAULTS")"
+except Exception: pass" "$SETTINGS" 2>/dev/null || true)"
   current="${MODELS[0]:-$stored}"
   window="${CCX_CONTEXT_TOKENS:-}"
   if [ -n "$current" ]; then
@@ -471,7 +392,7 @@ try: d=json.load(open(sys.argv[1]))
 except Exception: d={}
 d['model']=sys.argv[2]
 json.dump(d,open(sys.argv[1],'w'),indent=2)
-" "$CCX_DEFAULTS" "$CCX_TARGET_MODEL"
+" "$SETTINGS" "$CCX_TARGET_MODEL"
   fi
 
   # /model must keep the [1m] suffix or a mid-session switch falls back to
@@ -516,7 +437,6 @@ else
   setup_proxy_session || exit 1
 fi
 
-swap_in
 if [ -n "${CCX_PICKER:-}" ]; then
   printf '%s' "$CCX_PICKER" | python3 -c "
 import json,sys
@@ -530,7 +450,6 @@ if picker.get('options'):
     open(path,'a').write('\n')
 " "$SETTINGS"
 fi
-trap swap_out EXIT INT TERM
 
 case " ${CLAUDE_ARGS[*]-} " in
   *" --model "*|*" -m "*) ;;
