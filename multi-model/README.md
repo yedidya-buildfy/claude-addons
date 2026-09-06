@@ -544,7 +544,7 @@ $(brew --prefix)/etc/cliproxyapi.conf
 ~/.cli-proxy-api/
 ~/.cli-proxy-api/local-key
 ~/.cli-proxy-api/ccx-defaults.json
-~/.cli-proxy-api/ccx-catalogue.json
+~/.claude-ccx/ccx-catalogue.json   ← kept outside the auth dir; the proxy parses every .json there as a login
 ~/.cli-proxy-api/ccx-mode
 ~/.claude/agents/ask-*.md
 ~/.zshrc

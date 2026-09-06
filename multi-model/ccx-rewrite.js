@@ -13,7 +13,7 @@ const { sanitizeRequestBody } = require('./sanitize-schema');
 const listenPort = Number(process.env.CCX_REWRITE_PORT || 8316);
 const upstreamPort = Number(process.env.CCX_UPSTREAM_PORT || 8317);
 const upstreamHost = process.env.CCX_UPSTREAM_HOST || '127.0.0.1';
-const cataloguePath = path.join(os.homedir(), '.cli-proxy-api', 'ccx-catalogue.json');
+const cataloguePath = path.join(os.homedir(), '.claude-ccx', 'ccx-catalogue.json');
 
 function getLatestModel(tier, provider = 'Claude') {
   try {
