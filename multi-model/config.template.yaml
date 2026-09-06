@@ -18,12 +18,14 @@ debug: false
 logging-to-file: true
 usage-statistics-enabled: false
 
-request-retry: 5
+# Claude Code already retries transient failures. Retrying here as well turns one
+# quota error into a long silent wait and a burst of duplicate requests.
+request-retry: 0
 max-retry-interval: 30
 
 # Never park a login after a quota/usage 429. A manual reset on the provider
-# side is invisible to the proxy, so a remembered cooldown just blocks a login
-# that already works again. Each request instead retries upstream 5 times.
+# side is invisible to the proxy, so a remembered cooldown can block a login
+# that already works again. Return the error immediately to Claude Code instead.
 disable-cooling: true
 
 # A 400 from Gemini (bad tool shape) is a request problem, not a sick login.

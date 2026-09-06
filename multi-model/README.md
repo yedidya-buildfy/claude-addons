@@ -224,36 +224,35 @@ ccx mode
 ### דרישות
 
 - macOS.
-- Homebrew.
-- Claude Code מותקן.
-- Node.js.
-- Python 3.
+- חיבור רשת להתקנה ולהתחברות.
 - מנוי פעיל אצל כל ספק שרוצים לחבר.
 
-### התקנה
+### התקנה ישירה
 
 ```bash
 git clone https://github.com/yedidya-buildfy/claude-addons.git
 cd claude-addons
-./install.sh
+./multi-model/install.sh
 ```
-
-במתקין בוחרים את `multi-model`.
 
 המתקין:
 
-1. מתקין את CLIProxyAPI באמצעות Homebrew, אם הוא חסר.
-2. יוצר מפתח מקומי אקראי.
-3. כותב הגדרה שמאזינה רק ל‑127.0.0.1.
-4. מעתיק את סקריפטי `ccx`.
-5. מפעיל את השירות המקומי.
-6. מציע להפנות את הפקודה הרגילה למתג הרב‑מודלי.
+1. מתקין Homebrew, Claude Code ו‑CLIProxyAPI אם חסרים, לאחר אישור.
+2. יוצר מפתח מקומי אקראי ושומר את קובץ הגשר בהרשאת בעלים בלבד.
+3. ממזג את הגדרת הגשר בלי למחוק הגדרות זרות.
+4. מתקין את `ccx` כפקודה גלובלית בנתיב של Homebrew.
+5. יוצר גיבויים לפני החלפה ומריץ בדיקות עצמיות.
+6. מציע התחברות נפרדת לכל ספק; שום התחברות אינה נכנסת למאגר.
 
-לאחר ההתקנה טוענים מחדש את הגדרות המעטפת:
+תצוגה מקדימה ללא שינוי:
 
 ```bash
-source ~/.zshrc
+./multi-model/install.sh --dry-run
 ```
+
+אפשר גם להריץ את `./install.sh` הראשי ולבחור `multi-model`. הפניית הפקודה
+הרגילה `claude` דרך המתג הרב‑מודלי נשארת אפשרות נפרדת; `ccx` עצמו גלובלי גם
+בלעדיה.
 
 ---
 
@@ -388,11 +387,10 @@ ccx --update
 ```bash
 cd claude-addons
 git pull
-./install.sh
+./multi-model/install.sh
 ```
 
-בוחרים שוב את `multi-model`. המתקין בטוח להרצה חוזרת ושומר גיבויים לקבצים
-שהוא משנה.
+המתקין בטוח להרצה חוזרת, ממזג הגדרות ושומר גיבויים לקבצים שהוא מחליף.
 
 ---
 
@@ -403,9 +401,13 @@ git pull
 ```bash
 cd multi-model
 ./test-picker.sh
+./install-selftest.sh
+node ./ccx-rewrite-selftest.js
+python3 ./ccx-models-selftest.py
+python3 ./install-config-selftest.py
 ```
 
-הבדיקה מאמתת בין השאר:
+הבדיקות מאמתות בין השאר:
 
 - רק הדור הנוכחי נשאר בתפריט.
 - גרסאות מוסתרות אינן חוזרות ברענון הבא.
@@ -415,6 +417,9 @@ cd multi-model
 - האפשרות `Fable Plan → Opus` תמיד מופיעה.
 - ברירת המחדל של קלוד הרגיל חוזרת לאחר השיחה.
 - שיחה שנהרגה אינה משאירה הגדרות תקועות.
+- בקשת ספק תקועה מסתיימת אחרי עשר דקות במקום להישאר פתוחה לנצח.
+- שגיאת מכסה חוזרת מיד בלי חמישה ניסיונות כפולים בגשר.
+- התקנה חוזרת שומרת הגדרות זרות ומייצרת אותה תוצאה.
 
 תוצאה תקינה:
 
@@ -545,8 +550,9 @@ $(brew --prefix)/etc/cliproxyapi.conf
 ~/.cli-proxy-api/local-key
 ~/.cli-proxy-api/ccx-defaults.json
 ~/.claude-ccx/ccx-catalogue.json   ← kept outside the auth dir; the proxy parses every .json there as a login
+~/.claude-ccx/agents/ask-*.md
 ~/.cli-proxy-api/ccx-mode
-~/.claude/agents/ask-*.md
+$(brew --prefix)/bin/ccx           ← global command
 ~/.zshrc
 ```
 

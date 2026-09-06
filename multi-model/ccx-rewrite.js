@@ -13,6 +13,10 @@ const { sanitizeRequestBody } = require('./sanitize-schema');
 const listenPort = Number(process.env.CCX_REWRITE_PORT || 8316);
 const upstreamPort = Number(process.env.CCX_UPSTREAM_PORT || 8317);
 const upstreamHost = process.env.CCX_UPSTREAM_HOST || '127.0.0.1';
+const configuredTimeout = Number(process.env.CCX_UPSTREAM_TIMEOUT_MS || 600_000);
+const upstreamTimeoutMs = Number.isFinite(configuredTimeout) && configuredTimeout > 0
+  ? configuredTimeout
+  : 600_000;
 const cataloguePath = path.join(os.homedir(), '.claude-ccx', 'ccx-catalogue.json');
 
 function getLatestModel(tier, provider = 'Claude') {
@@ -127,6 +131,7 @@ const server = http.createServer((req, res) => {
       ? ` | model: ${meta.incoming}${meta.outgoing !== meta.incoming ? ` → ${meta.outgoing}` : ''} (plan: ${meta.plan}${meta.identityRewritten ? ', Gemini identity rewritten' : ''})`
       : '';
 
+    let timedOut = false;
     const upstream = http.request({
       hostname: upstreamHost,
       port: upstreamPort,
@@ -139,7 +144,22 @@ const server = http.createServer((req, res) => {
       res.writeHead(upRes.statusCode || 502, copyHeaders(upRes.headers));
       upRes.pipe(res);
     });
+    upstream.setTimeout(upstreamTimeoutMs, () => {
+      timedOut = true;
+      process.stderr.write(`[${new Date().toISOString()}] ${req.method} ${req.url}${modelLog} → timeout after ${upstreamTimeoutMs}ms\n`);
+      if (!res.headersSent) {
+        res.writeHead(504, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          type: 'error',
+          error: { type: 'api_error', message: `CCX upstream timed out after ${upstreamTimeoutMs}ms` },
+        }));
+      } else {
+        res.destroy();
+      }
+      upstream.destroy();
+    });
     upstream.on('error', (err) => {
+      if (timedOut) return;
       process.stderr.write(`[${new Date().toISOString()}] ${req.method} ${req.url}${modelLog} → error: ${err.message}\n`);
       if (!res.headersSent) {
         res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' });
@@ -150,9 +170,10 @@ const server = http.createServer((req, res) => {
   });
 });
 
-server.requestTimeout = 0;
-server.headersTimeout = 0;
-server.timeout = 0;
+const clientTimeoutMs = upstreamTimeoutMs + 5_000;
+server.requestTimeout = clientTimeoutMs;
+server.headersTimeout = clientTimeoutMs;
+server.timeout = clientTimeoutMs;
 
 server.listen(listenPort, '127.0.0.1', () => {
   const addr = server.address();

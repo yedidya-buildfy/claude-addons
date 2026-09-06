@@ -257,58 +257,18 @@ echo
 # --- multi-model ---
 cyan "[7/8] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
 if confirm "Install multi-model?"; then
-  if ! command -v brew >/dev/null 2>&1; then
-    dim "    Homebrew not found — multi-model needs it to install the proxy. Skipping."
-  else
-    BREW_PREFIX="$(brew --prefix)"
-    PROXY_CONF="$BREW_PREFIX/etc/cliproxyapi.conf"
-    PROXY_AUTH_DIR="$HOME/.cli-proxy-api"
+  "$ROOT/multi-model/install.sh"
+  green "    installed global \`ccx\` command with backups and self-tests"
 
-    if brew list cliproxyapi >/dev/null 2>&1; then
-      dim "    cliproxyapi already installed"
-    else
-      brew install cliproxyapi
-      green "    installed cliproxyapi"
-    fi
-
-    mkdir -p "$PROXY_AUTH_DIR"
-    if [ ! -f "$PROXY_AUTH_DIR/local-key" ]; then
-      head -c 24 /dev/urandom | base64 | tr -d '/+=' | cut -c1-32 > "$PROXY_AUTH_DIR/local-key"
-      chmod 600 "$PROXY_AUTH_DIR/local-key"
-      green "    generated a local proxy key → ~/.cli-proxy-api/local-key"
-    else
-      dim "    reusing the existing local proxy key"
-    fi
-
-    backup "$PROXY_CONF"
-    sed "s|__LOCAL_KEY__|$(cat "$PROXY_AUTH_DIR/local-key")|" \
-      "$ROOT/multi-model/config.template.yaml" > "$PROXY_CONF"
-    green "    wrote proxy config → $PROXY_CONF (127.0.0.1 only)"
-
-    mkdir -p "$CLAUDE_DIR/scripts"
-    cp "$ROOT/multi-model/ccx" "$CLAUDE_DIR/scripts/ccx"
-    cp "$ROOT/multi-model/ccx-models.py" "$CLAUDE_DIR/scripts/ccx-models.py"
-    cp "$ROOT/multi-model/ccx-rewrite.js" "$CLAUDE_DIR/scripts/ccx-rewrite.js"
-    cp "$ROOT/multi-model/sanitize-schema.js" "$CLAUDE_DIR/scripts/sanitize-schema.js"
-    chmod +x "$CLAUDE_DIR/scripts/ccx" "$CLAUDE_DIR/scripts/ccx-rewrite.js"
-    green "    copied ccx, models, and request cleaner → ~/.claude/scripts/"
-
-    if grep -q "claude-addons: multi-model" "$ZSHRC" 2>/dev/null; then
-      dim "    ~/.zshrc already wired up, skipping"
-    elif confirm "Point \`claude\` at the multi-model launcher in ~/.zshrc?"; then
-      backup "$ZSHRC"
-      # sticky-prompt aliases claude to its own wrapper; ours calls that
-      # wrapper underneath, so the later alias has to win.
-      sed -i.tmp '/^alias claude=.*sticky-claude"$/d' "$ZSHRC" && rm -f "$ZSHRC.tmp"
-      cat "$ROOT/multi-model/zshrc.snippet" >> "$ZSHRC"
-      green "    \`claude\` now shows every provider's models (run \`source ~/.zshrc\` to load)"
-      dim "    turn it off any time with \`ccx off\`, back on with \`ccx on\`"
-    fi
-
-    brew services start cliproxyapi >/dev/null 2>&1 || true
-    green "    started the proxy (loopback only, key required)"
-    dim "    next: run \`ccx --login\`, finish each sign-in in the browser, then \`ccx --refresh\`"
-    dim "    \`claude\` itself is untouched and keeps its own login"
+  if grep -q "claude-addons: multi-model" "$ZSHRC" 2>/dev/null; then
+    dim "    ~/.zshrc already wired up, skipping"
+  elif confirm "Also point \`claude\` at the multi-model launcher in ~/.zshrc?"; then
+    backup "$ZSHRC"
+    # sticky-prompt aliases claude to its own wrapper; ours calls that
+    # wrapper underneath, so the later alias has to win.
+    sed -i.tmp '/^alias claude=.*sticky-claude"$/d' "$ZSHRC" && rm -f "$ZSHRC.tmp"
+    cat "$ROOT/multi-model/zshrc.snippet" >> "$ZSHRC"
+    green "    \`claude\` now follows the \`ccx on|off\` toggle (run \`source ~/.zshrc\`)"
   fi
 fi
 
