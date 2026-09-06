@@ -18,8 +18,13 @@ debug: false
 logging-to-file: true
 usage-statistics-enabled: false
 
-request-retry: 3
+request-retry: 5
 max-retry-interval: 30
+
+# Never park a login after a quota/usage 429. A manual reset on the provider
+# side is invisible to the proxy, so a remembered cooldown just blocks a login
+# that already works again. Each request instead retries upstream 5 times.
+disable-cooling: true
 
 # A 400 from Gemini (bad tool shape) is a request problem, not a sick login.
 # Do not park the only Grok/Gemini credential in cooldown for that.
