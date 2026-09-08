@@ -148,7 +148,9 @@ refresh_filter() {
     brew services restart cliproxyapi >/dev/null 2>&1 || true
     for _ in $(seq 1 20); do sleep 1; proxy_up && break; done
   fi
-  rm -f "$CATALOGUE"
+  # Preserve remembered providers: the proxy can answer before every OAuth
+  # backend has finished loading, and rebuilding from that partial list would
+  # temporarily erase a provider and its exclusions.
   sync_filter
   write_agents
 }

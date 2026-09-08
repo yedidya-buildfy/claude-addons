@@ -580,7 +580,7 @@ def main():
                     slug=slug,
                     display_name=display_name,
                     desc=desc,
-                    model=listed_id(m),
+                    model=max_id(m),
                 ))
             written.append("%s -> %s" % (slug, display_name))
         for line in written:

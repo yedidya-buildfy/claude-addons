@@ -194,7 +194,8 @@ echo
 cyan "[4/8] statusline-gsd (model + task + context bar + plan usage at bottom)"
 if confirm "Install GSD statusline?"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
-  green "    copied gsd-statusline.js → ~/.claude/"
+  cp "$ROOT/statusline-gsd/provider-usage.js" "$CLAUDE_DIR/provider-usage.js"
+  green "    copied gsd-statusline.js + provider-usage.js → ~/.claude/"
 
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/statusline-gsd/usage-fetch.sh" "$CLAUDE_DIR/scripts/usage-fetch.sh"

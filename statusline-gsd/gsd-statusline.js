@@ -6,6 +6,29 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { providerCachePath, readProviderSnapshot, sanitizeWindows } = require('./provider-usage');
+
+// isPlainObject/sanitizeResetCredits below mirror the same-named validation
+// in provider-usage.js (sanitizeResetCredits deep-whitelists a snapshot's
+// resetCredits down to exactly {availableCount, nextExpiresAt?}). Kept as a
+// local copy rather than importing/exporting it, so the renderer never
+// trusts an on-disk cache file blindly — same fail-closed rule already
+// applied to windows via sanitizeWindows. Keep in sync with provider-usage.js
+// if that function's rules ever change.
+function isPlainObject(v) {
+  return v != null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function sanitizeResetCredits(rc) {
+  if (!isPlainObject(rc)) return null;
+  if (typeof rc.availableCount !== 'number' || !Number.isFinite(rc.availableCount) || rc.availableCount < 0) return null;
+  const out = { availableCount: rc.availableCount };
+  if (rc.nextExpiresAt !== undefined) {
+    if (typeof rc.nextExpiresAt !== 'number' || !Number.isFinite(rc.nextExpiresAt)) return null;
+    out.nextExpiresAt = rc.nextExpiresAt;
+  }
+  return out;
+}
 
 // --- Config + last-command readers ------------------------------------------
 
@@ -213,18 +236,30 @@ const SESSION_COLOR = '36';   // cyan
 const WEEKLY_COLOR = '35';    // magenta
 const MODEL_COLORS = ['33', '34', '32', '31']; // rotate for scoped-model entries
 
+// A reset two days out or further is a date question, not a stopwatch
+// question: "517h55m → 03:17" is unreadable, and the wall clock alone is
+// actively misleading because it hides which day the reset lands on.
+const RESET_DAYS_BAND_MINUTES = 48 * 60;
+
 // Accepts epoch seconds (statusline stdin) or ISO string (oauth/usage cache).
-// Returns "45m → 14:09" — time left until reset + local wall-clock reset time.
+// Returns "45m → 14:09" under an hour, "2h07m → 16:49" from one hour up to
+// (but not including) 48 hours, and "3d → 31/8" from 48 hours out — time left
+// until reset plus either the local wall clock or the local date it lands on.
 function formatReset(resetsAt) {
   if (resetsAt == null) return '';
   const t = typeof resetsAt === 'number' ? resetsAt * 1000 : Date.parse(resetsAt);
   if (!t || isNaN(t)) return '';
   const mins = Math.round((t - Date.now()) / 60000);
   if (mins <= 0) return '';
+  const d = new Date(t);
+  if (mins >= RESET_DAYS_BAND_MINUTES) {
+    // Whole days only — a trailing "and a bit" is noise at this distance.
+    const days = Math.floor(mins / (24 * 60));
+    return `${days}d → ${d.getDate()}/${d.getMonth() + 1}`;
+  }
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   const dur = h > 0 ? `${h}h${String(m).padStart(2, '0')}m` : `${m}m`;
-  const d = new Date(t);
   const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   return `${dur} → ${clock}`;
 }
@@ -303,6 +338,169 @@ function formatUsage(data, claudeDir) {
   return parts.length ? ` │ ${parts.join(' │ ')}` : '';
 }
 
+// --- Provider-aware usage (non-Claude models) --------------------------------
+
+const PROVIDER_LABELS = { codex: 'Codex', google: 'Google', grok: 'Grok' };
+
+// Throttle window matches the Claude fetch lock below — keeps overlapping
+// renders from stacking spawns while a background collector is in flight.
+const PROVIDER_LOCK_TTL_MS = 30_000;
+
+/**
+ * Spawn the detached collector for `provider` unless a recent spawn is still
+ * in flight (one lock file per provider in os.tmpdir()). Never blocks and
+ * never throws — the render path only ever touches the local cache file.
+ */
+function spawnProviderCollector(claudeDir, provider) {
+  try {
+    const lockPath = path.join(os.tmpdir(), `provider-usage-fetch-${provider}.lock`);
+    let locked = false;
+    try { locked = Date.now() - fs.statSync(lockPath).mtimeMs < PROVIDER_LOCK_TTL_MS; } catch (e) {}
+    if (locked) return;
+    fs.writeFileSync(lockPath, String(process.pid));
+    const collector = path.join(__dirname, 'provider-usage.js');
+    if (!fs.existsSync(collector)) return;
+    const child = require('child_process').spawn(
+      process.execPath,
+      [collector, 'fetch', provider],
+      { detached: true, stdio: 'ignore', env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir } }
+    );
+    child.unref();
+  } catch (e) {}
+}
+
+/**
+ * Provider-aware replacement for the usage segment. Claude models delegate
+ * unchanged to formatUsage (and its own cache/spawn path) — no non-Claude
+ * code below this branch ever runs, so a non-Claude model can never trigger
+ * or read the Claude usage cache, and Claude never touches provider caches.
+ * Non-Claude models read only their own namespaced cache file
+ * (provider-usage-<provider>.json) and render normalized windows; missing,
+ * malformed and non-'ok' caches render "<Provider> usage unavailable"
+ * instead of stale/garbage numbers, as do caches past the age-based hard
+ * expiry for every provider that can refresh itself. Google is the one
+ * exception — see the usability rule inside formatProviderUsage.
+ */
+function shortUsageLabel(w) {
+  const s = `${w.id || ''} ${w.label || ''}`.toLowerCase();
+  if (/(five-hour|5-hour|(?:^|[^a-z])5h(?:$|[^a-z]))/.test(s)) return '5h';
+  if (/(week|\bwk\b)/.test(s)) return 'wk';
+  if (/\bday\b/.test(s)) return 'day';
+  return (w.label || '').trim() || 'limit';
+}
+
+function windowPool(w) {
+  const s = `${w.id || ''} ${w.label || ''}`.toLowerCase();
+  if (s.includes('gemini')) return 'gemini';
+  if (/(?:^|[^a-z])3p(?:$|[^a-z])/.test(s)) return '3p';
+  return 'other';
+}
+
+/**
+ * Whether any window still has a reset ahead of `now` — i.e. the snapshot
+ * describes a quota period that has not yet turned over, so its percentages
+ * are still the current ones no matter how old the file itself is. A window
+ * without a resetsAt cannot vouch for itself and never counts.
+ */
+function hasUnspentWindow(windows, now) {
+  if (!Array.isArray(windows)) return false;
+  return windows.some((w) => typeof w.resetsAt === 'number' && Number.isFinite(w.resetsAt) && w.resetsAt * 1000 > now);
+}
+
+/** At most 5h + wk (same shape as Claude). Gemini sessions hide the 3p buckets. */
+function selectProviderWindows(provider, modelName, windows) {
+  if (!Array.isArray(windows) || windows.length === 0) return windows;
+  let source = windows;
+  if (provider === 'google') {
+    const want = /gemini/i.test(modelName || '') ? 'gemini' : '3p';
+    const pooled = windows.filter((w) => windowPool(w) === want);
+    if (pooled.length) source = pooled;
+  }
+  const byLabel = new Map();
+  for (const w of source) {
+    const label = shortUsageLabel(w);
+    if (!byLabel.has(label)) byLabel.set(label, { ...w, label });
+  }
+  return ['5h', 'wk', 'day'].map((l) => byLabel.get(l)).filter(Boolean);
+}
+
+/**
+ * Build the "resets N [· next expires ...]" segment from a snapshot's
+ * resetCredits, re-validating at render time (mirrors sanitizeResetCredits
+ * in provider-usage.js) so a malformed/hand-edited cache file can never
+ * render a partial or guessed value. Renders nothing when availableCount is
+ * 0/absent/invalid, or when resetCredits itself is malformed. When
+ * nextExpiresAt is present but formatReset resolves it to a past time (or a
+ * bad value), the segment still renders with the count alone.
+ */
+function formatResetCredits(resetCredits) {
+  const rc = sanitizeResetCredits(resetCredits);
+  if (!rc || rc.availableCount < 1) return '';
+  let seg = `resets ${rc.availableCount}`;
+  if (rc.nextExpiresAt != null) {
+    const reset = formatReset(rc.nextExpiresAt);
+    if (reset) seg += ` · next expires ${reset}`;
+  }
+  return `\x1b[2m${seg}\x1b[0m`;
+}
+
+function formatProviderUsage(data, claudeDir, now = Date.now()) {
+  const provider = providerForModel(data?.model?.display_name);
+  if (provider === 'claude') return formatUsage(data, claudeDir);
+  if (provider === 'other') return '';
+
+  const label = PROVIDER_LABELS[provider] || provider;
+  const snapshot = readProviderSnapshot(claudeDir, provider, now);
+
+  // Spawn the collector only when the cache is stale or missing/malformed.
+  if (!snapshot || snapshot.stale) {
+    spawnProviderCollector(claudeDir, provider);
+  }
+
+  // Re-validate the full normalized shape at render time too, not just at
+  // write time — an on-disk cache file may predate this validation, be
+  // hand-edited, or be corrupt, and the renderer must never trust it blindly
+  // (a malformed window must fail closed to "unavailable", not render as
+  // "undefined%"/"NaN%"). Any single invalid window rejects the whole
+  // render, matching writeSnapshot's fail-closed-not-partial rule.
+  const windows = snapshot ? sanitizeWindows(snapshot.windows) : null;
+
+  // Google's numbers only ever arrive when the user has the Antigravity
+  // client open — nothing here can go and fetch them, so an age-based
+  // expiry would blank the meter for everyone who isn't running that client
+  // right now, even though the quota it last reported is still the live one.
+  // The windows carry their own truth: a window that has not reset yet still
+  // describes today's quota however old the file is, and once every window's
+  // reset has passed the numbers are genuinely spent and must not be shown.
+  // Every other provider can refresh itself, so they keep the age-based
+  // hard expiry.
+  const usable = provider === 'google' ? hasUnspentWindow(windows, now) : !snapshot?.expired;
+
+  if (!snapshot || snapshot.status !== 'ok' || !usable || !windows || windows.length === 0) {
+    return ` │ ${label} usage unavailable`;
+  }
+
+  const shown = selectProviderWindows(provider, data?.model?.display_name, windows);
+  const parts = shown.map((w, i) => {
+    const pct = Math.round(w.usedPercent);
+    const color = MODEL_COLORS[i % MODEL_COLORS.length];
+    // Match Claude: reset clock only on the session (5h) meter, not weekly.
+    const reset = w.label === '5h' && w.resetsAt != null ? formatReset(w.resetsAt) : '';
+    return `\x1b[${color}m${w.label} ${buildBar(pct)} ${pct}%\x1b[0m${reset ? ` \x1b[36m↻${reset}\x1b[0m` : ''}`;
+  });
+
+  // Reset-credits segment (e.g. Codex's limited-time rate-limit resets),
+  // appended after the window segments. Absent/invalid/0-count renders
+  // nothing extra — see formatResetCredits.
+  const resetsSeg = formatResetCredits(snapshot.resetCredits);
+  if (resetsSeg) parts.push(resetsSeg);
+
+  // Stale-but-not-expired data still renders (cheaper than flashing
+  // "unavailable" every refresh interval) but is visibly marked as such.
+  const staleSuffix = snapshot.stale ? ' \x1b[2m(stale)\x1b[0m' : '';
+  return ` │ ${parts.join(' │ ')}${staleSuffix}`;
+}
+
 // --- stdin ------------------------------------------------------------------
 
 function runStatusline() {
@@ -316,7 +514,7 @@ function runStatusline() {
   clearTimeout(stdinTimeout);
   try {
     const data = JSON.parse(input);
-    const model = data.model?.display_name || 'Claude';
+    const modelLabel = formatModelLabel(data);
     const dir = data.workspace?.current_dir || process.cwd();
     const session = data.session_id || '';
     const remaining = data.context_window?.remaining_percentage;
@@ -326,7 +524,7 @@ function runStatusline() {
     // of the total window, but users can override it via CLAUDE_CODE_AUTO_COMPACT_WINDOW
     // (a token count). When the env var is set, compute the buffer % dynamically so
     // the meter correctly reflects early-compaction configurations (#2219).
-    const totalCtx = data.context_window?.total_tokens || 1_000_000;
+    const totalCtx = data.context_window?.context_window_size || data.context_window?.total_tokens || 1_000_000;
     const acw = parseInt(process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '0', 10);
     const AUTO_COMPACT_BUFFER_PCT = acw > 0
       ? Math.min(100, (acw / totalCtx) * 100)
@@ -467,13 +665,13 @@ function runStatusline() {
     // it break the rest of the line.
     let usage = '';
     try {
-      usage = formatUsage(data, claudeDir);
+      usage = formatProviderUsage(data, claudeDir);
     } catch (e) {}
 
     if (middle) {
-      process.stdout.write(`${gsdUpdate}\x1b[2m${model}\x1b[0m │ ${middle} │ \x1b[2m${dirname}\x1b[0m${ctx}${usage}${lastCmdSuffix}`);
+      process.stdout.write(`${gsdUpdate}\x1b[2m${modelLabel}\x1b[0m │ ${middle} │ \x1b[2m${dirname}\x1b[0m${ctx}${usage}${lastCmdSuffix}`);
     } else {
-      process.stdout.write(`${gsdUpdate}\x1b[2m${model}\x1b[0m │ \x1b[2m${dirname}\x1b[0m${ctx}${usage}${lastCmdSuffix}`);
+      process.stdout.write(`${gsdUpdate}\x1b[2m${modelLabel}\x1b[0m │ \x1b[2m${dirname}\x1b[0m${ctx}${usage}${lastCmdSuffix}`);
     }
   } catch (e) {
     // Silent fail - don't break statusline on parse errors
@@ -481,11 +679,128 @@ function runStatusline() {
 });
 }
 
+// --- Provider detection and model label formatting --------------------------
+
+function providerForModel(displayName = '') {
+  const name = displayName.toLowerCase();
+  if (/claude|fable|opus|sonnet|haiku/.test(name)) return 'claude';
+  if (/gpt|codex/.test(name)) return 'codex';
+  if (/gemini/.test(name)) return 'google';
+  if (/grok/.test(name)) return 'grok';
+  return 'other';
+}
+
+function formatContextSize(tokens) {
+  if (!Number.isFinite(tokens) || tokens <= 0) return '';
+  if (tokens >= 1_000_000) {
+    return `${Number((tokens / 1_000_000).toFixed(2))}M`;
+  }
+  return `${Math.round(tokens / 1000)}K`;
+}
+
+
+// --- Plan/execute model combos (ccx) ----------------------------------------
+// Claude Code's own `opusplan` swaps the model per permission mode and reports
+// the swapped name here, so it needs nothing. The ccx-only combo below is
+// swapped by the local proxy instead; Claude Code never learns, so its name is
+// resolved here from the selected combo (settings) x the last permission mode
+// the session recorded (transcript). That record is written with each prompt,
+// so the label follows a shift+tab one message late.
+
+const PLAN_COMBOS = {
+  'claude-fplan-sonnet': {
+    plan: () => process.env.ANTHROPIC_DEFAULT_OPUS_MODEL || 'claude-fable-5-1',
+    exec: () => 'claude-sonnet-5',
+  },
+};
+
+function bareModelId(id) {
+  return String(id || '').replace(/\[\d+m\]$/i, '').trim();
+}
+
+function claudeSettingsPath() {
+  const dir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  return path.join(dir, 'settings.json');
+}
+
+function readClaudeSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(claudeSettingsPath(), 'utf8')) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+/** Human name for a model id: the picker's own label if it lists one. */
+function prettyModelName(id, settings) {
+  const bare = bareModelId(id);
+  if (!bare) return '';
+  const options = settings?.modelPicker?.options;
+  if (Array.isArray(options)) {
+    const hit = options.find(o => o && bareModelId(o.model) === bare && typeof o.label === 'string');
+    // The combo rows label themselves "Fable Plan -> Opus"; that is the thing
+    // we are replacing, so never let one come back as its own half's name.
+    if (hit && !PLAN_COMBOS[bare]) return hit.label;
+  }
+  const rest = bare.replace(/^claude-/, '');
+  const parts = rest.split('-');
+  const nums = parts.slice(1).filter(p => /^\d+$/.test(p)).join('.');
+  const name = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+  return nums ? `${name} ${nums}` : name;
+}
+
+/**
+ * Last permission mode recorded in the session transcript. Both the standalone
+ * mode-change record and every user message carry it, so the last one wins.
+ * Only the tail is read — transcripts grow to tens of megabytes.
+ */
+function readPermissionMode(transcriptPath) {
+  if (!transcriptPath) return null;
+  let fd;
+  try {
+    const size = fs.statSync(transcriptPath).size;
+    const span = Math.min(size, 256 * 1024);
+    const buf = Buffer.alloc(span);
+    fd = fs.openSync(transcriptPath, 'r');
+    fs.readSync(fd, buf, 0, span, size - span);
+    const matches = buf.toString('utf8').match(/"permissionMode":"([a-zA-Z]+)"/g);
+    if (!matches || !matches.length) return null;
+    return matches[matches.length - 1].split('"')[3];
+  } catch (e) {
+    return null;
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch (e) {} }
+  }
+}
+
+/**
+ * Name of the model actually serving this turn, when a plan/execute combo is
+ * selected. Returns '' for every ordinary single-model session.
+ */
+function activeComboModelName(data = {}, settings = readClaudeSettings()) {
+  const combo = PLAN_COMBOS[bareModelId(settings.model)];
+  if (!combo) return '';
+  const planning = readPermissionMode(data.transcript_path) === 'plan';
+  return prettyModelName(planning ? combo.plan() : combo.exec(), settings);
+}
+
+function formatModelLabel(data = {}) {
+  const parts = [activeComboModelName(data) || data.model?.display_name || 'Claude'];
+  if (data.effort?.level) parts.push(data.effort.level);
+  const size = formatContextSize(data.context_window?.context_window_size);
+  if (size) parts.push(`${size} ctx`);
+  return parts.join(' · ');
+}
+
 // Export helpers for unit tests. Harmless when run as a script.
 module.exports = {
   readGsdState, parseStateMd, formatGsdState,
   readGsdConfig, getConfigValue, readLastSlashCommand,
   usageColor, formatReset, readUsageCache, formatUsage,
+  providerForModel, formatContextSize, formatModelLabel,
+  bareModelId, prettyModelName, readPermissionMode, activeComboModelName,
+  formatProviderUsage, selectProviderWindows, shortUsageLabel,
+  providerCachePath, readProviderSnapshot,
 };
 
 /**
@@ -493,15 +808,15 @@ module.exports = {
  * testing without feeding stdin. Returns the rendered string.
  */
 function renderStatusline(data) {
-  const model = data.model?.display_name || 'Claude';
-  const dir = data.workspace?.current_dir || process.cwd();
+  const modelLabel = formatModelLabel(data || {});
+  const dir = data?.workspace?.current_dir || process.cwd();
   const dirname = path.basename(dir);
 
   let lastCmdSuffix = '';
   try {
     const cfg = readGsdConfig(dir);
     if (getConfigValue(cfg, 'statusline.show_last_command') === true) {
-      const lastCmd = readLastSlashCommand(data.transcript_path);
+      const lastCmd = readLastSlashCommand(data?.transcript_path);
       if (lastCmd) {
         lastCmdSuffix = ` │ \x1b[2mlast: /${lastCmd}\x1b[0m`;
       }
@@ -511,9 +826,9 @@ function renderStatusline(data) {
   const gsdStateStr = formatGsdState(readGsdState(dir) || {});
   const middle = gsdStateStr ? `\x1b[2m${gsdStateStr}\x1b[0m` : null;
   if (middle) {
-    return `\x1b[2m${model}\x1b[0m │ ${middle} │ \x1b[2m${dirname}\x1b[0m${lastCmdSuffix}`;
+    return `\x1b[2m${modelLabel}\x1b[0m │ ${middle} │ \x1b[2m${dirname}\x1b[0m${lastCmdSuffix}`;
   }
-  return `\x1b[2m${model}\x1b[0m │ \x1b[2m${dirname}\x1b[0m${lastCmdSuffix}`;
+  return `\x1b[2m${modelLabel}\x1b[0m │ \x1b[2m${dirname}\x1b[0m${lastCmdSuffix}`;
 }
 
 module.exports.renderStatusline = renderStatusline;
