@@ -291,8 +291,8 @@ assert 'claude-haiku-4-5-20251001[1m]' not in ids, ids
 hybrid=p['options'][0]
 assert hybrid == {
     'model': 'opusplan[1m]',
-    'label': 'Fable Plan → Opus',
-    'description': 'Fable plans, Opus executes · 1M context',
+    'label': 'Fable 5 Plan → Opus 5',
+    'description': 'Fable 5 plans, Opus 5 executes · 1M context',
 }, hybrid
 " && say 1 "the picker lists large-window ids and the Fable-to-Opus hybrid" \
   || say 0 "the picker list is wrong"

@@ -93,9 +93,19 @@ fi
 # multi-model: remove the launcher and stop the proxy, but keep the OAuth
 # logins in ~/.cli-proxy-api — re-signing in to every provider is a real cost
 # to redo, and they are useless to anyone without the local key anyway.
-rm -f "$CLAUDE_DIR/scripts/ccx" "$CLAUDE_DIR/scripts/ccx-models.py"
-rm -f "$HOME/.cli-proxy-api/ccx-catalogue.json" "$HOME/.cli-proxy-api/ccx-defaults.json" "$HOME/.cli-proxy-api/ccx-mode"
-rm -f "$HOME/.claude/agents/ask-chatgpt.md" "$HOME/.claude/agents/ask-antigravity.md" "$HOME/.claude/agents/ask-grok.md" "$HOME/.claude/agents/ask-kimi.md"
+if command -v brew >/dev/null 2>&1; then
+  CCX_BIN="$(brew --prefix)/bin/ccx"
+  if [ -L "$CCX_BIN" ] && [ "$(readlink "$CCX_BIN")" = "$CLAUDE_DIR/scripts/ccx" ]; then
+    rm -f "$CCX_BIN"
+  fi
+fi
+rm -f "$CLAUDE_DIR/scripts/ccx" "$CLAUDE_DIR/scripts/ccx-models.py" \
+  "$CLAUDE_DIR/scripts/ccx-rewrite.js" "$CLAUDE_DIR/scripts/sanitize-schema.js" \
+  "$CLAUDE_DIR/scripts/ccx-rewrite-selftest.js" "$CLAUDE_DIR/scripts/ccx-models-selftest.py" \
+  "$CLAUDE_DIR/scripts/install-config.py" "$CLAUDE_DIR/scripts/install-config-selftest.py" \
+  "$CLAUDE_DIR/scripts/config.template.yaml"
+rm -f "$HOME/.claude-ccx/ccx-catalogue.json" "$HOME/.cli-proxy-api/ccx-defaults.json" "$HOME/.cli-proxy-api/ccx-mode"
+rm -f "$HOME/.claude-ccx/agents/ask-chatgpt.md" "$HOME/.claude-ccx/agents/ask-antigravity.md" "$HOME/.claude-ccx/agents/ask-grok.md" "$HOME/.claude-ccx/agents/ask-kimi.md"
 if command -v brew >/dev/null 2>&1 && brew list cliproxyapi >/dev/null 2>&1; then
   brew services stop cliproxyapi >/dev/null 2>&1 || true
   green "  removed ccx and stopped the model proxy"
