@@ -32,12 +32,29 @@ function getLatestModel(tier, provider = 'Claude') {
   }
 }
 
+// Claude Code appends a reminder to the newest user turn on entering plan mode
+// (repeated every few turns while it lasts) and a closing note on leaving it.
+// The tool list is no signal: ExitPlanMode is offered in every mode.
+const PLAN_ON = /Plan mode is active|Plan mode still active|## Re-entering Plan Mode/;
+const PLAN_OFF = /## Exited Plan Mode/;
+
+function textOf(block) {
+  if (typeof block === 'string') return block;
+  if (block && block.type === 'text' && typeof block.text === 'string') return block.text;
+  return '';
+}
+
 function isPlanMode(body) {
-  if (Array.isArray(body.tools)) {
-    return body.tools.some((t) => {
-      const name = t.name || (t.function && t.function.name);
-      return name === 'ExitPlanMode';
-    });
+  if (!Array.isArray(body.messages)) return false;
+  for (let i = body.messages.length - 1; i >= 0; i--) {
+    const m = body.messages[i];
+    if (!m || m.role !== 'user') continue;
+    const parts = Array.isArray(m.content) ? m.content : [m.content];
+    for (let j = parts.length - 1; j >= 0; j--) {
+      const t = textOf(parts[j]);
+      if (PLAN_OFF.test(t)) return false;
+      if (PLAN_ON.test(t)) return true;
+    }
   }
   return false;
 }
@@ -175,7 +192,9 @@ server.requestTimeout = clientTimeoutMs;
 server.headersTimeout = clientTimeoutMs;
 server.timeout = clientTimeoutMs;
 
-server.listen(listenPort, '127.0.0.1', () => {
+module.exports = { isPlanMode, rewriteModel };
+
+if (require.main === module) server.listen(listenPort, '127.0.0.1', () => {
   const addr = server.address();
   process.stderr.write(`ccx-rewrite listening 127.0.0.1:${addr.port} → ${upstreamHost}:${upstreamPort}\n`);
 });

@@ -97,7 +97,7 @@ install_link() {
   ln -s "$CLAUDE_SCRIPTS/ccx" "$CCX_COMMAND"
 }
 
-RUNTIME=(ccx ccx-models.py ccx-rewrite.js sanitize-schema.js ccx-rewrite-selftest.js ccx-models-selftest.py install-config.py install-config-selftest.py config.template.yaml)
+RUNTIME=(ccx ccx-models.py ccx-rewrite.js sanitize-schema.js ccx-rewrite-selftest.js ccx-rewrite-plan-selftest.js ccx-models-selftest.py install-config.py install-config-selftest.py config.template.yaml)
 for name in "${RUNTIME[@]}"; do
   [ -f "$ROOT/$name" ] || { printf 'Missing installer source: %s\n' "$name" >&2; exit 1; }
 done
@@ -157,6 +157,7 @@ else
 fi
 
 node "$CLAUDE_SCRIPTS/ccx-rewrite-selftest.js"
+node "$CLAUDE_SCRIPTS/ccx-rewrite-plan-selftest.js"
 python3 "$CLAUDE_SCRIPTS/ccx-models-selftest.py"
 python3 "$CLAUDE_SCRIPTS/install-config-selftest.py"
 "$CLAUDE_SCRIPTS/ccx" --status
