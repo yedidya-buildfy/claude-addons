@@ -28,8 +28,9 @@ rm -f "$CLAUDE_DIR/scripts/tab.sh" "$CLAUDE_DIR/scripts/tab-watcher.sh" "$CLAUDE
 rm -f "$CLAUDE_DIR/scripts/usage-fetch.sh" "$CLAUDE_DIR/cache/claude-usage.json"
 rm -f "$CLAUDE_DIR/scripts/sticky-claude"
 rm -f "$CLAUDE_DIR/scripts/ntfy.sh"
+rm -f "$CLAUDE_DIR/scripts/claude-addons-update.sh" "$CLAUDE_DIR/addons-repo-path"
 rm -rf "$CLAUDE_DIR/skills/tab-name"
-green "  removed ~/.claude/scripts/{tab.sh,tab-watcher.sh,tn,usage-fetch.sh,sticky-claude} and ~/.claude/skills/tab-name/"
+green "  removed ~/.claude/scripts/{tab.sh,tab-watcher.sh,tn,usage-fetch.sh,sticky-claude,claude-addons-update.sh} and ~/.claude/skills/tab-name/"
 
 # Strip our hook entries from ~/.claude/settings.json
 if [ -f "$CLAUDE_SETTINGS" ]; then
@@ -38,7 +39,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     const file = process.argv[1];
     const cfg = JSON.parse(fs.readFileSync(file, "utf8"));
     if (cfg.hooks) {
-      const isOurs = h => ["tab.sh", "tab-autoname.py", "ntfy.sh"]
+      const isOurs = h => ["tab.sh", "tab-autoname.py", "ntfy.sh", "claude-addons-update.sh"]
         .some(name => JSON.stringify(h).includes(name));
       for (const event of Object.keys(cfg.hooks)) {
         cfg.hooks[event] = cfg.hooks[event].filter(group => {

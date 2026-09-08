@@ -215,7 +215,7 @@ while [ $# -gt 0 ]; do
     --refresh) CMD=refresh; shift ;;
     --agents)  CMD=agents; shift ;;
     --status)  CMD=status; shift ;;
-    --update)  CMD=update; shift ;;
+    update|--update) CMD=update; shift ;;
     --restart) CMD=restart; shift ;;
     --logout)  CMD=logout; shift
                if [ $# -gt 0 ] && [ "${1:0:1}" != "-" ]; then MODELS=("$1"); shift; fi ;;
@@ -242,12 +242,19 @@ case "$CMD" in
     fi
     exit 0 ;;
   update)
+    cyan "Updating claude-addons from repository..."
+    if [ -x "$SCRIPT_DIR/claude-addons-update.sh" ]; then
+      "$SCRIPT_DIR/claude-addons-update.sh" --force
+    elif [ -x "$HOME/.claude/scripts/claude-addons-update.sh" ]; then
+      "$HOME/.claude/scripts/claude-addons-update.sh" --force
+    fi
+    cyan "Updating Homebrew proxy..."
     brew update >/dev/null 2>&1 || true
     brew upgrade cliproxyapi || dim "already at the newest version"
     brew services restart cliproxyapi
     stop_rewrite
     require_key || exit 1; ensure_proxy || exit 1; refresh_filter
-    cyan "$("$BIN" -h 2>&1 | head -1)"
+    cyan "claude-addons and proxy are up to date."
     exit 0 ;;
   restart)
     brew services restart cliproxyapi
