@@ -118,6 +118,13 @@ for name in "${RUNTIME[@]}"; do
   install_file "$ROOT/$name" "$CLAUDE_SCRIPTS/$name" "home/.claude/scripts/$name" "$mode"
 done
 install_link
+
+if [ -f "$ROOT/../auto-update/claude-addons-update.sh" ]; then
+  install_file "$ROOT/../auto-update/claude-addons-update.sh" "$CLAUDE_SCRIPTS/claude-addons-update.sh" "home/.claude/scripts/claude-addons-update.sh" 755
+  mkdir -p "$HOME/.claude"
+  echo "$ROOT/.." > "$HOME/.claude/addons-repo-path"
+  [ -d "$CCX_DIR" ] && echo "$ROOT/.." > "$CCX_DIR/addons-repo-path"
+fi
 if [ ! -f "$LOCAL_KEY" ]; then
   if [ "$DRY_RUN" = 1 ]; then
     printf 'Would create %s\n' "$LOCAL_KEY"

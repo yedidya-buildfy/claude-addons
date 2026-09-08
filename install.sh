@@ -16,7 +16,43 @@ cyan() { printf '\033[36m%s\033[0m\n' "$1"; }
 dim()  { printf '\033[2m%s\033[0m\n' "$1"; }
 green(){ printf '\033[32m%s\033[0m\n' "$1"; }
 
-confirm() { read -p "  $1 [y/N] " r; [ "$r" = "y" ] || [ "$r" = "Y" ]; }
+INSTALL_MODE="interactive"
+for arg in "$@"; do
+  case "$arg" in
+    --update) INSTALL_MODE="update" ;;
+    --yes|-y) INSTALL_MODE="yes" ;;
+  esac
+done
+
+is_installed() {
+  local comp="$1"
+  case "$comp" in
+    tab-status) [ -f "$CLAUDE_DIR/scripts/tab.sh" ] ;;
+    skill-tab-name) [ -f "$CLAUDE_DIR/skills/tab-name/SKILL.md" ] ;;
+    skill-design-in-browser) [ -f "$CLAUDE_DIR/skills/design-in-browser/SKILL.md" ] ;;
+    statusline-gsd) [ -f "$CLAUDE_DIR/gsd-statusline.js" ] ;;
+    fable-plan) grep -q "alias fplan=" "$ZSHRC" 2>/dev/null ;;
+    sticky-prompt) [ -f "$CLAUDE_DIR/scripts/sticky-claude" ] ;;
+    multi-model) [ -f "$CLAUDE_DIR/scripts/ccx" ] || [ -f "$(brew --prefix 2>/dev/null)/bin/ccx" ] ;;
+    phone-alerts) [ -f "$CLAUDE_DIR/scripts/ntfy.sh" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+confirm() {
+  local prompt="$1"
+  local comp="${2:-}"
+  if [ "$INSTALL_MODE" = "yes" ]; then return 0; fi
+  if [ "$INSTALL_MODE" = "update" ]; then
+    if [ -n "$comp" ] && is_installed "$comp"; then
+      dim "    updating $comp..."
+      return 0
+    fi
+    return 1
+  fi
+  read -p "  $prompt [y/N] " r
+  [ "$r" = "y" ] || [ "$r" = "Y" ]
+}
 
 backup() {
   [ -f "$1" ] || return 0
@@ -108,7 +144,7 @@ echo
 
 # --- tab-status ---
 cyan "[1/8] tab-status (colored dot on VS Code terminal tabs)"
-if confirm "Install tab-status?"; then
+if confirm "Install tab-status?" "tab-status"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
   for script in tab.sh tab-watcher.sh tab-state.py tn tab-dots-selftest.sh tab-autoname.py test_tab_status.py test_tab_naming.py; do
@@ -142,7 +178,7 @@ if confirm "Install tab-status?"; then
     dim "    VS Code user settings not found — skipping (install VS Code first)"
   fi
 
-  if [ -f "$ZSHRC" ]; then
+  if [ "$INSTALL_MODE" != "update" ] && [ -f "$ZSHRC" ]; then
     if confirm "Install/update the known \`tn\` shell wrapper in ~/.zshrc?"; then
       backup "$ZSHRC"
       update_tab_shell
@@ -156,14 +192,14 @@ echo
 
 # --- skill-tab-name ---
 cyan "[2/8] skill-tab-name (Claude picks tab names automatically)"
-if confirm "Install the \`tab-name\` skill?"; then
+if confirm "Install the \`tab-name\` skill?" "skill-tab-name"; then
   mkdir -p "$CLAUDE_DIR/skills/tab-name"
   cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
   green "    installed skill → ~/.claude/skills/tab-name/SKILL.md"
   dim "    fires on /tab-name, on phrases like 'rename tab', and auto-fires when topic shifts"
   dim "    requires tab-status (for the \`tn\` CLI it calls)"
 
-  if confirm "Also append a reminder to ~/.claude/CLAUDE.md for max reliability?"; then
+  if [ "$INSTALL_MODE" != "update" ] && confirm "Also append a reminder to ~/.claude/CLAUDE.md for max reliability?"; then
     backup "$CLAUDE_MD"
     if ! grep -q "\`tab-name\`" "$CLAUDE_MD" 2>/dev/null; then
       [ -f "$CLAUDE_MD" ] && [ -s "$CLAUDE_MD" ] && echo "" >> "$CLAUDE_MD"
@@ -180,7 +216,7 @@ echo
 
 # --- skill-design-in-browser ---
 cyan "[3/8] skill-design-in-browser (design UI in the browser before coding)"
-if confirm "Install the `design-in-browser` skill?"; then
+if confirm "Install the \`design-in-browser\` skill?" "skill-design-in-browser"; then
   mkdir -p "$CLAUDE_DIR/skills/design-in-browser"
   cp "$ROOT/skill-design-in-browser/SKILL.md" "$CLAUDE_DIR/skills/design-in-browser/SKILL.md"
   green "    installed skill → ~/.claude/skills/design-in-browser/SKILL.md"
@@ -192,7 +228,7 @@ echo
 
 # --- statusline-gsd ---
 cyan "[4/8] statusline-gsd (model + task + context bar + plan usage at bottom)"
-if confirm "Install GSD statusline?"; then
+if confirm "Install GSD statusline?" "statusline-gsd"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   cp "$ROOT/statusline-gsd/provider-usage.js" "$CLAUDE_DIR/provider-usage.js"
   green "    copied gsd-statusline.js + provider-usage.js → ~/.claude/"
@@ -209,7 +245,7 @@ fi
 
 # --- fable-plan ---
 cyan "[5/8] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
-if confirm "Install fable-plan?"; then
+if confirm "Install fable-plan?" "fable-plan"; then
   if grep -q "alias fplan=" "$ZSHRC" 2>/dev/null; then
     dim "    fplan alias already in ~/.zshrc, skipping"
   else
@@ -225,7 +261,7 @@ echo
 
 # --- sticky-prompt ---
 cyan "[6/8] sticky-prompt (the message you sent pinned to the top of the terminal)"
-if confirm "Install sticky-prompt?"; then
+if confirm "Install sticky-prompt?" "sticky-prompt"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/sticky-prompt/sticky-claude" "$CLAUDE_DIR/scripts/sticky-claude"
   chmod +x "$CLAUDE_DIR/scripts/sticky-claude"
@@ -241,7 +277,7 @@ if confirm "Install sticky-prompt?"; then
 
   if grep -q "sticky-claude" "$ZSHRC" 2>/dev/null; then
     dim "    claude alias already in ~/.zshrc, skipping"
-  elif confirm "Point the \`claude\` command at the wrapper (alias in ~/.zshrc)?"; then
+  elif [ "$INSTALL_MODE" != "update" ] && confirm "Point the \`claude\` command at the wrapper (alias in ~/.zshrc)?"; then
     backup "$ZSHRC"
     echo "" >> "$ZSHRC"
     cat "$ROOT/sticky-prompt/zshrc.snippet" >> "$ZSHRC"
@@ -257,13 +293,17 @@ echo
 
 # --- multi-model ---
 cyan "[7/8] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
-if confirm "Install multi-model?"; then
-  "$ROOT/multi-model/install.sh"
+if confirm "Install multi-model?" "multi-model"; then
+  if [ "$INSTALL_MODE" = "update" ] || [ "$INSTALL_MODE" = "yes" ]; then
+    "$ROOT/multi-model/install.sh" --yes
+  else
+    "$ROOT/multi-model/install.sh"
+  fi
   green "    installed global \`ccx\` command with backups and self-tests"
 
   if grep -q "claude-addons: multi-model" "$ZSHRC" 2>/dev/null; then
     dim "    ~/.zshrc already wired up, skipping"
-  elif confirm "Also point \`claude\` at the multi-model launcher in ~/.zshrc?"; then
+  elif [ "$INSTALL_MODE" != "update" ] && confirm "Also point \`claude\` at the multi-model launcher in ~/.zshrc?"; then
     backup "$ZSHRC"
     # sticky-prompt aliases claude to its own wrapper; ours calls that
     # wrapper underneath, so the later alias has to win.
@@ -275,7 +315,7 @@ fi
 
 # --- phone-alerts ---
 cyan "[8/8] phone-alerts (push to your phone when Claude needs you)"
-if confirm "Install phone-alerts?"; then
+if confirm "Install phone-alerts?" "phone-alerts"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/phone-alerts/ntfy.sh" "$CLAUDE_DIR/scripts/ntfy.sh"
   chmod +x "$CLAUDE_DIR/scripts/ntfy.sh"
@@ -295,6 +335,24 @@ if confirm "Install phone-alerts?"; then
   dim "    subscribe to that topic in the ntfy app to start receiving alerts"
   dim "    anyone who knows the topic can read your alerts - keep it private"
 fi
+
+# --- auto-update setup ---
+echo
+cyan "[auto-update] automatic background updates from repository"
+mkdir -p "$CLAUDE_DIR/scripts"
+echo "$ROOT" > "$CLAUDE_DIR/addons-repo-path"
+if [ -d "$HOME/.claude-ccx" ]; then
+  echo "$ROOT" > "$HOME/.claude-ccx/addons-repo-path"
+fi
+cp "$ROOT/auto-update/claude-addons-update.sh" "$CLAUDE_DIR/scripts/claude-addons-update.sh"
+chmod +x "$CLAUDE_DIR/scripts/claude-addons-update.sh"
+
+update_hook='{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"$HOME/.claude/scripts/claude-addons-update.sh --quiet &"}]}]}}'
+echo "$update_hook" | json_merge "$CLAUDE_SETTINGS"
+if [ -f "$HOME/.claude-ccx/settings.json" ]; then
+  echo "$update_hook" | json_merge "$HOME/.claude-ccx/settings.json"
+fi
+green "    registered background auto-update hook (checks once every 12h)"
 
 echo
 green "Done."
