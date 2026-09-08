@@ -239,8 +239,23 @@ if confirm "Install GSD statusline?" "statusline-gsd"; then
   green "    copied usage-fetch.sh → ~/.claude/scripts/ (plan-usage cache refresher)"
 
   backup "$CLAUDE_SETTINGS"
-  echo '{"statusLine":{"type":"command","command":"node ~/.claude/gsd-statusline.js"}}' | json_merge "$CLAUDE_SETTINGS"
-  green "    set statusLine in ~/.claude/settings.json"
+  # refreshInterval redraws the line on a timer as well as on events, so the
+  # connection and output-rate readings stay current while a turn is running.
+  echo '{"statusLine":{"type":"command","command":"node ~/.claude/gsd-statusline.js","refreshInterval":1}}' | json_merge "$CLAUDE_SETTINGS"
+  green "    set statusLine in ~/.claude/settings.json (redraws every second)"
+
+  # The live tokens-per-second meter is fed by a MessageDisplay hook that
+  # records how much text streamed and how much of it was Latin script. It
+  # stores lengths only, never the text. Without jq the meter simply stays on
+  # the finished-reply rate; nothing else in the status line depends on it.
+  if command -v jq >/dev/null 2>&1; then
+    json_merge "$CLAUDE_SETTINGS" <<'HOOKJSON'
+{"hooks":{"MessageDisplay":[{"hooks":[{"type":"command","timeout":5,"command":"jq -rj '(.session_id)+\" \"+(now*1000|floor|tostring)+\" \"+(.delta|length|tostring)+\" \"+(.delta|explode|map(select(.<128))|length|tostring)+\"\\n\"' >> ~/.claude/cache/stream-rate.log"}]}]}}
+HOOKJSON
+    green "    live output-rate meter enabled (MessageDisplay hook)"
+  else
+    dim "    jq not found — live output-rate meter stays off, everything else works"
+  fi
 fi
 
 # --- fable-plan ---
