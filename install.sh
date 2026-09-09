@@ -35,6 +35,7 @@ is_installed() {
     sticky-prompt) [ -f "$CLAUDE_DIR/scripts/sticky-claude" ] ;;
     multi-model) [ -f "$CLAUDE_DIR/scripts/ccx" ] || [ -f "$(brew --prefix 2>/dev/null)/bin/ccx" ] ;;
     phone-alerts) [ -f "$CLAUDE_DIR/scripts/ntfy.sh" ] ;;
+    agent-locks) [ -f "$CLAUDE_DIR/scripts/agent-locks.mjs" ] ;;
     *) return 1 ;;
   esac
 }
@@ -143,7 +144,7 @@ cyan "claude-addons installer"
 echo
 
 # --- tab-status ---
-cyan "[1/8] tab-status (colored dot on VS Code terminal tabs)"
+cyan "[1/9] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?" "tab-status"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
@@ -191,7 +192,7 @@ fi
 echo
 
 # --- skill-tab-name ---
-cyan "[2/8] skill-tab-name (Claude picks tab names automatically)"
+cyan "[2/9] skill-tab-name (Claude picks tab names automatically)"
 if confirm "Install the \`tab-name\` skill?" "skill-tab-name"; then
   mkdir -p "$CLAUDE_DIR/skills/tab-name"
   cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
@@ -215,7 +216,7 @@ fi
 echo
 
 # --- skill-design-in-browser ---
-cyan "[3/8] skill-design-in-browser (design UI in the browser before coding)"
+cyan "[3/9] skill-design-in-browser (design UI in the browser before coding)"
 if confirm "Install the \`design-in-browser\` skill?" "skill-design-in-browser"; then
   mkdir -p "$CLAUDE_DIR/skills/design-in-browser"
   cp "$ROOT/skill-design-in-browser/SKILL.md" "$CLAUDE_DIR/skills/design-in-browser/SKILL.md"
@@ -227,7 +228,7 @@ fi
 echo
 
 # --- statusline-gsd ---
-cyan "[4/8] statusline-gsd (model + task + context bar + plan usage at bottom)"
+cyan "[4/9] statusline-gsd (model + task + context bar + plan usage at bottom)"
 if confirm "Install GSD statusline?" "statusline-gsd"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   cp "$ROOT/statusline-gsd/provider-usage.js" "$CLAUDE_DIR/provider-usage.js"
@@ -259,7 +260,7 @@ HOOKJSON
 fi
 
 # --- fable-plan ---
-cyan "[5/8] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
+cyan "[5/9] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
 if confirm "Install fable-plan?" "fable-plan"; then
   if grep -q "alias fplan=" "$ZSHRC" 2>/dev/null; then
     dim "    fplan alias already in ~/.zshrc, skipping"
@@ -275,7 +276,7 @@ fi
 echo
 
 # --- sticky-prompt ---
-cyan "[6/8] sticky-prompt (the message you sent pinned to the top of the terminal)"
+cyan "[6/9] sticky-prompt (the message you sent pinned to the top of the terminal)"
 if confirm "Install sticky-prompt?" "sticky-prompt"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/sticky-prompt/sticky-claude" "$CLAUDE_DIR/scripts/sticky-claude"
@@ -307,7 +308,7 @@ fi
 echo
 
 # --- multi-model ---
-cyan "[7/8] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
+cyan "[7/9] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
 if confirm "Install multi-model?" "multi-model"; then
   if [ "$INSTALL_MODE" = "update" ] || [ "$INSTALL_MODE" = "yes" ]; then
     "$ROOT/multi-model/install.sh" --yes
@@ -329,7 +330,7 @@ if confirm "Install multi-model?" "multi-model"; then
 fi
 
 # --- phone-alerts ---
-cyan "[8/8] phone-alerts (push to your phone when Claude needs you)"
+cyan "[8/9] phone-alerts (push to your phone when Claude needs you)"
 if confirm "Install phone-alerts?" "phone-alerts"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/phone-alerts/ntfy.sh" "$CLAUDE_DIR/scripts/ntfy.sh"
@@ -349,6 +350,25 @@ if confirm "Install phone-alerts?" "phone-alerts"; then
   fi
   dim "    subscribe to that topic in the ntfy app to start receiving alerts"
   dim "    anyone who knows the topic can read your alerts - keep it private"
+fi
+
+# --- agent-locks ---
+echo
+cyan "[9/9] agent-locks (warn when two sessions touch the same file, or deploy at once)"
+if confirm "Install agent-locks?" "agent-locks"; then
+  mkdir -p "$CLAUDE_DIR/scripts"
+  cp "$ROOT/agent-locks/agent-locks.mjs" "$CLAUDE_DIR/scripts/agent-locks.mjs"
+  chmod +x "$CLAUDE_DIR/scripts/agent-locks.mjs"
+  green "    copied agent-locks.mjs -> ~/.claude/scripts/"
+
+  backup "$CLAUDE_SETTINGS"
+  cat "$ROOT/agent-locks/settings.json.snippet" | json_merge "$CLAUDE_SETTINGS"
+  if [ -f "$HOME/.claude-ccx/settings.json" ]; then
+    backup "$HOME/.claude-ccx/settings.json"
+    cat "$ROOT/agent-locks/settings.json.snippet" | json_merge "$HOME/.claude-ccx/settings.json"
+  fi
+  green "    merged hooks into ~/.claude/settings.json"
+  dim "    it only warns - see who holds what with: node ~/.claude/scripts/agent-locks.mjs list"
 fi
 
 # --- auto-update setup ---
