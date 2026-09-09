@@ -10,6 +10,7 @@ CLAUDE_DIR="$HOME/.claude"
 CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
 CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
 VSCODE_SETTINGS="$HOME/Library/Application Support/Code/User/settings.json"
+VSCODE_KEYBINDINGS="$HOME/Library/Application Support/Code/User/keybindings.json"
 ZSHRC="$HOME/.zshrc"
 
 cyan() { printf '\033[36m%s\033[0m\n' "$1"; }
@@ -140,6 +141,30 @@ p.write_text(source)
 PY
 }
 
+keybindings_merge() {
+  local file="$1"
+  local incoming
+  incoming=$(cat)
+  mkdir -p "$(dirname "$file")"
+  [ -f "$file" ] || echo '[]' > "$file"
+  node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const incoming = JSON.parse(process.argv[2]);
+    // Strip // comments VS Code allows in keybindings.json before parsing.
+    const raw = fs.readFileSync(file, "utf8").replace(/^\s*\/\/.*$/gm, "");
+    const target = raw.trim() ? JSON.parse(raw) : [];
+    const seen = new Set(target.map(x => JSON.stringify(x)));
+    for (const item of incoming) {
+      const key = JSON.stringify(item);
+      if (!seen.has(key)) { target.push(item); seen.add(key); }
+    }
+    const temporary = file + ".tmp." + process.pid;
+    fs.writeFileSync(temporary, JSON.stringify(target, null, 4) + "\n");
+    fs.renameSync(temporary, file);
+  ' "$file" "$incoming"
+}
+
 cyan "claude-addons installer"
 echo
 
@@ -177,6 +202,16 @@ if confirm "Install tab-status?" "tab-status"; then
     green "    added terminal.integrated.tabs.title to VS Code settings"
   else
     dim "    VS Code user settings not found — skipping (install VS Code first)"
+  fi
+
+  if [ -d "$(dirname "$VSCODE_SETTINGS")" ]; then
+    mkdir -p "$HOME/.vscode/extensions/claude-tab-rename"
+    cp "$ROOT/tab-status/vscode-extension/package.json" "$ROOT/tab-status/vscode-extension/extension.js" \
+       "$HOME/.vscode/extensions/claude-tab-rename/"
+    backup "$VSCODE_KEYBINDINGS"
+    cat "$ROOT/tab-status/vscode-keybindings.snippet" | keybindings_merge "$VSCODE_KEYBINDINGS"
+    green "    installed the rename extension and took over Enter/F2 on terminal tabs"
+    dim "    reload VS Code once; renaming a tab no longer freezes its dot"
   fi
 
   if [ "$INSTALL_MODE" != "update" ] && [ -f "$ZSHRC" ]; then

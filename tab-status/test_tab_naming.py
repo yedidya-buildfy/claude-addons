@@ -276,6 +276,24 @@ class NamingTests(unittest.TestCase):
         self.auto("\x1b]0;injected\x1b\\🟢 שלום עולם")
         self.assertEqual(self.name.read_text(), "שלום עולם\n")
 
+    def test_explicit_tty_targets_that_terminal_without_a_process_walk(self):
+        # The editor calls tn from outside the terminal's process tree; without
+        # --tty the PPID walk would land on the wrong terminal, or none.
+        ps = self.home / "bin/ps"
+        ps.write_text("#!/bin/sh\nexit 1\n")
+        self.tn("--tty", "ttys-test", "renamed by hand")
+        self.assertEqual(self.name.read_text(), "renamed by hand\n")
+        self.assertTrue(self.pin.exists())
+        self.tn("--tty", "ttys-test")
+        self.assertFalse(self.pin.exists())
+
+    def test_unknown_option_is_refused(self):
+        result = subprocess.run([str(ROOT / "tn"), "--wat", "x"], cwd=self.project,
+                                capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("unknown option", result.stderr)
+        self.assertEqual(self.name.read_text(), "project\n")
+
     def test_unpinned_auto_command_stays_unpinned(self):
         self.tn("--auto", "new topic")
         self.assertEqual(self.name.read_text(), "new topic\n")

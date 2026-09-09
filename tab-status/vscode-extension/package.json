@@ -1,0 +1,20 @@
+{
+  "name": "claude-tab-rename",
+  "displayName": "Claude Tab Rename",
+  "description": "Rename a terminal tab without freezing its status dot.",
+  "version": "1.0.0",
+  "publisher": "claude-addons",
+  "license": "MIT",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeTab.rename",
+        "title": "Rename Terminal Tab (keep the status dot)",
+        "category": "Claude"
+      }
+    ]
+  }
+}
