@@ -232,6 +232,50 @@ def process(pid, columns):
         return ""
 
 
+TASK_END = re.compile(rb"\[(?:exited with code -?\d+|killed)\]\s*$")
+
+
+def tasks_dir(sid, _cache={}):
+    """Where the runtime streams this session's background-task output."""
+    found, checked = _cache.get(sid, ("", 0.0))
+    if found or (checked and time.monotonic() - checked < 30):
+        return found
+    for base in (os.environ.get("TMPDIR"), "/private/tmp", "/tmp"):
+        if not base:
+            continue
+        for path in Path(base).glob(f"claude-*/*/{sid}/tasks"):
+            found = path
+            break
+        if found:
+            break
+    _cache[sid] = (found, time.monotonic())
+    return found
+
+
+def shell_running(sid, task, _finished=set()):
+    """Brown needs proof: an output file that has not reached its exit marker.
+
+    A background shell often ends with no completion notification at all - a
+    foreground command that the two-minute timeout pushes into the background
+    almost never sends one - so trusting the transcript alone leaves the dot
+    brown for the rest of the session. No file means nothing is running.
+    """
+    if not valid_id(task) or (sid, task) in _finished:
+        return False
+    directory = tasks_dir(sid)
+    running = False
+    if directory:
+        try:
+            with open(Path(directory) / f"{task}.output", "rb") as f:
+                f.seek(max(0, os.fstat(f.fileno()).st_size - 200))
+                running = not TASK_END.search(f.read().rstrip())
+        except OSError:
+            running = False
+    if not running:
+        _finished.add((sid, task))
+    return running
+
+
 def owner_identity(pid):
     return process(pid, "lstart=,comm=")
 
@@ -430,7 +474,8 @@ def watch(sid, tty, pid):
                     if value in ("white", "red", "blue", "green"):
                         last_state = value
                     state = last_state if available or last_state != "green" else "white"
-                    dot = badge(state, tracker.busy, bool(tracker.shells), tracker.plan, prefix.with_suffix(".plan_wait").exists())
+                    shells = any(shell_running(sid, task) for task in tracker.shells)
+                    dot = badge(state, tracker.busy, shells, tracker.plan, prefix.with_suffix(".plan_wait").exists())
                     title = dot + " " + safe_name(text(prefix.with_suffix(".name"), "claude"))
                     with locked(STATE / f"tty.{key}.lock"):
                         if text(mapping) != sid:

@@ -247,6 +247,39 @@ class TerminalChecks(unittest.TestCase):
         self.run_hook(core, "refresh")
         self.assertEqual((self.state / f"tty.{self.tty}.session").read_text(), "other-session")
 
+    def background_shell(self, task="bshell01"):
+        """A background Bash whose completion notification never arrives."""
+        self.append({"type": "assistant", "timestamp": "2026-09-05T10:00:00Z",
+                     "message": {"content": [{"type": "tool_use", "id": "call-bash", "name": "Bash", "input": {}}]}})
+        self.append({"type": "user", "timestamp": "2026-09-05T10:00:01Z",
+                     "message": {"content": [{"type": "tool_result", "tool_use_id": "call-bash"}]},
+                     "toolUseResult": {"backgroundTaskId": task, "timedOutAfterMs": 120000}})
+        tasks = self.home / "tmp" / "claude-503" / "project" / SID / "tasks"
+        tasks.mkdir(parents=True, exist_ok=True)
+        return tasks / (task + ".output")
+
+    def test_finished_background_shell_stops_painting_brown(self):
+        output = self.background_shell()
+        output.write_text("some output\n[exited with code 0]\n")
+        with mock.patch.dict(os.environ, {"TMPDIR": str(self.home / "tmp")}):
+            self.start()
+            self.collect()
+        self.assertEqual(self.titles(), ["🟢 בדיקת נקודות"])
+
+    def test_silent_background_shell_without_output_is_not_brown(self):
+        self.background_shell().unlink(missing_ok=True)
+        with mock.patch.dict(os.environ, {"TMPDIR": str(self.home / "tmp")}):
+            self.start()
+            self.collect()
+        self.assertEqual(self.titles(), ["🟢 בדיקת נקודות"])
+
+    def test_running_background_shell_is_still_brown(self):
+        self.background_shell().write_text("still working\n")
+        with mock.patch.dict(os.environ, {"TMPDIR": str(self.home / "tmp")}):
+            self.start()
+            self.collect()
+        self.assertEqual(self.titles(), ["🟤 בדיקת נקודות"])
+
     def test_unknown_state_is_not_green(self):
         (self.state / (SID + ".state")).write_text("")
         self.start()
