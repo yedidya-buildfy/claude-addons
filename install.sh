@@ -31,6 +31,7 @@ is_installed() {
     tab-status) [ -f "$CLAUDE_DIR/scripts/tab.sh" ] ;;
     skill-tab-name) [ -f "$CLAUDE_DIR/skills/tab-name/SKILL.md" ] ;;
     skill-design-in-browser) [ -f "$CLAUDE_DIR/skills/design-in-browser/SKILL.md" ] ;;
+    skill-extras) [ -f "$CLAUDE_DIR/skills/explain-problem/SKILL.md" ] ;;
     statusline-gsd) [ -f "$CLAUDE_DIR/gsd-statusline.js" ] ;;
     fable-plan) grep -q "alias fplan=" "$ZSHRC" 2>/dev/null ;;
     sticky-prompt) [ -f "$CLAUDE_DIR/scripts/sticky-claude" ] ;;
@@ -169,7 +170,7 @@ cyan "claude-addons installer"
 echo
 
 # --- tab-status ---
-cyan "[1/9] tab-status (colored dot on VS Code terminal tabs)"
+cyan "[1/10] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?" "tab-status"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
@@ -227,7 +228,7 @@ fi
 echo
 
 # --- skill-tab-name ---
-cyan "[2/9] skill-tab-name (Claude picks tab names automatically)"
+cyan "[2/10] skill-tab-name (Claude picks tab names automatically)"
 if confirm "Install the \`tab-name\` skill?" "skill-tab-name"; then
   mkdir -p "$CLAUDE_DIR/skills/tab-name"
   cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
@@ -251,7 +252,7 @@ fi
 echo
 
 # --- skill-design-in-browser ---
-cyan "[3/9] skill-design-in-browser (design UI in the browser before coding)"
+cyan "[3/10] skill-design-in-browser (design UI in the browser before coding)"
 if confirm "Install the \`design-in-browser\` skill?" "skill-design-in-browser"; then
   mkdir -p "$CLAUDE_DIR/skills/design-in-browser"
   cp "$ROOT/skill-design-in-browser/SKILL.md" "$CLAUDE_DIR/skills/design-in-browser/SKILL.md"
@@ -262,8 +263,21 @@ fi
 
 echo
 
+# --- extra skills ---
+cyan "[4/10] skill-extras (chat summary + problem breakdown)"
+if confirm "Install the \`conversation-summary\` and \`explain-problem\` skills?" "skill-extras"; then
+  for skill in conversation-summary explain-problem; do
+    mkdir -p "$CLAUDE_DIR/skills/$skill"
+    cp "$ROOT/skill-$skill/SKILL.md" "$CLAUDE_DIR/skills/$skill/SKILL.md"
+  done
+  green "    installed skills → ~/.claude/skills/{conversation-summary,explain-problem}/"
+  dim "    fire on /conversation-summary, /explain-problem, and Hebrew phrasings of both"
+fi
+
+echo
+
 # --- statusline-gsd ---
-cyan "[4/9] statusline-gsd (model + task + context bar + plan usage at bottom)"
+cyan "[5/10] statusline-gsd (model + task + context bar + plan usage at bottom)"
 if confirm "Install GSD statusline?" "statusline-gsd"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   cp "$ROOT/statusline-gsd/provider-usage.js" "$CLAUDE_DIR/provider-usage.js"
@@ -295,7 +309,7 @@ HOOKJSON
 fi
 
 # --- fable-plan ---
-cyan "[5/9] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
+cyan "[6/10] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
 if confirm "Install fable-plan?" "fable-plan"; then
   if grep -q "alias fplan=" "$ZSHRC" 2>/dev/null; then
     dim "    fplan alias already in ~/.zshrc, skipping"
@@ -311,7 +325,7 @@ fi
 echo
 
 # --- sticky-prompt ---
-cyan "[6/9] sticky-prompt (the message you sent pinned to the top of the terminal)"
+cyan "[7/10] sticky-prompt (the message you sent pinned to the top of the terminal)"
 if confirm "Install sticky-prompt?" "sticky-prompt"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/sticky-prompt/sticky-claude" "$CLAUDE_DIR/scripts/sticky-claude"
@@ -343,7 +357,7 @@ fi
 echo
 
 # --- multi-model ---
-cyan "[7/9] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
+cyan "[8/10] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
 if confirm "Install multi-model?" "multi-model"; then
   if [ "$INSTALL_MODE" = "update" ] || [ "$INSTALL_MODE" = "yes" ]; then
     "$ROOT/multi-model/install.sh" --yes
@@ -365,7 +379,7 @@ if confirm "Install multi-model?" "multi-model"; then
 fi
 
 # --- phone-alerts ---
-cyan "[8/9] phone-alerts (push to your phone when Claude needs you)"
+cyan "[9/10] phone-alerts (push to your phone when Claude needs you)"
 if confirm "Install phone-alerts?" "phone-alerts"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/phone-alerts/ntfy.sh" "$CLAUDE_DIR/scripts/ntfy.sh"
@@ -389,7 +403,7 @@ fi
 
 # --- agent-locks ---
 echo
-cyan "[9/9] agent-locks (warn when two sessions touch the same file, or deploy at once)"
+cyan "[10/10] agent-locks (warn when two sessions touch the same file, or deploy at once)"
 if confirm "Install agent-locks?" "agent-locks"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/agent-locks/agent-locks.mjs" "$CLAUDE_DIR/scripts/agent-locks.mjs"

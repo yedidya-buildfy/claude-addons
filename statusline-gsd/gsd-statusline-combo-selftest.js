@@ -105,6 +105,14 @@ assert.strictEqual(s.formatLatency(null), 'off');
 assert.strictEqual(s.formatNetSegment([]), '');
 assert.strictEqual(s.formatNetSegment(null), '');
 assert.ok(s.formatNetSegment([90, 120, 400]).includes('400ms'));
+// The bar keeps a constant width whatever the history holds, so nothing to its
+// right shifts as samples accumulate.
+{
+  const width = seg => seg.replace(/\u001b\[[0-9;]*m/g, '').split(' ')[0].length;
+  assert.strictEqual(width(s.formatNetSegment([90])), 10);
+  assert.strictEqual(width(s.formatNetSegment([90, 120, 400])), 10);
+  assert.strictEqual(width(s.formatNetSegment(new Array(30).fill(90))), 10);
+}
 // A fresh reading is coloured by band; a stale one is greyed out instead, so a
 // frozen line never reads as a fast connection.
 assert.ok(s.formatNetSegment([90], false).includes('\u001b[32m'));

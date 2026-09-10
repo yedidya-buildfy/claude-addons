@@ -703,7 +703,11 @@ const NET_STALE_AFTER = 3;
 const NET_LOCK_STALE_MS = NET_SAMPLE_EVERY_MS * 2 + 15_000;
 const NET_IDLE_EXIT_MS = 5 * 60_000; // sampler quits once nothing has drawn the line
 const NET_CACHE_DEAD_MS = 120_000;  // older than this renders nothing, not stale numbers
-const NET_SAMPLES = 8;
+const NET_SAMPLES = 10;
+// The sparkline always occupies NET_SAMPLES columns, padded on the left while
+// history is still filling. A line that grows as samples arrive shifts every
+// number to its right on each redraw, which reads as flicker.
+const NET_EMPTY = '\u00b7';
 const NET_PROBE_HOST = 'api.anthropic.com';
 const NET_PROBE_PORT = 443;
 const NET_PROBE_TIMEOUT_MS = 5000;
@@ -771,7 +775,9 @@ function formatNetSegment(samples, stale = false) {
   if (!Array.isArray(samples) || samples.length === 0) return '';
   const recent = samples.slice(-NET_SAMPLES);
   const paint = ms => (stale ? '\x1b[2m' : `\x1b[${latencyColor(ms)}m`);
-  const spark = recent.map(ms => `${paint(ms)}${latencyBar(ms)}\x1b[0m`).join('');
+  const missing = NET_SAMPLES - recent.length;
+  const pad = missing > 0 ? `\x1b[2m${NET_EMPTY.repeat(missing)}\x1b[0m` : '';
+  const spark = pad + recent.map(ms => `${paint(ms)}${latencyBar(ms)}\x1b[0m`).join('');
   const last = recent[recent.length - 1];
   return `${spark} ${paint(last)}${formatLatency(last)}\x1b[0m`;
 }
