@@ -10,6 +10,7 @@ CLAUDE_DIR="$HOME/.claude"
 CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
 CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
 VSCODE_SETTINGS="$HOME/Library/Application Support/Code/User/settings.json"
+VSCODE_KEYBINDINGS="$HOME/Library/Application Support/Code/User/keybindings.json"
 ZSHRC="$HOME/.zshrc"
 
 cyan() { printf '\033[36m%s\033[0m\n' "$1"; }
@@ -30,6 +31,7 @@ is_installed() {
     tab-status) [ -f "$CLAUDE_DIR/scripts/tab.sh" ] ;;
     skill-tab-name) [ -f "$CLAUDE_DIR/skills/tab-name/SKILL.md" ] ;;
     skill-design-in-browser) [ -f "$CLAUDE_DIR/skills/design-in-browser/SKILL.md" ] ;;
+    skill-extras) [ -f "$CLAUDE_DIR/skills/explain-problem/SKILL.md" ] ;;
     statusline-gsd) [ -f "$CLAUDE_DIR/gsd-statusline.js" ] ;;
     fable-plan) grep -q "alias fplan=" "$ZSHRC" 2>/dev/null ;;
     sticky-prompt) [ -f "$CLAUDE_DIR/scripts/sticky-claude" ] ;;
@@ -140,11 +142,35 @@ p.write_text(source)
 PY
 }
 
+keybindings_merge() {
+  local file="$1"
+  local incoming
+  incoming=$(cat)
+  mkdir -p "$(dirname "$file")"
+  [ -f "$file" ] || echo '[]' > "$file"
+  node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const incoming = JSON.parse(process.argv[2]);
+    // Strip // comments VS Code allows in keybindings.json before parsing.
+    const raw = fs.readFileSync(file, "utf8").replace(/^\s*\/\/.*$/gm, "");
+    const target = raw.trim() ? JSON.parse(raw) : [];
+    const seen = new Set(target.map(x => JSON.stringify(x)));
+    for (const item of incoming) {
+      const key = JSON.stringify(item);
+      if (!seen.has(key)) { target.push(item); seen.add(key); }
+    }
+    const temporary = file + ".tmp." + process.pid;
+    fs.writeFileSync(temporary, JSON.stringify(target, null, 4) + "\n");
+    fs.renameSync(temporary, file);
+  ' "$file" "$incoming"
+}
+
 cyan "claude-addons installer"
 echo
 
 # --- tab-status ---
-cyan "[1/9] tab-status (colored dot on VS Code terminal tabs)"
+cyan "[1/10] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?" "tab-status"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
@@ -179,6 +205,16 @@ if confirm "Install tab-status?" "tab-status"; then
     dim "    VS Code user settings not found — skipping (install VS Code first)"
   fi
 
+  if [ -d "$(dirname "$VSCODE_SETTINGS")" ]; then
+    mkdir -p "$HOME/.vscode/extensions/claude-tab-rename"
+    cp "$ROOT/tab-status/vscode-extension/package.json" "$ROOT/tab-status/vscode-extension/extension.js" \
+       "$HOME/.vscode/extensions/claude-tab-rename/"
+    backup "$VSCODE_KEYBINDINGS"
+    cat "$ROOT/tab-status/vscode-keybindings.snippet" | keybindings_merge "$VSCODE_KEYBINDINGS"
+    green "    installed the rename extension and took over Enter/F2 on terminal tabs"
+    dim "    reload VS Code once; renaming a tab no longer freezes its dot"
+  fi
+
   if [ "$INSTALL_MODE" != "update" ] && [ -f "$ZSHRC" ]; then
     if confirm "Install/update the known \`tn\` shell wrapper in ~/.zshrc?"; then
       backup "$ZSHRC"
@@ -192,7 +228,7 @@ fi
 echo
 
 # --- skill-tab-name ---
-cyan "[2/9] skill-tab-name (Claude picks tab names automatically)"
+cyan "[2/10] skill-tab-name (Claude picks tab names automatically)"
 if confirm "Install the \`tab-name\` skill?" "skill-tab-name"; then
   mkdir -p "$CLAUDE_DIR/skills/tab-name"
   cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
@@ -216,7 +252,7 @@ fi
 echo
 
 # --- skill-design-in-browser ---
-cyan "[3/9] skill-design-in-browser (design UI in the browser before coding)"
+cyan "[3/10] skill-design-in-browser (design UI in the browser before coding)"
 if confirm "Install the \`design-in-browser\` skill?" "skill-design-in-browser"; then
   mkdir -p "$CLAUDE_DIR/skills/design-in-browser"
   cp "$ROOT/skill-design-in-browser/SKILL.md" "$CLAUDE_DIR/skills/design-in-browser/SKILL.md"
@@ -227,8 +263,21 @@ fi
 
 echo
 
+# --- extra skills ---
+cyan "[4/10] skill-extras (chat summary + problem breakdown)"
+if confirm "Install the \`conversation-summary\` and \`explain-problem\` skills?" "skill-extras"; then
+  for skill in conversation-summary explain-problem; do
+    mkdir -p "$CLAUDE_DIR/skills/$skill"
+    cp "$ROOT/skill-$skill/SKILL.md" "$CLAUDE_DIR/skills/$skill/SKILL.md"
+  done
+  green "    installed skills → ~/.claude/skills/{conversation-summary,explain-problem}/"
+  dim "    fire on /conversation-summary, /explain-problem, and Hebrew phrasings of both"
+fi
+
+echo
+
 # --- statusline-gsd ---
-cyan "[4/9] statusline-gsd (model + task + context bar + plan usage at bottom)"
+cyan "[5/10] statusline-gsd (model + task + context bar + plan usage at bottom)"
 if confirm "Install GSD statusline?" "statusline-gsd"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   cp "$ROOT/statusline-gsd/provider-usage.js" "$CLAUDE_DIR/provider-usage.js"
@@ -240,12 +289,27 @@ if confirm "Install GSD statusline?" "statusline-gsd"; then
   green "    copied usage-fetch.sh → ~/.claude/scripts/ (plan-usage cache refresher)"
 
   backup "$CLAUDE_SETTINGS"
-  echo '{"statusLine":{"type":"command","command":"node ~/.claude/gsd-statusline.js"}}' | json_merge "$CLAUDE_SETTINGS"
-  green "    set statusLine in ~/.claude/settings.json"
+  # refreshInterval redraws the line on a timer as well as on events, so the
+  # connection and output-rate readings stay current while a turn is running.
+  echo '{"statusLine":{"type":"command","command":"node ~/.claude/gsd-statusline.js","refreshInterval":1}}' | json_merge "$CLAUDE_SETTINGS"
+  green "    set statusLine in ~/.claude/settings.json (redraws every second)"
+
+  # The live tokens-per-second meter is fed by a MessageDisplay hook that
+  # records how much text streamed and how much of it was Latin script. It
+  # stores lengths only, never the text. Without jq the meter simply stays on
+  # the finished-reply rate; nothing else in the status line depends on it.
+  if command -v jq >/dev/null 2>&1; then
+    json_merge "$CLAUDE_SETTINGS" <<'HOOKJSON'
+{"hooks":{"MessageDisplay":[{"hooks":[{"type":"command","timeout":5,"command":"jq -rj '(.session_id)+\" \"+(now*1000|floor|tostring)+\" \"+(.delta|length|tostring)+\" \"+(.delta|explode|map(select(.<128))|length|tostring)+\"\\n\"' >> ~/.claude/cache/stream-rate.log"}]}]}}
+HOOKJSON
+    green "    live output-rate meter enabled (MessageDisplay hook)"
+  else
+    dim "    jq not found — live output-rate meter stays off, everything else works"
+  fi
 fi
 
 # --- fable-plan ---
-cyan "[5/9] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
+cyan "[6/10] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
 if confirm "Install fable-plan?" "fable-plan"; then
   if grep -q "alias fplan=" "$ZSHRC" 2>/dev/null; then
     dim "    fplan alias already in ~/.zshrc, skipping"
@@ -261,7 +325,7 @@ fi
 echo
 
 # --- sticky-prompt ---
-cyan "[6/9] sticky-prompt (the message you sent pinned to the top of the terminal)"
+cyan "[7/10] sticky-prompt (the message you sent pinned to the top of the terminal)"
 if confirm "Install sticky-prompt?" "sticky-prompt"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/sticky-prompt/sticky-claude" "$CLAUDE_DIR/scripts/sticky-claude"
@@ -293,7 +357,7 @@ fi
 echo
 
 # --- multi-model ---
-cyan "[7/9] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
+cyan "[8/10] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
 if confirm "Install multi-model?" "multi-model"; then
   if [ "$INSTALL_MODE" = "update" ] || [ "$INSTALL_MODE" = "yes" ]; then
     "$ROOT/multi-model/install.sh" --yes
@@ -315,7 +379,7 @@ if confirm "Install multi-model?" "multi-model"; then
 fi
 
 # --- phone-alerts ---
-cyan "[8/9] phone-alerts (push to your phone when Claude needs you)"
+cyan "[9/10] phone-alerts (push to your phone when Claude needs you)"
 if confirm "Install phone-alerts?" "phone-alerts"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/phone-alerts/ntfy.sh" "$CLAUDE_DIR/scripts/ntfy.sh"
@@ -339,7 +403,7 @@ fi
 
 # --- agent-locks ---
 echo
-cyan "[9/9] agent-locks (warn when two sessions touch the same file, or deploy at once)"
+cyan "[10/10] agent-locks (warn when two sessions touch the same file, or deploy at once)"
 if confirm "Install agent-locks?" "agent-locks"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/agent-locks/agent-locks.mjs" "$CLAUDE_DIR/scripts/agent-locks.mjs"

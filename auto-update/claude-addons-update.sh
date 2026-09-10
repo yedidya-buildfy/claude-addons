@@ -37,11 +37,12 @@ err() {
   fi
 }
 
-# Rate limit background runs: at most once every 12 hours (43200 seconds)
+# Rate limit background runs. A fetch is cheap and a push should reach the other
+# machines the same day it happens, so this is minutes, not hours.
 if [ "$FORCE" = 0 ] && [ -f "$STAMP_FILE" ]; then
   now=$(date +%s)
   last=$(stat -f %m "$STAMP_FILE" 2>/dev/null || echo 0)
-  if [ $((now - last)) -lt 43200 ]; then
+  if [ $((now - last)) -lt 900 ]; then
     exit 0
   fi
 fi

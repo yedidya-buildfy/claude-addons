@@ -251,17 +251,15 @@ function formatReset(resetsAt) {
   if (!t || isNaN(t)) return '';
   const mins = Math.round((t - Date.now()) / 60000);
   if (mins <= 0) return '';
-  const d = new Date(t);
   if (mins >= RESET_DAYS_BAND_MINUTES) {
     // Whole days only — a trailing "and a bit" is noise at this distance.
     const days = Math.floor(mins / (24 * 60));
-    return `${days}d → ${d.getDate()}/${d.getMonth() + 1}`;
+    return `${days}d`;
   }
   const h = Math.floor(mins / 60);
   const m = mins % 60;
-  const dur = h > 0 ? `${h}h${String(m).padStart(2, '0')}m` : `${m}m`;
-  const clock = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  return `${dur} → ${clock}`;
+  // Time-until only. The absolute clock time it lands on was pure duplication.
+  return h > 0 ? `${h}h${String(m).padStart(2, '0')}m` : `${m}m`;
 }
 
 /**
@@ -653,8 +651,8 @@ function runStatusline() {
       // Never break the statusline on config/transcript errors
     }
 
-    // Output
-    const dirname = path.basename(dir);
+    // Output. The working directory is deliberately absent — the terminal tab
+    // and prompt already say where you are.
     const middle = task
       ? `\x1b[1m${task}\x1b[0m`
       : gsdStateStr
@@ -668,15 +666,510 @@ function runStatusline() {
       usage = formatProviderUsage(data, claudeDir);
     } catch (e) {}
 
-    if (middle) {
-      process.stdout.write(`${gsdUpdate}\x1b[2m${modelLabel}\x1b[0m │ ${middle} │ \x1b[2m${dirname}\x1b[0m${ctx}${usage}${lastCmdSuffix}`);
-    } else {
-      process.stdout.write(`${gsdUpdate}\x1b[2m${modelLabel}\x1b[0m │ \x1b[2m${dirname}\x1b[0m${ctx}${usage}${lastCmdSuffix}`);
-    }
+    let speed = '';
+    try {
+      speed = formatSpeedSegment(data, claudeDir);
+    } catch (e) {}
+
+    const head = middle
+      ? `\x1b[2m${modelLabel}\x1b[0m │ ${middle}`
+      : `\x1b[2m${modelLabel}\x1b[0m`;
+    process.stdout.write(`${gsdUpdate}${head}${ctx ? ` │${ctx}` : ''}${speed}${usage}${lastCmdSuffix}`);
   } catch (e) {
     // Silent fail - don't break statusline on parse errors
   }
 });
+}
+
+// --- Connection + model-speed indicator -------------------------------------
+// Answers "is the model slow, or is my connection slow?". Two independent
+// signals side by side: a latency history sparkline (the network) and the
+// current output rate (the model). The render path NEVER touches the network —
+// a detached probe refreshes a small cache file and the statusline reads it.
+
+// Sampler cadence, independent of redraws. Settable per-session via
+// GSD_NET_SAMPLE_MS (milliseconds, clamped to 2s..5m); the sampler inherits it
+// from whichever render started it.
+const NET_SAMPLE_EVERY_MS = (() => {
+  const raw = parseInt(process.env.GSD_NET_SAMPLE_MS || '', 10);
+  return Number.isFinite(raw) && raw > 0 ? Math.max(1_000, Math.min(300_000, raw)) : 1_000;
+})();
+// A reading older than this many cadences is shown greyed out rather than
+// coloured, so a frozen line reads as "not measured lately", not as "fast".
+const NET_STALE_AFTER = 3;
+// No heartbeat for this long means no sampler is alive, so start one. Derived
+// from the cadence: a fixed window shorter than the interval would call a
+// living sampler dead and spawn a second one alongside it.
+const NET_LOCK_STALE_MS = NET_SAMPLE_EVERY_MS * 2 + 15_000;
+const NET_IDLE_EXIT_MS = 5 * 60_000; // sampler quits once nothing has drawn the line
+const NET_CACHE_DEAD_MS = 120_000;  // older than this renders nothing, not stale numbers
+const NET_SAMPLES = 10;
+// The sparkline always occupies NET_SAMPLES columns, padded on the left while
+// history is still filling. A line that grows as samples arrive shifts every
+// number to its right on each redraw, which reads as flicker.
+const NET_EMPTY = '\u00b7';
+const NET_PROBE_HOST = 'api.anthropic.com';
+const NET_PROBE_PORT = 443;
+const NET_PROBE_TIMEOUT_MS = 5000;
+const NET_BARS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇'];
+
+const TPS_TAIL_BYTES = 256 * 1024;
+const TPS_MAX_AGE_MS = 5 * 60 * 1000;
+
+// Live output rate, fed by the MessageDisplay hook. That hook is handed the
+// text as it streams but no token counts, so the characters it reports are
+// converted using a ratio measured from this session's own finished replies —
+// never a fixed divisor. The ratio is language-dependent and the difference is
+// not subtle: Hebrew answers here run ~1.45 characters per token where English
+// runs ~3.1, so assuming a constant would be wrong by more than double.
+const STREAM_LOG_MAX = 64 * 1024;   // trim the hook's log past this
+const STREAM_LOG_KEEP = 16 * 1024;  // ...down to this
+// How far back the live rate averages. Settable via GSD_RATE_WINDOW_MS
+// (clamped to 1s..30s). The hook fires per batch of finished lines, so the
+// arriving text is bursty; a window several times the refresh tick overlaps
+// successive readings and keeps the number from jumping between bursts.
+const LIVE_WINDOW_MS = (() => {
+  const raw = parseInt(process.env.GSD_RATE_WINDOW_MS || '', 10);
+  return Number.isFinite(raw) && raw > 0 ? Math.max(1_000, Math.min(30_000, raw)) : 5_000;
+})();
+const RATIO_SAMPLES = 5;            // finished replies to calibrate from
+const RATIO_MIN_CHARS = 200;        // ignore replies too short to calibrate on
+
+function netCachePath(claudeDir) {
+  return path.join(claudeDir, 'cache', 'net-latency.json');
+}
+
+// Touched on every render. The sampler watches it to know the line is still on
+// screen, and exits on its own once it is not — nothing is left running after
+// the last Claude Code window closes.
+function netRenderMarkPath(claudeDir) {
+  return path.join(claudeDir, 'cache', 'net-render.mark');
+}
+
+function netLockPath() {
+  return path.join(os.tmpdir(), 'gsd-net-sampler.lock');
+}
+
+function latencyColor(ms) {
+  if (ms == null) return 31;
+  if (ms < 150) return 32;
+  if (ms < 400) return 33;
+  return 31;
+}
+
+// Log scale: 60ms sits at the shortest bar, 900ms+ pins to the tallest, so the
+// range people actually live in gets most of the resolution.
+function latencyBar(ms) {
+  if (ms == null) return NET_BARS[NET_BARS.length - 1];
+  const clamped = Math.max(60, Math.min(900, ms));
+  const idx = Math.round((Math.log(clamped / 60) / Math.log(15)) * (NET_BARS.length - 1));
+  return NET_BARS[Math.max(0, Math.min(NET_BARS.length - 1, idx))];
+}
+
+function formatLatency(ms) {
+  if (ms == null) return 'off';
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
+function formatNetSegment(samples, stale = false) {
+  if (!Array.isArray(samples) || samples.length === 0) return '';
+  const recent = samples.slice(-NET_SAMPLES);
+  const paint = ms => (stale ? '\x1b[2m' : `\x1b[${latencyColor(ms)}m`);
+  const missing = NET_SAMPLES - recent.length;
+  const pad = missing > 0 ? `\x1b[2m${NET_EMPTY.repeat(missing)}\x1b[0m` : '';
+  const spark = pad + recent.map(ms => `${paint(ms)}${latencyBar(ms)}\x1b[0m`).join('');
+  const last = recent[recent.length - 1];
+  return `${spark} ${paint(last)}${formatLatency(last)}\x1b[0m`;
+}
+
+function tpsColor(tps) {
+  if (tps >= 40) return 32;
+  if (tps >= 15) return 33;
+  return 31;
+}
+
+/**
+ * Read the latency cache, kicking off a detached probe when it is stale.
+ * Returns a sanitized sample array (numbers = ms, null = probe failed), or
+ * null when there is nothing trustworthy to draw.
+ */
+function readNetCache(claudeDir, now = Date.now()) {
+  let parsed = null;
+  try {
+    parsed = JSON.parse(fs.readFileSync(netCachePath(claudeDir), 'utf8'));
+  } catch (e) {}
+  // Announce this render, then make sure a sampler is alive. The cache's own
+  // age is NOT the trigger — the sampler keeps it fresh between redraws, which
+  // is the whole point of it not living on the render path.
+  try {
+    fs.mkdirSync(path.join(claudeDir, 'cache'), { recursive: true });
+    fs.writeFileSync(netRenderMarkPath(claudeDir), String(now));
+  } catch (e) {}
+  spawnNetSampler(claudeDir, now);
+  const updated = isPlainObject(parsed) && typeof parsed.updated === 'number' ? parsed.updated : 0;
+  if (!isPlainObject(parsed) || !Array.isArray(parsed.samples)) return null;
+  if (now - updated > NET_CACHE_DEAD_MS) return null;
+  const samples = parsed.samples
+    .filter(v => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0))
+    .slice(-NET_SAMPLES);
+  if (!samples.length) return null;
+  return { samples, stale: now - updated > NET_SAMPLE_EVERY_MS * NET_STALE_AFTER };
+}
+
+function spawnNetSampler(claudeDir, now = Date.now()) {
+  try {
+    const lockPath = netLockPath();
+    // Both tests must pass: a recent heartbeat AND a process still answering to
+    // the pid inside. The timestamp alone would keep a killed sampler's lock
+    // looking valid for a full window, leaving the line unmeasured; the pid
+    // alone could match an unrelated process that reused the number.
+    let alive = false;
+    try {
+      if (now - fs.statSync(lockPath).mtimeMs < NET_LOCK_STALE_MS) {
+        const pid = parseInt(fs.readFileSync(lockPath, 'utf8'), 10);
+        if (Number.isFinite(pid) && pid > 0) {
+          try { process.kill(pid, 0); alive = true; } catch (e) { alive = false; }
+        }
+      }
+    } catch (e) {}
+    if (alive) return;
+    fs.writeFileSync(lockPath, String(process.pid));
+    const child = require('child_process').spawn(
+      process.execPath,
+      [__filename, '--net-sampler'],
+      { detached: true, stdio: 'ignore', env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir } }
+    );
+    child.unref();
+  } catch (e) {}
+}
+
+/**
+ * Time one TCP connection to the API host. No request is sent and no bytes of
+ * ours ever leave — this measures the network path alone, which is why it
+ * reads ~90ms where a full TLS handshake would read ~400ms and drown the
+ * signal in crypto setup the real client pays only once per connection.
+ */
+function probeOnce(cb) {
+  const started = Date.now();
+  let done = false;
+  const finish = ms => { if (!done) { done = true; cb(ms); } };
+  try {
+    const sock = require('net').connect(NET_PROBE_PORT, NET_PROBE_HOST, () => {
+      const ms = Date.now() - started;
+      sock.destroy();
+      finish(ms);
+    });
+    sock.setTimeout(NET_PROBE_TIMEOUT_MS, () => { sock.destroy(); finish(null); });
+    sock.on('error', () => finish(null));
+  } catch (e) {
+    finish(null);
+  }
+}
+
+function appendSample(claudeDir, ms) {
+  try {
+    const p = netCachePath(claudeDir);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    let prev = [];
+    try {
+      const old = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (Array.isArray(old.samples)) prev = old.samples;
+    } catch (e) {}
+    const samples = prev.concat([ms]).slice(-NET_SAMPLES);
+    fs.writeFileSync(p, JSON.stringify({ updated: Date.now(), samples }));
+  } catch (e) {}
+}
+
+/**
+ * The background sampler: measures on its own clock so the reading stays true
+ * while the model is mid-turn and the line is not redrawing. Heartbeats a lock
+ * so only one ever runs, and exits once no render has claimed the line for a
+ * while, leaving nothing behind when Claude Code closes.
+ */
+function runNetSampler() {
+  const claudeDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  const tick = () => {
+    let lastRender = 0;
+    try { lastRender = fs.statSync(netRenderMarkPath(claudeDir)).mtimeMs; } catch (e) {}
+    if (Date.now() - lastRender > NET_IDLE_EXIT_MS) process.exit(0);
+    try { fs.writeFileSync(netLockPath(), String(process.pid)); } catch (e) {}
+    probeOnce(ms => appendSample(claudeDir, ms));
+  };
+  tick();
+  setInterval(tick, NET_SAMPLE_EVERY_MS);
+}
+
+/**
+ * Parse the tail of a transcript into one record per request. The tail can open
+ * mid-line, so anything unparsable is skipped. Entries of a single request each
+ * carry that request's cumulative usage, hence the max() rather than a sum.
+ */
+function readTranscriptRequests(transcriptPath) {
+  if (!transcriptPath || typeof transcriptPath !== 'string') return null;
+  let content;
+  try {
+    if (!fs.existsSync(transcriptPath)) return null;
+    const stat = fs.statSync(transcriptPath);
+    const start = Math.max(0, stat.size - TPS_TAIL_BYTES);
+    const fd = fs.openSync(transcriptPath, 'r');
+    try {
+      const buf = Buffer.alloc(stat.size - start);
+      fs.readSync(fd, buf, 0, buf.length, start);
+      content = buf.toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (e) {
+    return null;
+  }
+
+  const entries = [];
+  const byRequest = new Map();
+  for (const line of content.split('\n')) {
+    if (!line.startsWith('{')) continue;
+    let e;
+    try { e = JSON.parse(line); } catch (err) { continue; }
+    const ts = Date.parse(e && e.timestamp);
+    if (!Number.isFinite(ts)) continue;
+    const usage = e?.message?.usage;
+    const out = usage?.output_tokens;
+    entries.push({ ts, requestId: e.requestId, out });
+    if (e.type !== 'assistant' || !e.requestId) continue;
+    let r = byRequest.get(e.requestId);
+    if (!r) { r = { chars: 0, latin: 0, out: 0, thinking: 0, hasToolUse: false }; byRequest.set(e.requestId, r); }
+    for (const block of (e?.message?.content || [])) {
+      if (block?.type === 'text') {
+        const text = block.text || '';
+        r.chars += text.length;
+        r.latin += countLatin(text);
+      }
+      if (block?.type === 'tool_use') r.hasToolUse = true;
+    }
+    if (typeof out === 'number') r.out = Math.max(r.out, out);
+    const think = usage?.output_tokens_details?.thinking_tokens;
+    if (typeof think === 'number') r.thinking = Math.max(r.thinking, think);
+  }
+  return { entries, requests: [...byRequest.values()] };
+}
+
+/**
+ * Characters per output token, measured from this session's finished replies.
+ *
+ * Only replies with no tool call qualify: for those, output tokens minus
+ * thinking tokens is exactly the visible text, so the ratio is real rather than
+ * assumed. A reply containing a tool call mixes its arguments into the same
+ * token count with no text to match them against, and would skew the result.
+ * The median of the last few guards against one odd reply. Returns null until
+ * the session has produced something to calibrate on.
+ */
+function charsPerToken(parsed) {
+  if (!parsed) return null;
+  const ratios = [];
+  for (const r of parsed.requests) {
+    if (r.hasToolUse) continue;
+    const visible = r.out - r.thinking;
+    if (r.chars < RATIO_MIN_CHARS || visible <= 50) continue;
+    ratios.push(r.chars / visible);
+  }
+  if (!ratios.length) return null;
+  const recent = ratios.slice(-RATIO_SAMPLES).sort((a, b) => a - b);
+  return recent[Math.floor(recent.length / 2)];
+}
+
+/**
+ * Output tokens per second for the most recent finished request. The span runs
+ * from the entry preceding the request to its last entry.
+ *
+ * Returns {tps, stale} — an old reading is reported as stale rather than
+ * withheld, so the slot can say "measured a while ago" instead of vanishing.
+ * null means no finished reply at all, the normal state of a fresh window.
+ */
+function finishedRate(parsed, now = Date.now()) {
+  if (!parsed) return null;
+  const entries = parsed.entries;
+  let last = -1;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].requestId && typeof entries[i].out === 'number' && entries[i].out > 0) { last = i; break; }
+  }
+  if (last < 0) return null;
+  const stale = now - entries[last].ts > TPS_MAX_AGE_MS;
+
+  const reqId = entries[last].requestId;
+  let first = last;
+  let tokens = entries[last].out;
+  while (first > 0 && entries[first - 1].requestId === reqId) {
+    first--;
+    tokens = Math.max(tokens, entries[first].out || 0);
+  }
+  if (first === 0) return null; // no preceding entry to date the request from
+  const seconds = (entries[last].ts - entries[first - 1].ts) / 1000;
+  if (!(seconds > 0.2)) return null;
+  const tps = Math.round(tokens / seconds);
+  return tps > 0 && tps < 10000 ? { tps, stale } : null;
+}
+
+function readTokensPerSecond(transcriptPath, now = Date.now()) {
+  return finishedRate(readTranscriptRequests(transcriptPath), now);
+}
+
+/**
+ * Characters a Latin-alphabet tokenizer handles densely (roughly one token per
+ * 2-4 of them) versus everything else (closer to one token per character).
+ * Splitting on this is what lets the estimate survive a language switch.
+ */
+function countLatin(text) {
+  let n = 0;
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) < 128) n++;
+  return n;
+}
+
+/**
+ * Tokens per Latin character and per other character, fitted by least squares
+ * over the session's recent replies. Catches a language switch immediately,
+ * where a single blended ratio needs several replies to catch up.
+ *
+ * Returns null when the replies do not pin the two coefficients down — all one
+ * script, too few replies, or a fit that comes out negative. The caller then
+ * falls back to the plain ratio rather than trusting an unstable fit.
+ */
+function tokenModel(parsed) {
+  if (!parsed) return null;
+  const rows = [];
+  for (const r of parsed.requests) {
+    if (r.hasToolUse) continue;
+    const visible = r.out - r.thinking;
+    if (r.chars < RATIO_MIN_CHARS || visible <= 50) continue;
+    rows.push({ latin: r.latin, other: r.chars - r.latin, tokens: visible });
+  }
+  const h = rows.slice(-RATIO_SAMPLES);
+  if (h.length < 2) return null;
+  let sxx = 0, syy = 0, sxy = 0, sxt = 0, syt = 0;
+  for (const { latin, other, tokens } of h) {
+    sxx += latin * latin; syy += other * other; sxy += latin * other;
+    sxt += latin * tokens; syt += other * tokens;
+  }
+  const det = sxx * syy - sxy * sxy;
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-9) return null;
+  const perLatin = (sxt * syy - syt * sxy) / det;
+  const perOther = (syt * sxx - sxt * sxy) / det;
+  if (!(perLatin > 0) || !(perOther > 0)) return null;
+  return { perLatin, perOther };
+}
+
+/**
+ * Tokens for a stretch of streamed text. The fitted model leads; the plain
+ * ratio both backs it up and bounds it, because a fit from too few replies can
+ * be wildly off while the ratio degrades gently.
+ */
+function estimateTokens(chars, latin, ratio, model) {
+  if (!(chars > 0)) return null;
+  const byRatio = ratio ? chars / ratio : null;
+  if (!model) return byRatio == null ? null : Math.round(byRatio);
+  const byModel = latin * model.perLatin + (chars - latin) * model.perOther;
+  if (byRatio == null) return Math.round(byModel);
+  // The bound is wide on purpose. A genuine language switch moves the answer by
+  // nearly 3x, so a tight bound would veto the very correction the model exists
+  // for; measured over 1079 held-out replies, widening it to 4x cut the worst
+  // case from 114% to 74% while a 2x bound left it untouched.
+  const trusted = byModel >= 0.25 * byRatio && byModel <= 4 * byRatio;
+  return Math.round(trusted ? byModel : byRatio);
+}
+
+function streamLogPath(claudeDir) {
+  return path.join(claudeDir, 'cache', 'stream-rate.log');
+}
+
+/**
+ * Characters per second written to the screen over the last few seconds, from
+ * the MessageDisplay hook's log. Averaged across a fixed window rather than
+ * divided by the gap between two samples, so the number does not spike on a
+ * single large batch. Returns null when nothing streamed recently.
+ */
+function readLiveCharRate(claudeDir, sessionId, now = Date.now(), windowMs = LIVE_WINDOW_MS) {
+  if (!sessionId) return null;
+  const p = streamLogPath(claudeDir);
+  let content;
+  try {
+    const stat = fs.statSync(p);
+    const start = Math.max(0, stat.size - STREAM_LOG_KEEP);
+    const fd = fs.openSync(p, 'r');
+    try {
+      const buf = Buffer.alloc(stat.size - start);
+      fs.readSync(fd, buf, 0, buf.length, start);
+      content = buf.toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+    // The hook only ever appends, so the log is trimmed from the reading side.
+    if (stat.size > STREAM_LOG_MAX) {
+      const cut = content.indexOf('\n');
+      fs.writeFileSync(p, cut >= 0 ? content.slice(cut + 1) : content);
+    }
+  } catch (e) {
+    return null;
+  }
+
+  let chars = 0;
+  let latin = 0;
+  for (const line of content.split('\n')) {
+    const parts = line.split(' ');
+    // Four fields since the script split was added. Shorter lines are from an
+    // older hook and are simply skipped — they age out of the window in seconds.
+    if (parts.length !== 4 || parts[0] !== sessionId) continue;
+    const ts = Number(parts[1]);
+    const n = Number(parts[2]);
+    const l = Number(parts[3]);
+    if (!Number.isFinite(ts) || !Number.isFinite(n) || n < 0) continue;
+    if (!Number.isFinite(l) || l < 0 || l > n) continue;
+    if (now - ts > windowMs || ts > now + 5000) continue;
+    chars += n;
+    latin += l;
+  }
+  const seconds = windowMs / 1000;
+  return chars > 0 ? { chars: chars / seconds, latin: latin / seconds } : null;
+}
+
+function formatSpeedSegment(data, claudeDir, now = Date.now()) {
+  let net = '';
+  try {
+    const cached = readNetCache(claudeDir, now);
+    if (cached) net = formatNetSegment(cached.samples, cached.stale);
+  } catch (e) {}
+  // One parse of the transcript tail serves both the finished-reply rate and
+  // the characters-per-token calibration.
+  let rate = null;
+  let ratio = null;
+  let model = null;
+  try {
+    const parsed = readTranscriptRequests(data?.transcript_path);
+    rate = finishedRate(parsed, now);
+    ratio = charsPerToken(parsed);
+    model = tokenModel(parsed);
+  } catch (e) {}
+
+  // While text is actually streaming, prefer the live reading. It needs the
+  // measured ratio: without it we would be guessing at the conversion, so the
+  // finished-reply number stands in until the session has calibrated itself.
+  let live = null;
+  try {
+    const cps = readLiveCharRate(claudeDir, data?.session_id, now);
+    if (cps) live = estimateTokens(cps.chars, cps.latin, ratio, model);
+  } catch (e) {}
+
+  // The rate slot is always drawn. A window that has not had a reply yet shows
+  // a dash rather than nothing, so an empty slot never reads as a broken one.
+  let rateSeg;
+  if (live != null && live > 0) {
+    rateSeg = `\x1b[${tpsColor(live)}m${live} t/s\x1b[0m`;
+  } else if (rate === null) {
+    rateSeg = '\x1b[2m— t/s\x1b[0m';
+  } else {
+    rateSeg = `${rate.stale ? '\x1b[2m' : `\x1b[${tpsColor(rate.tps)}m`}${rate.tps} t/s\x1b[0m`;
+  }
+  const parts = [];
+  if (net) parts.push(net);
+  parts.push(rateSeg);
+  return ` │ ${parts.join(' \x1b[2m·\x1b[0m ')}`;
 }
 
 // --- Provider detection and model label formatting --------------------------
@@ -785,10 +1278,11 @@ function activeComboModelName(data = {}, settings = readClaudeSettings()) {
 }
 
 function formatModelLabel(data = {}) {
-  const parts = [activeComboModelName(data) || data.model?.display_name || 'Claude'];
+  const name = activeComboModelName(data) || data.model?.display_name || 'Claude';
+  // Strip a parenthetical window note ("Opus 5 (1M context)") and never append
+  // the size — the context meter further along the line already reports it.
+  const parts = [name.replace(/\s*\([^)]*context[^)]*\)/i, '').trim() || name];
   if (data.effort?.level) parts.push(data.effort.level);
-  const size = formatContextSize(data.context_window?.context_window_size);
-  if (size) parts.push(`${size} ctx`);
   return parts.join(' · ');
 }
 
@@ -801,6 +1295,9 @@ module.exports = {
   bareModelId, prettyModelName, readPermissionMode, activeComboModelName,
   formatProviderUsage, selectProviderWindows, shortUsageLabel,
   providerCachePath, readProviderSnapshot,
+  latencyBar, latencyColor, formatLatency, formatNetSegment, readTokensPerSecond, readNetCache,
+  readTranscriptRequests, charsPerToken, finishedRate, readLiveCharRate, streamLogPath,
+  countLatin, tokenModel, estimateTokens,
 };
 
 /**
@@ -810,7 +1307,6 @@ module.exports = {
 function renderStatusline(data) {
   const modelLabel = formatModelLabel(data || {});
   const dir = data?.workspace?.current_dir || process.cwd();
-  const dirname = path.basename(dir);
 
   let lastCmdSuffix = '';
   try {
@@ -826,11 +1322,14 @@ function renderStatusline(data) {
   const gsdStateStr = formatGsdState(readGsdState(dir) || {});
   const middle = gsdStateStr ? `\x1b[2m${gsdStateStr}\x1b[0m` : null;
   if (middle) {
-    return `\x1b[2m${modelLabel}\x1b[0m │ ${middle} │ \x1b[2m${dirname}\x1b[0m${lastCmdSuffix}`;
+    return `\x1b[2m${modelLabel}\x1b[0m │ ${middle}${lastCmdSuffix}`;
   }
-  return `\x1b[2m${modelLabel}\x1b[0m │ \x1b[2m${dirname}\x1b[0m${lastCmdSuffix}`;
+  return `\x1b[2m${modelLabel}\x1b[0m${lastCmdSuffix}`;
 }
 
 module.exports.renderStatusline = renderStatusline;
 
-if (require.main === module) runStatusline();
+if (require.main === module) {
+  if (process.argv.includes('--net-sampler')) runNetSampler();
+  else runStatusline();
+}
