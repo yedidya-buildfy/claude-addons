@@ -114,8 +114,35 @@ async function rename() {
   });
 }
 
+// install.sh copies this file on every update run, so an update lands while the
+// window still runs the old code. Compare content, not timestamps: a copy of an
+// identical file must not nag.
+function watchForUpdates(context) {
+  const self = path.join(__dirname, "extension.js");
+  const installed = read(self);
+  const interval = Number(process.env.CLAUDE_TAB_WATCH_MS) || 60000;
+  fs.watchFile(self, { interval }, () => {
+    const current = read(self);
+    if (!current || current === installed) {
+      return;
+    }
+    fs.unwatchFile(self);
+    log("update detected; offering a window reload");
+    vscode.window.showInformationMessage(
+      "Claude tab tools updated. Reload the window to pick up the new version.",
+      "Reload Window",
+    ).then((choice) => {
+      if (choice) {
+        vscode.commands.executeCommand("workbench.action.reloadWindow");
+      }
+    });
+  });
+  context.subscriptions.push({ dispose: () => fs.unwatchFile(self) });
+}
+
 function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand("claudeTab.rename", rename));
+  watchForUpdates(context);
 }
 
 module.exports = { activate, deactivate() {} };

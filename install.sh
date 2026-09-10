@@ -207,8 +207,12 @@ if confirm "Install tab-status?" "tab-status"; then
 
   if [ -d "$(dirname "$VSCODE_SETTINGS")" ]; then
     mkdir -p "$HOME/.vscode/extensions/claude-tab-rename"
-    cp "$ROOT/tab-status/vscode-extension/package.json" "$ROOT/tab-status/vscode-extension/extension.js" \
-       "$HOME/.vscode/extensions/claude-tab-rename/"
+    # Copy only what actually changed: the running extension offers a window
+    # reload when its own file changes, and a pointless copy would nag.
+    for file in package.json extension.js; do
+      cmp -s "$ROOT/tab-status/vscode-extension/$file" "$HOME/.vscode/extensions/claude-tab-rename/$file" \
+        || cp "$ROOT/tab-status/vscode-extension/$file" "$HOME/.vscode/extensions/claude-tab-rename/$file"
+    done
     backup "$VSCODE_KEYBINDINGS"
     cat "$ROOT/tab-status/vscode-keybindings.snippet" | keybindings_merge "$VSCODE_KEYBINDINGS"
     green "    installed the rename extension and took over Enter/F2 on terminal tabs"
