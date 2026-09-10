@@ -249,6 +249,22 @@ def terminal_owner():
     return None
 
 
+def holds_terminal(sid):
+    """A tty->session mapping only holds the terminal while that session lives.
+
+    Without this a session that died without its session-end hook keeps the
+    mapping forever: the next session in that terminal never claims it, so its
+    watcher never paints and `tn` writes the name onto the corpse.
+    """
+    if not valid_id(sid) or not (STATE / f"{sid}.state").exists():
+        return False
+    owner = json_file(STATE / f"{sid}.owner", None)
+    # The mapping and the owner are written under one lock, so a holder without
+    # a live owner recorded is gone, not mid-claim.
+    return (isinstance(owner, list) and len(owner) == 3
+            and owner_identity(owner[0]) == owner[1])
+
+
 def tty_key(tty):
     if re.fullmatch(r"(?:ttys?\d+|pts/\d+|tty[A-Za-z]+\d+)", tty or ""):
         return tty.replace("/", "_")
@@ -344,7 +360,7 @@ def hook(action, data):
         mapping = STATE / f"tty.{key}.session"
         with locked(STATE / f"tty.{key}.lock"):
             current = text(mapping)
-            if current and current != sid and action != "white":
+            if current and current != sid and action != "white" and holds_terminal(current):
                 return  # a late hook must not steal a reused terminal
             atomic(mapping, sid)
             atomic(prefix.with_suffix(".owner"), json.dumps([pid, identity, tty]))
@@ -381,7 +397,7 @@ def watch(sid, tty, pid):
         with locked(STATE / f"{sid}.watch.{key}.lock", nonblocking=True):
             with locked(STATE / f"tty.{key}.lock"):
                 current = text(mapping)
-                if current and current != sid:
+                if current and current != sid and holds_terminal(current):
                     return
                 atomic(mapping, sid)
             tracker = Transcript()

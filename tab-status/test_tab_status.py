@@ -222,6 +222,31 @@ class TerminalChecks(unittest.TestCase):
         self.assertEqual(self.titles(), ["🟡 בדיקת נקודות", "🟢 בדיקת נקודות"])
         self.run_hook(core, "session-end")
 
+    def stale_holder(self, name, pid):
+        """A mapping pointing at a session whose process is long gone."""
+        (self.state / f"tty.{self.tty}.session").write_text(name)
+        (self.state / (name + ".state")).write_text("green\n")
+        (self.state / (name + ".owner")).write_text(json.dumps([pid, "Mon Jan  1 00:00:00 2001 zsh", self.tty]))
+
+    def test_dead_holder_does_not_keep_the_terminal_hostage(self):
+        core = load_core()
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        self.stale_holder("ghost-session", gone.pid)
+        self.run_hook(core, "refresh")
+        self.collect()
+        self.assertEqual((self.state / f"tty.{self.tty}.session").read_text(), SID)
+        self.assertEqual(self.titles(), ["🟢 בדיקת נקודות"])
+        self.run_hook(core, "session-end")
+
+    def test_live_holder_still_blocks_a_late_hook(self):
+        core = load_core()
+        self.stale_holder("other-session", os.getpid())
+        (self.state / "other-session.owner").write_text(
+            json.dumps([os.getpid(), core.owner_identity(os.getpid()), self.tty]))
+        self.run_hook(core, "refresh")
+        self.assertEqual((self.state / f"tty.{self.tty}.session").read_text(), "other-session")
+
     def test_unknown_state_is_not_green(self):
         (self.state / (SID + ".state")).write_text("")
         self.start()
