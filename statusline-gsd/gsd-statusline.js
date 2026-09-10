@@ -706,12 +706,28 @@ const NET_CACHE_DEAD_MS = 120_000;  // older than this renders nothing, not stal
 const NET_SAMPLES = 10;
 // The sparkline always occupies NET_SAMPLES columns, padded on the left while
 // history is still filling. A line that grows as samples arrive shifts every
-// number to its right on each redraw, which reads as flicker.
-const NET_EMPTY = '\u00b7';
-const NET_PROBE_HOST = 'api.anthropic.com';
+// number to its right on each redraw, which reads as flicker. The filler is a
+// dash rather than a mid dot because the dot renders narrower than a bar in
+// this terminal font, so a half-filled line came out physically shorter than a
+// full one even with the column count held constant.
+const NET_EMPTY = '-';
+// Measured here 10.9.2026: the API host deliberately drops a large share of
+// repeated connections that never go on to send a request — roughly half of
+// them time out whether or not the handshake is completed, at one per second
+// and still at one per three seconds. Probing it therefore reported an outage
+// on a perfectly healthy connection. These two answer every time (8/8 at 8-11ms
+// in the same test), are reached by address so no name lookup is timed, and
+// land at whichever edge is nearest, which is the round trip we want to show.
+// The second is only tried when the first fails, so a network that blocks one
+// of them does not blank the indicator.
+const NET_PROBE_HOSTS = ['1.1.1.1', '8.8.8.8'];
 const NET_PROBE_PORT = 443;
 const NET_PROBE_TIMEOUT_MS = 5000;
 const NET_BARS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇'];
+// The reading beside the bars is right-aligned into a fixed slot. Its natural
+// length runs 3 ("off") to 5 ("120ms"), and letting it breathe moved every
+// segment after it sideways on each redraw.
+const NET_LABEL_WIDTH = 5;
 
 const TPS_TAIL_BYTES = 256 * 1024;
 const TPS_MAX_AGE_MS = 5 * 60 * 1000;
@@ -778,8 +794,14 @@ function formatNetSegment(samples, stale = false) {
   const missing = NET_SAMPLES - recent.length;
   const pad = missing > 0 ? `\x1b[2m${NET_EMPTY.repeat(missing)}\x1b[0m` : '';
   const spark = pad + recent.map(ms => `${paint(ms)}${latencyBar(ms)}\x1b[0m`).join('');
+  // One dropped probe is a blip, not an outage. Reporting it as "off" the
+  // instant it lands made the line flap between a number and "off" on a single
+  // lost packet, so the last real reading stands until two failures in a row.
   const last = recent[recent.length - 1];
-  return `${spark} ${paint(last)}${formatLatency(last)}\x1b[0m`;
+  const prev = recent.length > 1 ? recent[recent.length - 2] : null;
+  const shown = last == null && prev != null ? prev : last;
+  const label = formatLatency(shown).padStart(NET_LABEL_WIDTH);
+  return `${spark} ${paint(shown)}${label}\x1b[0m`;
 }
 
 function tpsColor(tps) {
@@ -817,44 +839,73 @@ function readNetCache(claudeDir, now = Date.now()) {
 }
 
 function spawnNetSampler(claudeDir, now = Date.now()) {
+  let fd = null;
+  const lockPath = netLockPath();
   try {
-    const lockPath = netLockPath();
-    // Both tests must pass: a recent heartbeat AND a process still answering to
-    // the pid inside. The timestamp alone would keep a killed sampler's lock
-    // looking valid for a full window, leaving the line unmeasured; the pid
-    // alone could match an unrelated process that reused the number.
-    let alive = false;
+    // Claiming the lock has to be a single atomic step. Reading it, deciding it
+    // is free, and then writing it is three steps, and every open window
+    // redraws on the same tick: they all read "free" together and each spawns
+    // its own sampler. That is how this reached hundreds of live samplers, all
+    // opening a connection to the same host once a second until the host
+    // stopped answering and every reading came back dead.
     try {
-      if (now - fs.statSync(lockPath).mtimeMs < NET_LOCK_STALE_MS) {
-        const pid = parseInt(fs.readFileSync(lockPath, 'utf8'), 10);
-        if (Number.isFinite(pid) && pid > 0) {
-          try { process.kill(pid, 0); alive = true; } catch (e) { alive = false; }
+      fd = fs.openSync(lockPath, 'wx');
+    } catch (e) {
+      // Somebody holds it. Only take it over once the holder is really gone:
+      // both a stale heartbeat and a pid nothing answers to. The timestamp
+      // alone would call a busy sampler dead; the pid alone could match an
+      // unrelated process that reused the number.
+      let alive = false;
+      try {
+        if (now - fs.statSync(lockPath).mtimeMs < NET_LOCK_STALE_MS) {
+          const pid = parseInt(fs.readFileSync(lockPath, 'utf8'), 10);
+          if (Number.isFinite(pid) && pid > 0) {
+            try { process.kill(pid, 0); alive = true; } catch (e2) { alive = false; }
+          }
         }
-      }
-    } catch (e) {}
-    if (alive) return;
-    fs.writeFileSync(lockPath, String(process.pid));
+      } catch (e2) {}
+      if (alive) return;
+      try { fs.unlinkSync(lockPath); } catch (e2) {}
+      fd = fs.openSync(lockPath, 'wx');
+    }
     const child = require('child_process').spawn(
       process.execPath,
       [__filename, '--net-sampler'],
       { detached: true, stdio: 'ignore', env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir } }
     );
     child.unref();
-  } catch (e) {}
+    // The lock names the SAMPLER, never this render. A statusline process is
+    // gone milliseconds from now, so its own pid answers to nothing by the next
+    // redraw — which read as "no sampler alive" and spawned another one, once
+    // per second, forever.
+    fs.writeSync(fd, String(child.pid));
+  } catch (e) {
+    try { if (fd !== null) fs.unlinkSync(lockPath); } catch (e2) {}
+  } finally {
+    try { if (fd !== null) fs.closeSync(fd); } catch (e2) {}
+  }
 }
 
 /**
- * Time one TCP connection to the API host. No request is sent and no bytes of
- * ours ever leave — this measures the network path alone, which is why it
- * reads ~90ms where a full TLS handshake would read ~400ms and drown the
- * signal in crypto setup the real client pays only once per connection.
+ * Time one TCP connection. No request is sent and no bytes of ours ever leave —
+ * this measures the network path alone, which is why it reads ~10ms where a
+ * full TLS handshake would read hundreds and drown the signal in crypto setup
+ * the real client pays only once per connection. Falls through to the second
+ * address only when the first does not answer.
  */
-function probeOnce(cb) {
+function probeOnce(cb, hosts = NET_PROBE_HOSTS) {
+  const host = hosts[0];
+  if (!host) return cb(null);
   const started = Date.now();
   let done = false;
-  const finish = ms => { if (!done) { done = true; cb(ms); } };
+  const finish = ms => {
+    if (done) return;
+    done = true;
+    if (ms == null && hosts.length > 1) return probeOnce(cb, hosts.slice(1));
+    cb(ms);
+  };
   try {
-    const sock = require('net').connect(NET_PROBE_PORT, NET_PROBE_HOST, () => {
+    const sock = require('net').connect(NET_PROBE_PORT, host, () => {
       const ms = Date.now() - started;
       sock.destroy();
       finish(ms);
@@ -876,7 +927,12 @@ function appendSample(claudeDir, ms) {
       if (Array.isArray(old.samples)) prev = old.samples;
     } catch (e) {}
     const samples = prev.concat([ms]).slice(-NET_SAMPLES);
-    fs.writeFileSync(p, JSON.stringify({ updated: Date.now(), samples }));
+    // Written aside and moved into place, so a reader can never catch a
+    // half-written file. A torn read throws on parse, and the whole indicator
+    // vanishes from the line for that redraw.
+    const tmp = `${p}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ updated: Date.now(), samples }));
+    fs.renameSync(tmp, p);
   } catch (e) {}
 }
 
@@ -892,6 +948,14 @@ function runNetSampler() {
     let lastRender = 0;
     try { lastRender = fs.statSync(netRenderMarkPath(claudeDir)).mtimeMs; } catch (e) {}
     if (Date.now() - lastRender > NET_IDLE_EXIT_MS) process.exit(0);
+    // Exactly one sampler measures. Any other that finds a living owner in the
+    // lock stands down instead of probing alongside it, so a duplicate born in
+    // a race lasts one tick rather than until the window closes.
+    let owner = 0;
+    try { owner = parseInt(fs.readFileSync(netLockPath(), 'utf8'), 10); } catch (e) {}
+    if (Number.isFinite(owner) && owner > 0 && owner !== process.pid) {
+      try { process.kill(owner, 0); process.exit(0); } catch (e) {}
+    }
     try { fs.writeFileSync(netLockPath(), String(process.pid)); } catch (e) {}
     probeOnce(ms => appendSample(claudeDir, ms));
   };

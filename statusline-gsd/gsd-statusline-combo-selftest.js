@@ -105,6 +105,17 @@ assert.strictEqual(s.formatLatency(null), 'off');
 assert.strictEqual(s.formatNetSegment([]), '');
 assert.strictEqual(s.formatNetSegment(null), '');
 assert.ok(s.formatNetSegment([90, 120, 400]).includes('400ms'));
+// A single failed probe keeps the last real reading; two in a row is an outage.
+assert.ok(s.formatNetSegment([90, 120, null]).includes('120ms'));
+assert.ok(s.formatNetSegment([90, null, null]).includes('off'));
+// The reading beside the bars sits in a fixed slot, so nothing after it moves
+// when the number changes length or the connection drops.
+{
+  const label = seg => seg.replace(/\u001b\[[0-9;]*m/g, '').split(' ').slice(1).join(' ');
+  assert.strictEqual(label(s.formatNetSegment([84])).length, 5);
+  assert.strictEqual(label(s.formatNetSegment([120])).length, 5);
+  assert.strictEqual(label(s.formatNetSegment([null, null])).length, 5);
+}
 // The bar keeps a constant width whatever the history holds, so nothing to its
 // right shifts as samples accumulate.
 {
