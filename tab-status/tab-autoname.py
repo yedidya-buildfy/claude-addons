@@ -25,7 +25,9 @@ import uuid
 
 STATE = os.path.expanduser("~/.claude/terminal-state")
 API = os.environ.get("TAB_NAME_API", "http://127.0.0.1:8317/v1/chat/completions")
-MODEL = os.environ.get("TAB_NAME_MODEL", "claude-haiku-4-5-20251001")
+# ponytail: one model, no failover. The proxy's Claude auth died on 2026-09-10
+# (refresh token rejected) and every naming call failed silently for four days.
+MODEL = os.environ.get("TAB_NAME_MODEL", "gemini-3.5-flash-lite")
 TIMEOUT = float(os.environ.get("TAB_NAME_TIMEOUT", "40"))
 MAX_WORDS = 3
 MAX_TOPIC = 300
