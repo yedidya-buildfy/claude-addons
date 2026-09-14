@@ -25,9 +25,11 @@ import uuid
 
 STATE = os.path.expanduser("~/.claude/terminal-state")
 API = os.environ.get("TAB_NAME_API", "http://127.0.0.1:8317/v1/chat/completions")
-# ponytail: one model, no failover. The proxy's Claude auth died on 2026-09-10
-# (refresh token rejected) and every naming call failed silently for four days.
-MODEL = os.environ.get("TAB_NAME_MODEL", "gemini-3.5-flash-lite")
+# The gateway's Claude login was rejected on 2026-09-10 and every naming call
+# failed silently for four days, so the namer no longer depends on one provider:
+# it walks the list and keeps the first model that answers.
+MODELS = [m for m in os.environ.get("TAB_NAME_MODEL", "").split(",") if m.strip()] or [
+    "gemini-3.5-flash-lite", "claude-gemini-flash", "claude-grok-46"]
 TIMEOUT = float(os.environ.get("TAB_NAME_TIMEOUT", "40"))
 MAX_WORDS = 3
 MAX_TOPIC = 300
@@ -206,8 +208,18 @@ def ask(current, topic, anchor, pending, retry_of=None):
         messages += [{"role": "assistant", "content": retry_of},
                      {"role": "user", "content": "That is not a valid answer. Reply with only the JSON "
                                                  'object {"decision","name","topic"} and nothing else.'}]
+    last = None
+    for model in MODELS:
+        try:
+            return call(model, messages)
+        except Exception as error:      # unreachable model, quota, gateway hiccup
+            last = error
+    raise last
+
+
+def call(model, messages):
     body = json.dumps({
-        "model": MODEL,
+        "model": model,
         "max_tokens": 256,
         "temperature": 0,
         "stream": False,

@@ -44,6 +44,8 @@ class NamingTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("namer_under_test", ROOT / "tab-autoname.py")
         self.namer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.namer)
+        # One model unless a test says otherwise: queued responses are per attempt.
+        self.namer.MODELS = ["test-model"]
         # Only external process lookup is faked: force the real PPID walk.
         bin_dir = self.home / "bin"
         bin_dir.mkdir()
@@ -163,6 +165,21 @@ class NamingTests(unittest.TestCase):
                   during=lambda: self.auto("latest topic"))
         self.assertEqual(self.marker.read_text(), "ok\n")
         self.assertEqual(self.name.read_text(), "latest topic\n")
+
+    def test_second_model_answers_when_the_first_is_unreachable(self):
+        self.namer.MODELS = ["dead-model", "live-model"]
+        self.auto([OSError("no auth available"), "latest topic"])
+        self.assertEqual([r["model"] for r in self.requests], ["dead-model", "live-model"])
+        self.assertEqual(self.name.read_text(), "latest topic\n")
+        self.assertEqual(self.marker.read_text(), "ok\n")
+
+    def test_every_model_unreachable_is_a_failure(self):
+        self.namer.MODELS = ["dead-one", "dead-two"]
+        self.auto([OSError("down")] * 4)
+        self.assertEqual([r["model"] for r in self.requests],
+                         ["dead-one", "dead-two", "dead-one", "dead-two"])
+        self.assertEqual(self.name.read_text(), "project\n")
+        self.assertEqual(self.marker.read_text(), "fail\n")
 
     def test_missing_session_does_not_write_name(self):
         self.live.unlink()
