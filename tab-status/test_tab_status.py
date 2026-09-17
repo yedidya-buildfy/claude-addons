@@ -153,18 +153,23 @@ class TerminalChecks(unittest.TestCase):
         with mock.patch.dict(os.environ, {"HOME": str(self.home)}), mock.patch.object(core.subprocess, "Popen", side_effect=record_child), mock.patch.object(core, "STATE", self.state), mock.patch.object(core, "terminal_owner", return_value=(tty or self.tty, os.getpid(), core.owner_identity(os.getpid()))):
             core.hook(action, {"session_id": SID, "transcript_path": str(self.transcript), **(data or {})})
 
-    def test_push_to_main_marks_the_name_once(self):
+    def test_push_to_main_turns_the_idle_dot_into_a_check(self):
         core = load_core()
-        name = self.state / (SID + ".name")
+        flag = self.state / (SID + ".pushed")
         fetch = "From github.com:me/repo\n   1a2b3c4..5d6e7f8  main       -> main\n"
-        push = "To github.com:me/repo.git\n   1a2b3c4..5d6e7f8  main -> main\n"
         self.run_hook(core, "pushed", {"tool_response": {"stdout": "", "stderr": fetch}})
         self.run_hook(core, "pushed", {"tool_response": {"stderr": "To x\n   1a2..3b4  topic -> topic\n"}})
         self.run_hook(core, "pushed", {"tool_response": {"stderr": "To x\n ! [rejected]  main -> main (fetch first)\n"}})
-        self.assertEqual(name.read_text().strip(), "בדיקת נקודות")
-        self.run_hook(core, "pushed", {"tool_response": {"stdout": "", "stderr": push}})
+        self.assertFalse(flag.exists())
         self.run_hook(core, "pushed", {"tool_response": {"stderr": "To x\n + 1a2...3b4 HEAD -> master (forced update)\n"}})
-        self.assertEqual(name.read_text().strip(), "✅ בדיקת נקודות")
+        self.assertTrue(flag.exists())
+        self.assertEqual((self.state / (SID + ".name")).read_text().strip(), "בדיקת נקודות")
+        self.assertEqual(core.badge("red", pushed=True), "🔴")
+        self.assertEqual(core.badge("green", shells=True, pushed=True), "🟤")
+        self.assertEqual(core.badge("green", pushed=True), "✅")
+        self.start()
+        self.collect()
+        self.assertEqual(self.titles(), ["✅ בדיקת נקודות"])
 
     def test_hook_start_does_not_lock_out_its_child(self):
         core = load_core()

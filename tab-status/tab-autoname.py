@@ -99,7 +99,7 @@ def sanitize(text):
                    if c.isspace() or not unicodedata.category(c).startswith("C"))
     text = " ".join(text.split())
     # Status belongs to the watcher; repeated pasted badges must not multiply it.
-    return text.lstrip("🟢🔴🟡🟠🔵🟣⚫⚪🟤●○◉•·️ ").strip()
+    return text.lstrip("🟢🔴🟡🟠🔵🟣⚫⚪🟤✅●○◉•·️ ").strip()
 
 
 def mark(session, status):

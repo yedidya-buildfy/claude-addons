@@ -21,7 +21,7 @@ import time
 import unicodedata
 
 STATE = Path.home() / ".claude/terminal-state"
-DOTS = "⚪🔴🔵🟢🟡🟤🟠🟣"
+DOTS = "⚪🔴🔵🟢🟡🟤🟠🟣✅"
 TERMINAL = {"completed", "failed", "cancelled", "canceled", "killed", "stopped", "timeout", "timed_out"}
 
 
@@ -66,7 +66,7 @@ def safe_name(value):
     return " ".join("".join(c for c in value if c not in DOTS and not unicodedata.category(c).startswith("C")).split())[:80] or "claude"
 
 
-def badge(state, agents=False, shells=False, plan=False, waiting=False):
+def badge(state, agents=False, shells=False, plan=False, waiting=False, pushed=False):
     if agents:
         return "🟡"
     if waiting:
@@ -79,6 +79,8 @@ def badge(state, agents=False, shells=False, plan=False, waiting=False):
         return "🔴"
     if shells:
         return "🟤"
+    if state == "green" and pushed:
+        return "✅"  # idle and this session pushed to main/master
     return {"green": "🟢", "white": "⚪"}.get(state, "⚪")
 
 
@@ -347,9 +349,6 @@ def launch_hint(prefix, action, data):
     atomic(path, json.dumps(hints))
 
 
-PUSHED = "✅ "
-
-
 def pushed_to_default(response):
     """True when git's own report shows a ref landing on main or master.
 
@@ -389,15 +388,12 @@ def hook(action, data):
         if action == "session-end":
             with locked(prefix.with_suffix(".name.lock")):
                 atomic(ended, "ended\n")
-                for suffix in (".state", ".name", ".name-generation", ".pinned", ".namer", ".plan_wait", ".bg", ".bg_hint", ".launches"):
+                for suffix in (".state", ".name", ".name-generation", ".pinned", ".namer", ".plan_wait", ".bg", ".bg_hint", ".launches", ".pushed"):
                     prefix.with_suffix(suffix).unlink(missing_ok=True)
             return  # no PID killing; watcher sees liveness disappear
         if action == "pushed":
-            name = prefix.with_suffix(".name")
-            with locked(prefix.with_suffix(".name.lock")):
-                current = text(name)
-                if state_file.exists() and current and not current.startswith(PUSHED) and pushed_to_default(data.get("tool_response")):
-                    atomic(name, PUSHED + current + "\n")
+            if state_file.exists() and pushed_to_default(data.get("tool_response")):
+                atomic(prefix.with_suffix(".pushed"), "pushed\n")
             return
         if action == "remind-name":
             return  # naming is automatic; no competing assistant rename loop
@@ -504,7 +500,8 @@ def watch(sid, tty, pid):
                         last_state = value
                     state = last_state if available or last_state != "green" else "white"
                     shells = any(shell_running(sid, task) for task in tracker.shells)
-                    dot = badge(state, tracker.busy, shells, tracker.plan, prefix.with_suffix(".plan_wait").exists())
+                    dot = badge(state, tracker.busy, shells, tracker.plan, prefix.with_suffix(".plan_wait").exists(),
+                                prefix.with_suffix(".pushed").exists())
                     title = dot + " " + safe_name(text(prefix.with_suffix(".name"), "claude"))
                     with locked(STATE / f"tty.{key}.lock"):
                         if text(mapping) != sid:

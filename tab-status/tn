@@ -43,7 +43,7 @@ def sanitize(text):
     text = "".join(" " if c.isspace() else c for c in text
                    if c.isspace() or not unicodedata.category(c).startswith("C"))
     text = " ".join(text.split())
-    return text.lstrip("🟢🔴🟡🟠🔵🟣⚫⚪🟤●○◉•·️ ").strip()
+    return text.lstrip("🟢🔴🟡🟠🔵🟣⚫⚪🟤✅●○◉•·️ ").strip()
 
 
 def main():
