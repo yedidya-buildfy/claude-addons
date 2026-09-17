@@ -363,12 +363,19 @@ echo
 # --- multi-model ---
 cyan "[8/10] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
 if confirm "Install multi-model?" "multi-model"; then
+  # A failure here (e.g. an unaccepted Xcode license) must not skip the
+  # components after it, so the rest of an update still lands.
   if [ "$INSTALL_MODE" = "update" ] || [ "$INSTALL_MODE" = "yes" ]; then
-    "$ROOT/multi-model/install.sh" --yes
+    mm_args=(--yes)
   else
-    "$ROOT/multi-model/install.sh"
+    mm_args=()
   fi
-  green "    installed global \`ccx\` command with backups and self-tests"
+  if "$ROOT/multi-model/install.sh" "${mm_args[@]}"; then
+    green "    installed global \`ccx\` command with backups and self-tests"
+  else
+    FAILED="$FAILED multi-model"
+    printf '\033[31m%s\033[0m\n' "    multi-model failed — continuing with the rest" >&2
+  fi
 
   if grep -q "claude-addons: multi-model" "$ZSHRC" 2>/dev/null; then
     dim "    ~/.zshrc already wired up, skipping"
@@ -443,9 +450,14 @@ fi
 green "    registered background auto-update hook (checks once every 12h)"
 
 echo
-green "Done."
+if [ -n "${FAILED:-}" ]; then
+  printf '\033[31m%s\033[0m\n' "Done, except:$FAILED (see the errors above)" >&2
+else
+  green "Done."
+fi
 echo
 dim "Next steps:"
 dim "  1. Restart any existing Claude sessions so new hooks load."
 dim "  2. Open a new VS Code terminal so the tabs.title setting takes effect."
 dim "  3. Run \`claude\` — tab should show ⚪ on start, 🔴 when working, 🟢 when idle."
+[ -z "${FAILED:-}" ]
