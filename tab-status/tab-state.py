@@ -405,6 +405,8 @@ def hook(action, data):
             atomic(state_file, action + "\n")
             if action == "red":
                 prefix.with_suffix(".plan_wait").unlink(missing_ok=True)
+            if data.get("hook_event_name") == "UserPromptSubmit":
+                prefix.with_suffix(".pushed").unlink(missing_ok=True)  # the check belongs to the turn that pushed
         elif action == "working":
             if text(state_file) != "blue" and not prefix.with_suffix(".plan_wait").exists():
                 atomic(state_file, "red\n")

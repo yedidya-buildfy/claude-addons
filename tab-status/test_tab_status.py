@@ -170,6 +170,10 @@ class TerminalChecks(unittest.TestCase):
         self.start()
         self.collect()
         self.assertEqual(self.titles(), ["✅ בדיקת נקודות"])
+        self.run_hook(core, "red", {"hook_event_name": "PostToolUse"})
+        self.assertTrue(flag.exists())
+        self.run_hook(core, "red", {"hook_event_name": "UserPromptSubmit"})
+        self.assertFalse(flag.exists())
 
     def test_hook_start_does_not_lock_out_its_child(self):
         core = load_core()
