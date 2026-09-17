@@ -66,7 +66,7 @@ def safe_name(value):
     return " ".join("".join(c for c in value if c not in DOTS and not unicodedata.category(c).startswith("C")).split())[:80] or "claude"
 
 
-def badge(state, agents=False, shells=False, plan=False, waiting=False, pushed=False):
+def badge(state, agents=False, plan=False, waiting=False, pushed=False):
     if agents:
         return "🟡"
     if waiting:
@@ -77,8 +77,6 @@ def badge(state, agents=False, shells=False, plan=False, waiting=False, pushed=F
         return "🟣"
     if state == "red":
         return "🔴"
-    if shells:
-        return "🟤"
     if state == "green" and pushed:
         return "✅"  # idle and this session pushed to main/master
     return {"green": "🟢", "white": "⚪"}.get(state, "⚪")
@@ -89,7 +87,6 @@ class Transcript:
         self.offset = 0
         self.identity = None
         self.agents = set()
-        self.shells = set()
         self.known_agents = set()
         self.changes = {}
         self.calls = {}
@@ -103,21 +100,15 @@ class Transcript:
     def busy(self):
         return bool(self.agents or self.launching)
 
-    def change(self, task, running, stamp, shell=False):
+    def change(self, task, running, stamp):
         if not valid_id(task) or stamp < self.changes.get(task, float("-inf")):
             return
         self.changes[task] = stamp
-        if shell:
-            if running:
-                self.shells.add(task)
-            else:
-                self.shells.discard(task)
-        elif running:
+        if running:
             self.known_agents.add(task)
             self.agents.add(task)
         else:
             self.agents.discard(task)
-            self.shells.discard(task)
 
     def apply(self, row):
         if not isinstance(row, dict) or row.get("isSidechain"):
@@ -156,7 +147,7 @@ class Transcript:
             if kind == "assistant" and block.get("type") == "tool_use":
                 tool = block.get("name")
                 call = block.get("id")
-                if tool in ("Agent", "Task", "SendMessage", "TaskStop", "Bash") and valid_id(call):
+                if tool in ("Agent", "Task", "SendMessage", "TaskStop") and valid_id(call):
                     inputs = block.get("input")
                     self.calls[call] = (tool, inputs if isinstance(inputs, dict) else {}, stamp)
                     if tool in ("Agent", "Task"):
@@ -184,8 +175,6 @@ class Transcript:
                 target = result.get("task_id") or inputs.get("task_id")
                 if result.get("success") is True or str(result.get("message", "")).startswith("Successfully stopped"):
                     self.change(target, False, stamp)
-            elif tool == "Bash" and valid_id(result.get("backgroundTaskId")):
-                self.change(result["backgroundTaskId"], True, started, shell=True)
 
     def hints(self, values):
         if not isinstance(values, dict):
@@ -232,50 +221,6 @@ def process(pid, columns):
         return subprocess.check_output(["ps", "-p", str(pid), "-o", columns], text=True, stderr=subprocess.DEVNULL, timeout=2).strip()
     except (subprocess.SubprocessError, OSError):
         return ""
-
-
-TASK_END = re.compile(rb"\[(?:exited with code -?\d+|killed)\]\s*$")
-
-
-def tasks_dir(sid, _cache={}):
-    """Where the runtime streams this session's background-task output."""
-    found, checked = _cache.get(sid, ("", 0.0))
-    if found or (checked and time.monotonic() - checked < 30):
-        return found
-    for base in (os.environ.get("TMPDIR"), "/private/tmp", "/tmp"):
-        if not base:
-            continue
-        for path in Path(base).glob(f"claude-*/*/{sid}/tasks"):
-            found = path
-            break
-        if found:
-            break
-    _cache[sid] = (found, time.monotonic())
-    return found
-
-
-def shell_running(sid, task, _finished=set()):
-    """Brown needs proof: an output file that has not reached its exit marker.
-
-    A background shell often ends with no completion notification at all - a
-    foreground command that the two-minute timeout pushes into the background
-    almost never sends one - so trusting the transcript alone leaves the dot
-    brown for the rest of the session. No file means nothing is running.
-    """
-    if not valid_id(task) or (sid, task) in _finished:
-        return False
-    directory = tasks_dir(sid)
-    running = False
-    if directory:
-        try:
-            with open(Path(directory) / f"{task}.output", "rb") as f:
-                f.seek(max(0, os.fstat(f.fileno()).st_size - 200))
-                running = not TASK_END.search(f.read().rstrip())
-        except OSError:
-            running = False
-    if not running:
-        _finished.add((sid, task))
-    return running
 
 
 def owner_identity(pid):
@@ -501,8 +446,7 @@ def watch(sid, tty, pid):
                     if value in ("white", "red", "blue", "green"):
                         last_state = value
                     state = last_state if available or last_state != "green" else "white"
-                    shells = any(shell_running(sid, task) for task in tracker.shells)
-                    dot = badge(state, tracker.busy, shells, tracker.plan, prefix.with_suffix(".plan_wait").exists(),
+                    dot = badge(state, tracker.busy, tracker.plan, prefix.with_suffix(".plan_wait").exists(),
                                 prefix.with_suffix(".pushed").exists())
                     title = dot + " " + safe_name(text(prefix.with_suffix(".name"), "claude"))
                     with locked(STATE / f"tty.{key}.lock"):
