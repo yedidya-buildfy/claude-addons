@@ -347,6 +347,28 @@ def launch_hint(prefix, action, data):
     atomic(path, json.dumps(hints))
 
 
+PUSHED = "✅ "
+
+
+def pushed_to_default(response):
+    """True when git's own report shows a ref landing on main or master.
+
+    Reads the output, not the command: a wrapper script can push, and
+    `git fetch origin main:main` prints the same ref line under "From".
+    """
+    if isinstance(response, dict):
+        response = "\n".join(str(response.get(k) or "") for k in ("stdout", "stderr"))
+    if not isinstance(response, str):
+        return False
+    section = ""
+    for line in response.splitlines():
+        if line.startswith(("To ", "From ")):
+            section = line.split(" ", 1)[0]
+        elif section == "To" and re.match(r"^\s*[+* ]?\s*(?:\S+\.\.\.?\S+|\[new branch\])\s+\S+\s+->\s+(?:main|master)(?:\s|$)", line):
+            return True
+    return False
+
+
 def hook(action, data):
     sid = data.get("session_id")
     if not valid_id(sid) or data.get("agent_id"):
@@ -370,6 +392,13 @@ def hook(action, data):
                 for suffix in (".state", ".name", ".name-generation", ".pinned", ".namer", ".plan_wait", ".bg", ".bg_hint", ".launches"):
                     prefix.with_suffix(suffix).unlink(missing_ok=True)
             return  # no PID killing; watcher sees liveness disappear
+        if action == "pushed":
+            name = prefix.with_suffix(".name")
+            with locked(prefix.with_suffix(".name.lock")):
+                current = text(name)
+                if state_file.exists() and current and not current.startswith(PUSHED) and pushed_to_default(data.get("tool_response")):
+                    atomic(name, PUSHED + current + "\n")
+            return
         if action == "remind-name":
             return  # naming is automatic; no competing assistant rename loop
         if action == "white":

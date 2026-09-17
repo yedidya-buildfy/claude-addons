@@ -18,6 +18,7 @@
     ],
     "PostToolUseFailure": [{"matcher": "Agent|Task|SendMessage", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh tool-error"}]}],
     "PostToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh pushed"}]},
       {"matcher": "Agent|Task|SendMessage", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh tool-result"}]},
       {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh red"}]},
       {"matcher": "ExitPlanMode", "hooks": [{"type": "command", "command": "$HOME/.claude/scripts/tab.sh plan-done"}]}
