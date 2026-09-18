@@ -18,6 +18,7 @@ spec.loader.exec_module(council)
 
 PRICES = {"models": {
     "cheap": {"in": 1.0, "cached": 0.1, "out": 4.0},
+    "pricey": {"in": 2.0, "cached": 0.2, "out": 8.0},
     "dear": {"in": 5.0, "cached": 0.5, "out": 25.0},
 }}
 
@@ -326,7 +327,7 @@ def run_meeting(seats, script, crit=None, review=None, chair=None, **cfg):
     with open(os.path.join(root, "a.py"), "w") as f:
         f.write("sync_window = 2\n")
     post, calls = fake_proxy(script, crit, review, chair)
-    conf = {"seats": seats, "rounds": 5, "anon": False, "budget": 0, "steps": 3} | cfg
+    conf = {"seats": seats, "rounds": 5, "anon": False, "budget": 0, "steps": 3, "judge": None} | cfg
     run = os.path.join(root, "council", "run")
     council.Meeting(conf, "Why?", post, PRICES, root, os.path.join(run, "board.md"), log=lambda *_: None).run()
     read = lambda rel: open(os.path.join(run, rel)).read()
@@ -358,8 +359,86 @@ def test_meeting_happy_path():
 
 def test_round_one_must_react_and_explain():
     assert "no PASS" in council.FIRST_SYSTEM and "OTHER plans" in council.FIRST_SYSTEM
+    for p in (council.FIRST_SYSTEM, council.TURN_SYSTEM, council.CRITIQUE_SYSTEM):
+        assert "Source:" in p and "none (opinion)" in p
     for p in (council.FIRST_SYSTEM, council.TURN_SYSTEM):
-        assert "why you were convinced" in p
+        assert "'Convinced by <label>:'" in p
+
+
+def test_sources_and_health_text():
+    msg = "B is wrong about rounding.\nSource: src/lib/calc.ts:42\nAlso PRD.\n**Source:** PRD.md §4\nsource: none (opinion)"
+    assert core.sources(msg) == ["src/lib/calc.ts:42", "PRD.md §4", "none (opinion)"]
+    assert core.sources("B misses the CLI. Source: PRD.md §2, §1.") == ["PRD.md §2, §1"]   # mid-line, seen live
+    assert core.sources("the source of truth: none") == []
+    assert core.source_paths("src/lib/calc.ts:42") == ["src/lib/calc.ts"]
+    assert core.source_paths("PRD.md §4") == ["PRD.md"] and core.source_paths("none (opinion)") == []
+    assert core.changed_mind("Convinced by B: fair point") and not core.changed_mind("I remain unconvinced")
+    line = core.health(3, 3, 0, 1, 2, ["1 issue fixed"], "", (0, 0, 0))
+    assert line.strip().endswith(
+        "Seats: 3 requested · 3 completed · 0 failed · 1 changed position · 2 rounds · final check: 1 issue fixed")
+    assert "final check: not run" in core.health(2, 2, 0, 0, 1, [], "", (0, 0, 0))
+    assert "sources: 1 checked · 0 not found · 2 none" in core.health(2, 2, 0, 0, 1, [], "", (1, 0, 2))
+    models = [{"id": "claude-opus-5", "label": "Claude Opus 5"}]
+    assert core.judge_from_spec(models, "opus:max")["effort"] == "max"
+    try:
+        core.judge_from_spec(models, "opus:2")
+        raise AssertionError("count")
+    except ValueError:
+        pass
+
+
+def test_health_line_closes_the_board():
+    board, _, read = run_meeting([seat("cheap"), seat("dear")],
+                                 {"cheap": ["Convinced by B: the window is the cause.\nSource: a.py"],
+                                  "dear": ["C's rounding is off.\nSource: PRD.md §4"]})
+    assert "### A · $0.002 · source ✓" in board and "### B · $0.010 · source not found" in board
+    last = board.rstrip().splitlines()[-1]
+    assert last == ("Seats: 2 requested · 2 completed · 0 failed · 1 changed position · 1 round · "
+                    "final check: no issues · sources: 1 checked · 1 not found · 0 none"), last
+    assert board.index("## Spend") < board.index("## Health") and last in read("final.md")
+
+
+def test_many_sources_one_tag():
+    board, _, _ = run_meeting([seat("cheap"), seat("dear")],
+                              {"cheap": ["x. Source: a.py\ny. Source: a.py:1\nz. Source: NOPE.md"], "dear": ["ok"]})
+    assert "### A · $0.002 · sources 2 ✓ 1 not found" in board
+
+
+def test_final_check_grades_sources():
+    board, _, _ = run_meeting(
+        [seat("cheap"), seat("dear"), seat("pricey")], {"cheap": ["x"], "dear": ["y"], "pricey": ["z"]},
+        crit={"cheap": ["ISSUE: window too wide\nSource: a.py:1"], "dear": ["ISSUE: vibes"],
+              "pricey": ["ISSUE: see spec\nSource: SPEC.md §2"]},
+        review=["FINISH\n1. amended"])
+    assert "### A · issue · source ✓" in board and "### B · issue · no source" in board
+    assert "### C · issue · source not found" in board
+    assert "final check: 3 issues fixed" in board and "sources: 1 checked · 1 not found · 1 none" in board
+
+
+def test_independent_chair():
+    board, calls, read = run_meeting([seat("cheap"), seat("dear")], {"cheap": ["x"], "dear": ["y"]},
+                                     judge=seat("pricey"), crit={"cheap": ["ISSUE: gap\nSource: a.py"]},
+                                     review=["FINISH\n1. amended"])
+    judge = [c for c in calls if c[0] == "pricey"]
+    assert judge and all("independent chair" in c[3] for c in judge)          # chair calls only
+    assert not any("several AI" in c[3] or "participant" in c[3] for c in judge)  # no plan, no turn, no check
+    try:
+        read("plans/Chair.md")
+        raise AssertionError("the independent chair wrote a plan")
+    except FileNotFoundError:
+        pass
+    assert "independent chair (no plan, no position) · 2 at the table" in board
+    assert "**chair Chair:** stop" in board and "## Draft joint plan · by Chair" in board
+    assert "- Chair = PRICEY · high" in board and "- Chair = PRICEY · high · independent chair" in read("final.md")
+    assert "### Chair" not in board.split("## Discussion")[0]                 # no plan on the board
+    assert "Seats: 2 requested · 2 completed · 0 failed · independent chair ·" in board
+
+
+def test_independent_chair_fails():
+    board, _, _ = run_meeting([seat("cheap"), seat("dear")], {"cheap": ["x"], "dear": ["y"]},
+                              judge=seat("broken"))
+    assert "chair Chair failed; B takes the chair" in board
+    assert "independent chair failed → B" in board and "## Joint plan" in board
 
 
 def test_same_model_many_seats():
@@ -445,12 +524,12 @@ def test_cli_keeps_settings_out_of_the_question():
     try:
         council.main(["--seat", "sonnet:high:2", "3 ways to plan a site", "--seat=grok",
                       "--rounds", "4", "--no-anon", "--split"])
-        council.main(["--split", "--seat", "grok:2", "--", "--why is it slow?"])
+        council.main(["--split", "--seat", "grok:2", "--independent-chair", "opus:max", "--", "--why is it slow?"])
     finally:
         council.split = real
     assert ran[0] == ("3 ways to plan a site",
                       ["--seat=sonnet:high:2", "--seat=grok", "--rounds=4", "--no-anon"])
-    assert ran[1][0] == "--why is it slow?"
+    assert ran[1] == ("--why is it slow?", ["--seat=grok:2", "--independent-chair=opus:max"])
 
 
 def test_split_falls_back_when_nobody_claims():

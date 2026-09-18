@@ -134,8 +134,12 @@ PLAN_SYSTEM = (
     "the question, fully on your own: nobody else's plan exists for you yet. You may use the "
     "look-up tools to read the project folder (at most {steps} look-ups). Be concrete. Do not say "
     "which model you are. End with a numbered plan.")
-WHY = ("If you change your mind or agree with someone, say in one sentence why you were "
-       "convinced (e.g. 'Convinced by B: the cache is per-user, so my global lock is wrong').")
+WHY = ("If you change your mind or agree with someone else's point, start one sentence with "
+       "'Convinced by <label>:' and say why (e.g. 'Convinced by B: the cache is per-user, so my "
+       "global lock is wrong').")
+SOURCE = ("Ground every objection that matters: end it with a line 'Source: <file or document "
+          "section>' — e.g. 'Source: PRD.md §4' or 'Source: src/lib/calc.ts:42' — naming only what "
+          "you actually read. If nothing backs it, write 'Source: none (opinion)'.")
 TURN_SYSTEM = (
     "You are {me}, a participant in a planning meeting. The shared board holds everyone's first "
     "plans and the discussion so far. This is a discussion turn, not a new plan. Reply with "
@@ -145,20 +149,21 @@ TURN_SYSTEM = (
     "propose a change. Refer to others by their label.\n"
     "- MORE: <reason> — you need more look-up steps than your {steps} before you can answer; "
     "the chair decides.\n"
-    + WHY + "\nYou may use the look-up tools before answering. Do not say which model you are.")
+    + WHY + "\n" + SOURCE + "\nYou may use the look-up tools before answering. Do not say which model you are.")
 FIRST_SYSTEM = (
     "You are {me}, a participant in a planning meeting. The shared board holds everyone's first "
     "plans, written independently. This is your first discussion turn: react to the OTHER plans, "
     "by label — what is better than yours, what is wrong or missing, what you would take over. "
     "At most {words} words, no new full plan, no PASS. Or reply MORE: <reason> if you need more "
     "look-up steps than your {steps}; the chair decides.\n"
-    + WHY + "\nYou may use the look-up tools before answering. Do not say which model you are.")
+    + WHY + "\n" + SOURCE + "\nYou may use the look-up tools before answering. Do not say which model you are.")
 CRITIQUE_SYSTEM = (
     "You are {me}, a participant in a planning meeting. The table reached agreement and the "
     "chair's draft joint plan is at the end of the board. Before it is final, attack it: look "
     "for a problem, risk, gap or mistake in it. Reply NO ISSUES if you honestly find nothing "
-    "that matters, or ISSUE: <what is wrong and why it matters> in at most {words} words. "
-    "You may use the look-up tools first. Do not say which model you are.")
+    "that matters, or ISSUE: <what is wrong and why it matters> in at most {words} words, "
+    "ending with a line 'Source: <file or document section>' — only what you actually read — "
+    "or 'Source: none (opinion)'. You may use the look-up tools first. Do not say which model you are.")
 CHAIR_SYSTEM = (
     "You chair this planning meeting. A round just ended; decide whether the discussion should "
     "go on. Answer STOP or CONTINUE, then one short line why. Stop when more talk will not "
@@ -173,7 +178,10 @@ DRAFT_SYSTEM = (
     "Everyone will now check it for problems before it is final.")
 REVIEW_SYSTEM = (
     "You chair this planning meeting. The table checked your draft joint plan for problems; "
-    "their findings are at the end of the board. If any finding is a significant problem that "
+    "their findings are at the end of the board, each tagged by whether its source was found in "
+    "the project ('source ✓'), named but missing ('source not found') or absent ('no source'). "
+    "A checked source is evidence; the rest is opinion, which is significant only when the "
+    "reasoning is self-evident. If any finding is a significant problem that "
     "needs discussion, answer CONTINUE: <the problem, one line>. Otherwise answer FINISH, then "
     "the final joint plan — the draft amended for the minor findings, same format "
     "(numbered plan, then '### Still disputed').")
@@ -183,6 +191,8 @@ LAST_REVIEW_SYSTEM = (
     "Answer FINISH, then the final joint plan — the draft amended where a finding is clearly "
     "right, and every significant unresolved finding listed under '### Still disputed' "
     "with who raised it, by label.")
+JUDGE_NOTE = ("\nYou are an independent chair: you wrote no plan and hold no position. Judge only "
+              "on the arguments and their sources, never on who made them.")
 JOINT_SYSTEM = (
     "You chair this planning meeting and the discussion is over. Write the joint plan the table "
     "agreed on: a numbered plan first, then a section '### Still disputed' listing each open "
@@ -239,12 +249,18 @@ class Meeting:
         self.cfg, self.question, self.post, self.root = cfg, question, post, root
         self.board_file, self.log = board_file, log
         self.run_dir = os.path.dirname(board_file)
-        self.seats = cfg["seats"]                                  # chair last
-        self.labels = core.seat_labels(len(self.seats))
+        judge = cfg.get("judge")                                   # independent chair: no plan, no turns
+        self.members = list(range(len(cfg["seats"])))              # the seats that plan and talk
+        self.seats = cfg["seats"] + ([judge] if judge else [])     # chair last
+        self.labels = core.seat_labels(len(cfg["seats"])) + (["Chair"] if judge else [])
+        self.judge = len(self.seats) - 1 if judge else None
         self.prices = [core.price_for(prices, s["id"]) for s in self.seats]
         self.chair = len(self.seats) - 1
         self.gone = set()                                          # failed seats: out for the rest of the run
         self.round = 0
+        self.changed = set()                                       # seats that said "Convinced by …"
+        self.checks = []                                           # one outcome per final check
+        self.grounding = [0, 0, 0]                                 # sources checked · not found · none
         self.ledger = core.Ledger(self.labels, cfg["budget"])
 
     # -- files --
@@ -270,7 +286,27 @@ class Meeting:
         return "" if self.cfg["anon"] else f" ({self.seats[i]['label']})"
 
     def live(self):
-        return [i for i in range(len(self.seats)) if i not in self.gone]
+        return [i for i in self.members if i not in self.gone]
+
+    def grade(self, text):
+        """Check each 'Source:' against the project folder. Returns a short board
+        tag: ' · source ✓', or ' · sources 2 ✓ 1 not found' when there are several."""
+        got = {"✓": 0, "not found": 0, "none": 0}
+        for src in core.sources(text):
+            paths = core.source_paths(src)
+            got["none" if not paths else "✓" if any(self.exists(p) for p in paths) else "not found"] += 1
+        for n, k in enumerate(got):
+            self.grounding[n] += got[k]
+        if sum(got.values()) == 1:
+            k = next(k for k, v in got.items() if v)
+            return " · " + {"✓": "source ✓", "not found": "source not found", "none": "no source"}[k]
+        return (" · sources " + " ".join(f"{v} {k}" for k, v in got.items() if v)) if any(got.values()) else ""
+
+    def exists(self, path):
+        try:
+            return os.path.exists(_inside(self.root, path.split(":")[0], (self.run_dir,)))
+        except ValueError:
+            return False
 
     def seat_note(self, i):
         lab, left = self.labels[i], self.ledger.left(self.labels[i])
@@ -307,7 +343,8 @@ class Meeting:
         if self.chair in self.gone and not self.handover():
             return None
         while True:
-            res = self.attempt(self.chair, system, user, 0, tools=False)
+            note = JUDGE_NOTE if self.chair == self.judge else ""
+            res = self.attempt(self.chair, system + note, user, 0, tools=False)
             if res:
                 self.ledger.charge(self.labels[self.chair], res[0].cost, reserve=reserve)
                 return res
@@ -336,11 +373,11 @@ class Meeting:
                     break
                 final = self.final_check(draft)                    # None = a real problem, talk on
         self.finish(final)
-        self.write(core.spend_block(self.ledger, self.labels[self.chair]))
+        self.write(core.spend_block(self.ledger, self.labels[self.chair]) + self.health())
 
     def stopped(self):
         self.write("\n## Stopped by owner\n")
-        self.write(core.spend_block(self.ledger, self.labels[self.chair]))
+        self.write(core.spend_block(self.ledger, self.labels[self.chair]) + self.health())
 
     def plans(self):
         """Every seat plans blind, in parallel; the discussion waits for all of them."""
@@ -355,8 +392,8 @@ class Meeting:
             self.save(f"plans/{lab}.md", f"# {lab}{self.who(i)} — plan\n\n{self.question}\n\n{body}\n")
             return res
 
-        with ThreadPoolExecutor(len(self.seats)) as ex:
-            results = list(ex.map(one, range(len(self.seats))))
+        with ThreadPoolExecutor(len(self.members)) as ex:
+            results = list(ex.map(one, self.members))
         for i, res in enumerate(results):
             lab = self.labels[i]
             if res is None:
@@ -377,7 +414,7 @@ class Meeting:
             r = self.round
             self.write(f"\n— round {r} —\n")
             passed = True
-            for i in range(len(self.seats)):
+            for i in self.members:
                 if i in self.gone or self.ledger.all_empty():
                     continue
                 passed = not self.turn(i, first=r == 1) and passed
@@ -435,7 +472,9 @@ class Meeting:
         if kind == "pass":
             self.write(f"\n### {lab} passes{tag}\n")
             return False
-        self.write(f"\n### {lab}{tag}{' (trimmed)' if trimmed else ''}\n\n{body}\n")
+        if core.changed_mind(body):
+            self.changed.add(i)
+        self.write(f"\n### {lab}{tag}{self.grade(body)}{' (trimmed)' if trimmed else ''}\n\n{body}\n")
         return True
 
     def joint(self, system, title=None):
@@ -455,7 +494,7 @@ class Meeting:
         Returns the final plan, or None when the chair reopens the discussion."""
         self.write("\n## Final check\n\n_every seat looks for a problem, risk, gap or mistake in the draft_\n")
         system = CRITIQUE_SYSTEM
-        issues = False
+        issues = 0
         for i in self.live():
             lab = self.labels[i]
             if self.ledger.empty(lab):
@@ -468,35 +507,58 @@ class Meeting:
             turn, text = res
             self.ledger.charge(lab, turn.cost)
             kind, body = core.parse_critique(text)
-            issues |= kind == "issue"
+            issues += kind == "issue"
             tag = core.tag(turn.cost, turn.used, self.ledger.left(lab))
-            self.write(f"\n### {lab} · no issues{tag}\n" if kind == "ok" else f"\n### {lab} · issue{tag}\n\n{body}\n")
+            if kind == "ok":
+                self.write(f"\n### {lab} · no issues{tag}\n")
+            else:
+                self.write(f"\n### {lab} · issue{self.grade(body) or ' · no source'}{tag}\n\n{body}\n")
+                self.grounding[2] += not core.sources(body)
+        n = f"{issues} issue{'' if issues == 1 else 's'}"
         if not issues:
             self.write("\n_no issues found — the draft stands_\n")
+            self.checks.append("no issues")
             return draft
         more = self.round < self.cfg["rounds"] and not self.ledger.all_empty()
         res = self.chair_call(REVIEW_SYSTEM if more else LAST_REVIEW_SYSTEM, self.board(),
                               reserve=self.ledger.cap is not None)
         if not res:
+            self.checks.append(f"{n}, draft kept (chair failed)")
             return draft
         turn, text = res
         reopen, body = core.parse_review(text)
         lab = self.labels[self.chair]
         if reopen and more:
             self.write(f"\n**chair {lab}:** back to the table — {body}{core.tag(turn.cost)}\n")
+            self.checks.append(f"{n} → back to discussion")
             return None
         self.write(f"\n**chair {lab}:** finish{core.tag(turn.cost)}\n")
-        return body if body and not reopen else draft
+        amended = bool(body) and not reopen
+        self.checks.append(f"{n} {'fixed' if amended else 'noted, draft kept'}")
+        return body if amended else draft
+
+    def health(self):
+        if self.judge is None:
+            chair = ""
+        elif self.judge in self.gone:
+            chair = f"independent chair failed → {self.labels[self.chair]}"
+        else:
+            chair = "independent chair"
+        failed = len(self.gone & set(self.members))
+        return core.health(len(self.members), len(self.members) - failed, failed, len(self.changed),
+                           self.round, self.checks, chair, self.grounding)
 
     def finish(self, final):
         if final:
             self.write(f"\n## Joint plan\n\n{final}\n")
-        who = "\n".join(f"- {lab} = {s['label']} · {s['effort']}{' · failed' if i in self.gone else ''}"
+        who = "\n".join(f"- {lab} = {s['label']} · {s['effort']}"
+                        f"{' · independent chair' if i == self.judge else ''}{' · failed' if i in self.gone else ''}"
                         for i, (lab, s) in enumerate(zip(self.labels, self.seats)))
         if self.cfg["anon"]:
             self.write("\n## Who was who\n\n" + who + "\n")
         self.save("final.md", f"# Council — {self.question}\n\n"
-                  + (final or "_no joint plan — see board.md_") + "\n\n## Seats\n\n" + who + "\n")
+                  + (final or "_no joint plan — see board.md_") + "\n\n## Seats\n\n" + who + "\n"
+                  + self.health())
 
 
 # ---- entry -----------------------------------------------------------------
@@ -573,6 +635,9 @@ def main(argv=None):
                     help="seat a model, repeatable; e.g. sonnet:high:2 = two independent Sonnet seats. "
                          "Skips the wizard.")
     ap.add_argument("--chair", metavar="MODEL", help="which seated model chairs (default: the last --seat)")
+    ap.add_argument("--independent-chair", metavar="MODEL[:EFFORT]",
+                    help="an extra seat that writes no plan and takes no side; it only runs the meeting "
+                         "and judges which objections matter")
     ap.add_argument("--rounds", type=int, choices=range(1, 11), metavar="1-10")
     ap.add_argument("--steps", type=int, choices=range(1, 7), metavar="1-6", help="look-ups per turn")
     ap.add_argument("--budget", type=float, metavar="DOLLARS", help="list-price cap, 0 = unlimited")
@@ -590,6 +655,7 @@ def main(argv=None):
              if v is not None}
     if a.split:
         extra = [f"--seat={s}" for s in a.seat] + ([f"--chair={a.chair}"] if a.chair else [])
+        extra += [f"--independent-chair={a.independent_chair}"] if a.independent_chair else []
         extra += [f"--{k}={v}" for k, v in (("rounds", a.rounds), ("steps", a.steps), ("budget", a.budget))
                   if v is not None]
         extra += [] if a.anon is None else ["--anon" if a.anon else "--no-anon"]
@@ -600,6 +666,14 @@ def main(argv=None):
     locale.setlocale(locale.LC_ALL, "")
     prices = core.load_prices(os.path.join(HERE, "ccx-council-prices.json"))
     models, state = load_models(a.base, key), load_state(STATE)
+    judge = None
+    if a.independent_chair:
+        if a.chair:
+            ap.error("--chair and --independent-chair: pick one")
+        try:
+            judge = core.judge_from_spec(models, a.independent_chair, state.get("effort"))
+        except ValueError as e:
+            ap.error(str(e))
     if a.seat:
         try:
             seats = core.table_from_specs(models, a.seat, a.chair, state.get("effort"))
@@ -620,6 +694,7 @@ def main(argv=None):
             return 1
         save_state(STATE, wizard.saved())
         cfg = wizard.config()
+    cfg["judge"] = judge
     meeting = Meeting(cfg, question, make_post(a.base, key), prices, root, board,
                       log=lambda line: print("  " + line, file=sys.stderr))
     print(f"board: {os.path.relpath(board)}", file=sys.stderr)

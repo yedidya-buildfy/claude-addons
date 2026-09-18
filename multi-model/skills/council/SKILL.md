@@ -24,6 +24,8 @@ wait for the board.
    "grok high", "2 rounds". Each model selection becomes one
    `--seat MODEL[:EFFORT][:COUNT]` (effort: low/medium/high/xhigh/max; count
    1-9; each count is its own independent seat A, B, C…). Also `--chair MODEL`,
+   or `--independent-chair MODEL[:EFFORT]` when the user wants a chair that
+   takes no side (an extra seat: no plan, no turns, only runs and judges),
    `--rounds N`, `--budget DOLLARS`, `--anon` / `--no-anon`. A bare number
    with no model ("3 …") is ambiguous — ask which model.
 
@@ -60,6 +62,10 @@ wait for the board.
    - in anonymous mode, who was who,
    - the list-price total from `## Spend` (it runs on subscriptions; nothing is billed),
    - which seats failed, if any (they are marked failed, never replaced),
+   - the `## Health` line at the very end of the board, as is (seats, who
+     changed position, rounds, final-check outcome, how many sources checked
+     out). Point out objections tagged `source not found` or `no source` —
+     those are opinion, not what the code or document says,
    - the run folder, for the full discussion.
    If it says `## Stopped by owner` or `## Cancelled`, say so plainly and do
    not invent a plan.

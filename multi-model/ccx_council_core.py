@@ -123,6 +123,36 @@ def parse_review(text):
     return (False, re.sub(r"^FINISH\b\W*", "", t, flags=re.I).strip())
 
 
+SOURCE_RX = re.compile(r"\bsource\W{0,3}:[\s*_`]*([^\n]+?)[\s*_`.]*$", re.I | re.M)   # mid-line too
+PATH_RX = re.compile(r"[\w./-]*\w\.[A-Za-z]\w*")          # PRD.md, src/lib/calc.ts(:42)
+
+
+def sources(text):
+    """Every 'Source: …' line in a message."""
+    return [m.strip() for m in SOURCE_RX.findall(text)]
+
+
+def source_paths(src):
+    """File names inside one source reference; 'none (opinion)' has none."""
+    return [] if re.match(r"none\b", src, re.I) else PATH_RX.findall(src)
+
+
+def changed_mind(text):
+    """A seat that was convinced says 'Convinced by B: …'."""
+    return bool(re.search(r"convinced by [A-Z]\b", text, re.I))
+
+
+def health(requested, done, failed, changed, rounds, checks, chair, grounding):
+    """One line at the end of the board: what actually happened."""
+    parts = [f"Seats: {requested} requested", f"{done} completed", f"{failed} failed", chair,
+             f"{changed} changed position", f"{rounds} round{'' if rounds == 1 else 's'}",
+             "final check: " + (" then ".join(checks) or "not run")]
+    ok, missing, none = grounding
+    if ok or missing or none:
+        parts.append(f"sources: {ok} checked · {missing} not found · {none} none")
+    return "\n## Health\n\n" + " · ".join(p for p in parts if p) + "\n"
+
+
 def parse_chair(text):
     m = re.match(r"(STOP|CONTINUE)\b\W*(.*)", _lead(text), re.I | re.S)
     if not m:
@@ -207,8 +237,10 @@ def board_header(question, seats, labels, cfg, ledger):
     money = budget_label(cfg["budget"])
     if ledger.cap:
         money += f" ({usd(ledger.seat)} a seat + {usd(ledger.cap * RESERVE)} reserved for the joint plan)"
+    judge = bool(cfg.get("judge"))
     lines = [f"# Council — {question}", "",
-             f"chair {labels[-1]} · {len(seats)} at the table · max {cfg['rounds']} rounds · "
+             f"{'independent chair (no plan, no position)' if judge else f'chair {labels[-1]}'} · "
+             f"{len(seats) - judge} at the table · max {cfg['rounds']} rounds · "
              f"{'anonymous' if cfg['anon'] else 'named'} · budget {money} · {cfg['steps']} steps a turn", ""]
     if not cfg["anon"]:          # in anonymous mode names and efforts wait for "Who was who"
         lines += [f"- {lab} = {s['label']} · {s['effort']}" for lab, s in zip(labels, seats)] + [""]
@@ -266,3 +298,12 @@ def table_from_specs(models, specs, chair=None, saved_effort=None):
             raise ValueError(f"--chair {chair}: that model has no seat")
         seats.append(seats.pop(at))
     return seats
+
+
+def judge_from_spec(models, spec, saved_effort=None):
+    """--independent-chair MODEL[:EFFORT] → one seat that only chairs."""
+    name, effort, count = parse_seat(spec)
+    if count != 1:
+        raise ValueError("--independent-chair is one seat; drop the count")
+    m = match_model(models, name)
+    return {"id": m["id"], "label": m["label"], "effort": effort or EFFORTS[(saved_effort or {}).get(m["id"], 2)]}
