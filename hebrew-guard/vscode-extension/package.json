@@ -1,0 +1,17 @@
+{
+  "name": "claude-terminal-guard",
+  "displayName": "Claude Terminal Guard",
+  "description": "Reloads the window after the Mac wakes from sleep, when the terminal's GPU drawing tends to come out garbled.",
+  "version": "1.0.0",
+  "publisher": "claude-addons",
+  "license": "MIT",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "claudeTerminalGuard.reload", "title": "Fix garbled terminal drawing (reload window)", "category": "Claude" }
+    ]
+  }
+}

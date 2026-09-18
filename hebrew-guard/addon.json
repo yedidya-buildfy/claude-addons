@@ -9,6 +9,16 @@
       "from": "hebrew-guard.py",
       "to": "~/.claude/scripts/hebrew-guard.py",
       "mode": "755"
+    },
+    {
+      "from": "vscode-extension/package.json",
+      "to": "~/.vscode/extensions/claude-terminal-guard/package.json",
+      "when": "vscode"
+    },
+    {
+      "from": "vscode-extension/extension.js",
+      "to": "~/.vscode/extensions/claude-terminal-guard/extension.js",
+      "when": "vscode"
     }
   ],
   "claudeSettings": [
@@ -25,7 +35,9 @@
   "details": [
     "עברית בטרמינל של VS Code יוצאת עם אותיות הפוכות בתוך המילים כשציור הטרמינל בכרטיס המסך כבוי, או כשפעיל תוסף \"תיקון עברית\" (שהופך אותה פעמיים).",
     "בכל פתיחת סשן בודק את שני הדברים ומתקן לבד. שקט כשהכל תקין.",
-    "טקסט דהוי? Reload Window ב‑VS Code, לא לכבות את כרטיס המסך."
+    "טקסט דהוי? Reload Window ב‑VS Code, לא לכבות את כרטיס המסך.",
+    "אחרי שהמחשב מתעורר משינה, ציור הטרמינל לפעמים יוצא משובש (ריבועים שחורים, אותיות מפוזרות). תוסף קטן ב‑VS Code מזהה את ההתעוררות וטוען מחדש את החלון לבד, עם 5 שניות לבטל. הטרמינלים והסשנים ממשיכים לרוץ.",
+    "תיקון ידני בכל רגע: Cmd+Shift+P ואז Reload Window."
   ],
   "howToCheck": "כתוב בעברית בסשן חדש: האותיות צריכות לצאת בסדר הנכון."
 }
