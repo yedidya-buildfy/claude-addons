@@ -31,12 +31,22 @@ class Wizard:
         ids = [m["id"] for m in models]
         self.effort = {i: saved.get("effort", {}).get(i, 2) for i in ids}
         self.chair = ids.index(saved["chair"]) if saved.get("chair") in ids else 0
-        self.seated = {ids.index(i) for i in saved.get("seated", []) if i in ids} | {self.chair}
+        counts = saved.get("counts") or {i: 1 for i in saved.get("seated", [])}   # older state: seated list
+        self.count = {ids.index(i): n for i, n in counts.items() if i in ids and n > 0}
+        self.count.setdefault(self.chair, 1)
         self.rounds = saved.get("rounds", 5)
         self.anon = saved.get("anon", False)
         self.budget = saved.get("budget", 0)       # cents, 0 = unlimited
         self.steps = saved.get("steps", 3)
         self.step, self.cur, self.edit, self.seg, self.note = 0, self.chair, False, 0, ""
+
+    @property
+    def seated(self):
+        """Models with at least one seat."""
+        return {i for i, n in self.count.items() if n}
+
+    def seats_total(self):
+        return sum(self.count.values())
 
     def key(self, k):
         self.note = ""
@@ -75,18 +85,26 @@ class Wizard:
             self._bump_effort(self._dir(k))
         elif k in ("space", "enter"):
             self.chair = self.cur
-            self.seated.add(self.cur)
+            self.count[self.cur] = self.count.get(self.cur) or 1
             if k == "enter":
                 self.step = 1
 
     def _table_key(self, k):
+        low = 1 if self.cur == self.chair else 0                    # the chair keeps a seat
+        n = self.count.get(self.cur, 0)
         if k == "space" and self.cur != self.chair:
-            self.seated ^= {self.cur}
+            self.count[self.cur] = 0 if n else 1
+        elif k in ("+", "-"):
+            want = min(9, max(low, n + (1 if k == "+" else -1)))
+            if self.seats_total() - n + want > core.MAX_SEATS:
+                self.note = f"at most {core.MAX_SEATS} seats"
+            else:
+                self.count[self.cur] = want
         elif self._dir(k) and self.cur in self.seated:
             self._bump_effort(self._dir(k))
         elif k == "enter":
-            if len(self.seated) < 2:
-                self.note = "need at least 2 at the table (chair included)"
+            if self.seats_total() < 2:
+                self.note = "need at least 2 seats (chair included) — +/- adds more of one model"
             else:
                 self.step, self.cur = 2, 0
 
@@ -138,8 +156,9 @@ class Wizard:
         return None
 
     def order(self):
-        """Seated model indexes in speaking order, chair last."""
-        return [i for i in range(len(self.models)) if i in self.seated and i != self.chair] + [self.chair]
+        """Model index per seat in speaking order; a model seated twice appears twice, chair last."""
+        out = [i for i in range(len(self.models)) if i != self.chair for _ in range(self.count.get(i, 0))]
+        return out + [self.chair] * self.count.get(self.chair, 1)
 
     def config(self):
         seats = [{"id": self.models[i]["id"], "label": self.models[i]["label"],
@@ -150,6 +169,7 @@ class Wizard:
     def saved(self):
         return {"effort": self.effort, "chair": self.models[self.chair]["id"],
                 "seated": [self.models[i]["id"] for i in sorted(self.seated)],
+                "counts": {self.models[i]["id"]: n for i, n in sorted(self.count.items()) if n},
                 "rounds": self.rounds, "anon": self.anon, "budget": self.budget, "steps": self.steps}
 
 
@@ -157,7 +177,7 @@ class Wizard:
 
 METER = "▁▃▅▆█"
 HINTS = ["  ↑↓ move · ←→ effort · space choose · enter next · q quit",
-         "  ↑↓ move · space seat/unseat · ←→ effort · enter next · esc back",
+         "  ↑↓ move · space seat/unseat · +/- how many · ←→ effort · enter next · esc back",
          "  ↑↓ move · ←→ change · space on budget: exact amount · enter start · esc back"]
 
 
@@ -190,7 +210,7 @@ def _budget_hint(w):
         return "←→ dial · ↑↓ or type 0-9 · enter done"
     if not w.budget:
         return "no cap · space: set an exact amount"
-    cap, n = w.budget / 100, len(w.seated)
+    cap, n = w.budget / 100, w.seats_total()
     return (f"each seat {core.usd(cap * (1 - core.RESERVE) / n)} + "
             f"{core.usd(cap * core.RESERVE)} held for the joint plan · space: fine-tune")
 
@@ -219,6 +239,8 @@ def render(w, question, price_of, estimate):
             else:
                 mark = ("ye", " ★ ") if i == w.chair else ("cy", "[x]") if i in w.seated else ("dim", "[ ]")
             row = [_cursor(w, i), mark, ("" if shown else "dim", f" {m['label']:<22}")]
+            if w.step == 1:
+                row.append(("cy" if w.count.get(i, 0) > 1 else "dim", f"×{w.count.get(i, 0)} " if shown else "   "))
             row += _effort(w.effort[m["id"]]) if shown else [("", " " * 20)]
             row.append(("dim", "  " + price_label(price_of(m["id"]))))
             lines.append(row)
@@ -236,17 +258,17 @@ def render(w, question, price_of, estimate):
         for i, (name, cell, hint) in enumerate(rows):
             lines.append([_cursor(w, i), ("", f"{name:<16}")] + cell + [("dim", "  " + hint)])
         lines += [[], [("dim", "  " + "─" * 44)]]
-        chair_id = w.models[w.chair]["id"]
-        for s in w.config()["seats"]:
-            lines.append([("ye", "  ★ ") if s["id"] == chair_id else ("", "    "),
-                          ("", f"{s['label']:<22}"),
+        seats = w.config()["seats"]
+        for n, s in enumerate(seats):
+            lines.append([("ye", "  ★ ") if n == len(seats) - 1 else ("", "    "),
+                          ("", f"{chr(65 + n)} {s['label']:<22}"),
                           ("dim", f"{s['effort']:<7}{price_label(price_of(s['id']))}")])
     lines.append([])
     if w.note:
         lines.append([("re", "  " + w.note)])
     else:
         est = estimate(w)
-        foot = [("dim", f"  {len(w.seated)} at the table · worst case ≈ {core.usd(est)} list price")]
+        foot = [("dim", f"  {w.seats_total()} at the table · worst case ≈ {core.usd(est)} list price")]
         if w.budget and est > w.budget / 100:
             foot.append(("ye", "  (budget will stop it earlier)"))
         lines.append(foot)
@@ -254,7 +276,7 @@ def render(w, question, price_of, estimate):
     return lines
 
 
-KEYS = {"\n": "enter", "\r": "enter", "\x1b": "esc", " ": "space", "q": "q"}
+KEYS = {"\n": "enter", "\r": "enter", "\x1b": "esc", " ": "space", "q": "q", "+": "+", "=": "+", "-": "-"}
 
 
 def run_wizard(w, question, price_of, estimate):

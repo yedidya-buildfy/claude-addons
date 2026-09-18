@@ -9,6 +9,8 @@ EFFORTS = ["low", "medium", "high", "xhigh", "max"]
 PRESETS_CENTS = [0, 50, 100, 200, 500, 1000]   # 0 = unlimited
 RESERVE = 0.15      # share of a budget held back so the joint plan is always affordable
 WORD_CAP = 150      # a discussion message, not a new plan
+FIRST_CAP = 250     # round 1: a reaction to every other plan
+MAX_SEATS = 26      # one letter each
 
 
 def load_prices(path):
@@ -79,7 +81,12 @@ class Ledger:
 
 # ---- turns ---------------------------------------------------------------
 
-def parse_turn(text):
+def _cap(t, cap):
+    words = t.split()
+    return (" ".join(words[:cap]) + " …", True) if len(words) > cap else (t, False)
+
+
+def parse_turn(text, cap=WORD_CAP):
     """A discussion turn is PASS, MORE: <reason>, or a short message."""
     t = text.strip()
     if re.match(r"PASS\b", t, re.I):
@@ -87,10 +94,27 @@ def parse_turn(text):
     m = re.match(r"MORE\s*:\s*(.*)", t, re.I | re.S)
     if m:
         return ("more", m.group(1).strip(), False)
-    words = t.split()
-    if len(words) > WORD_CAP:
-        return ("say", " ".join(words[:WORD_CAP]) + " …", True)
-    return ("say", t, False)
+    return ("say", *_cap(t, cap))
+
+
+def parse_critique(text):
+    """Final check on the agreed plan: NO ISSUES, or ISSUE: <what>. Anything
+    else counts as an issue, so a vague answer still reaches the chair."""
+    t = text.strip()
+    if re.match(r"NO ISSUES?\b", t, re.I):
+        return ("ok", "")
+    m = re.match(r"ISSUES?\s*:\s*(.*)", t, re.I | re.S)
+    return ("issue", _cap(m.group(1).strip() if m else t, WORD_CAP)[0])
+
+
+def parse_review(text):
+    """Chair after the final check: (True, why) to reopen the discussion, or
+    (False, final plan) to finish — an empty plan means keep the draft."""
+    t = text.strip()
+    m = re.match(r"CONTINUE\b\W*(.*)", t, re.I | re.S)
+    if m:
+        return (True, m.group(1).strip()[:200])
+    return (False, re.sub(r"^FINISH\b\W*", "", t, flags=re.I).strip())
 
 
 def parse_chair(text):
@@ -118,13 +142,50 @@ def stop_reason(round_no, max_rounds, all_passed, chair_stop, all_empty):
 
 # ---- board ---------------------------------------------------------------
 
-def seat_labels(names, anon):
-    return [chr(65 + i) for i in range(len(names))] if anon else list(names)
+def seat_labels(n):
+    """Every seat gets its own letter, so the same model can sit twice."""
+    return [chr(65 + i) for i in range(n)]
 
 
 def board_path(now, question):
+    """One folder per run: board.md, plans/<letter>.md, final.md."""
     slug = "-".join(re.findall(r"[a-z0-9]+", question.lower())[:6]) or "council"
-    return f"council/{now:%Y-%m-%d-%H%M}-{slug}.md"
+    return f"council/{now:%Y-%m-%d-%H%M}-{slug}/board.md"
+
+
+def parse_seat(spec):
+    """--seat MODEL[:EFFORT][:COUNT], e.g. sonnet:high:2 or grok:1 → (model, effort|None, count)."""
+    model, *rest = spec.split(":")
+    effort, count = None, 1
+    for part in rest:
+        if part.lower() in EFFORTS:
+            effort = part.lower()
+        elif part.isdigit() and 1 <= int(part) <= 9:
+            count = int(part)
+        else:
+            raise ValueError(f"--seat {spec}: '{part}' is neither an effort ({'/'.join(EFFORTS)}) nor a count 1-9")
+    if not model:
+        raise ValueError(f"--seat {spec}: no model")
+    return model, effort, count
+
+
+def match_model(models, name):
+    """Exact id, else the one model whose id or label contains the name."""
+    exact = [m for m in models if m["id"] == name]
+    if exact:
+        return exact[0]
+    hits = [m for m in models if name.lower() in (m["id"] + " " + m["label"]).lower()]
+    if len(hits) == 1:
+        return hits[0]
+    why = "matches nothing" if not hits else "matches " + ", ".join(m["id"] for m in hits)
+    raise ValueError(f"model '{name}' {why}")
+
+
+def stray_tokens(words):
+    """Loose words that look like table settings (a bare count, sonnet:2, x3)
+    and would otherwise slip into the question."""
+    rx = re.compile(r"^(\d+|[x×]\d+|\d+[x×]|[\w.-]+[:x×]\d+|[\w.-]+:(%s)(:\d+)?)$" % "|".join(EFFORTS), re.I)
+    return [w for w in words if rx.match(w)]
 
 
 def tag(cost, steps=None, left=None):
@@ -144,7 +205,7 @@ def board_header(question, seats, labels, cfg, ledger):
              f"chair {labels[-1]} · {len(seats)} at the table · max {cfg['rounds']} rounds · "
              f"{'anonymous' if cfg['anon'] else 'named'} · budget {money} · {cfg['steps']} steps a turn", ""]
     if not cfg["anon"]:          # in anonymous mode names and efforts wait for "Who was who"
-        lines += [f"- {s['label']} · {s['effort']}" for s in seats] + [""]
+        lines += [f"- {lab} = {s['label']} · {s['effort']}" for lab, s in zip(labels, seats)] + [""]
     return "\n".join(lines)
 
 
@@ -176,3 +237,26 @@ def worst_case(seated, rounds, steps):
             board += 300
         total += call(*seated[-1], board, 60)
     return total + call(*seated[-1], board, 1500)
+
+
+def table_from_specs(models, specs, chair=None, saved_effort=None):
+    """--seat flags → seats in speaking order, chair last. Each spec is one model
+    selection (model, effort, count); a count of 2 is two independent seats."""
+    saved_effort = saved_effort or {}
+    seats = []
+    for spec in specs:
+        name, effort, count = parse_seat(spec)
+        m = match_model(models, name)
+        effort = effort or EFFORTS[saved_effort.get(m["id"], 2)]
+        seats += [{"id": m["id"], "label": m["label"], "effort": effort} for _ in range(count)]
+    if len(seats) < 2:
+        raise ValueError("a council needs at least 2 seats (e.g. --seat sonnet:2)")
+    if len(seats) > MAX_SEATS:
+        raise ValueError(f"at most {MAX_SEATS} seats")
+    if chair:
+        cid = match_model(models, chair)["id"]
+        at = max((i for i, s in enumerate(seats) if s["id"] == cid), default=None)
+        if at is None:
+            raise ValueError(f"--chair {chair}: that model has no seat")
+        seats.append(seats.pop(at))
+    return seats

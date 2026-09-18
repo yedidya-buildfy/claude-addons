@@ -50,6 +50,7 @@ ccx — Claude Code on your other subscriptions
   ccx --refresh              re-apply the current-generation filter
   ccx --agents               rewrite the per-provider subagents
   ccx council "<question>"   several models plan together on one board
+    [--seat MODEL:EFFORT:N]  e.g. --seat sonnet:high:2 --seat grok (skips the wizard)
   ccx --login [PROVIDER]     OAuth sign-in. PROVIDER: claude codex xai
                              antigravity kimi. Omit to be asked for each.
   ccx --logout PROVIDER      forget that provider's sign-in, so the next

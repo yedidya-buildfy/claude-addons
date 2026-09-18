@@ -15,15 +15,27 @@ wait for the board.
 
 ## Steps
 
-1. The question is `$ARGUMENTS`. If it is empty, ask the user for it in one
-   line and stop until they answer.
+1. The request is `$ARGUMENTS`. If it is empty, ask the user for the question
+   in one line and stop until they answer.
 
-2. Open the wizard next to this session (run from the project folder, so
+   Split it into **table settings** and **the question**. Settings never go
+   into the question. Settings are how many seats of which model, effort,
+   rounds, budget, named/anonymous — e.g. "Sonnet ×2 + Grok", "3 Opus",
+   "grok high", "2 rounds". Each model selection becomes one
+   `--seat MODEL[:EFFORT][:COUNT]` (effort: low/medium/high/xhigh/max; count
+   1-9; each count is its own independent seat A, B, C…). Also `--chair MODEL`,
+   `--rounds N`, `--budget DOLLARS`, `--anon` / `--no-anon`. A bare number
+   with no model ("3 …") is ambiguous — ask which model.
+
+2. Open the council next to this session (run from the project folder, so
    participants can look things up there):
 
    ```bash
-   ccx council --split "<the question, verbatim>"
+   ccx council --split [--seat ... ] -- "<the question, verbatim, settings removed>"
    ```
+
+   With no `--seat` the pane shows the setup wizard; with `--seat` it starts
+   the meeting straight away.
 
    It prints `opened in <vscode|tmux|terminal> · board: <absolute path>`.
    Tell the user in one short line, in their language, that the setup screen
@@ -39,13 +51,16 @@ wait for the board.
 
    Run it with `run_in_background: true`. You are re-invoked when it exits.
 
-4. When it finishes, read the board from `## Joint plan` to the end (or the
-   `## Cancelled` note). Report to the user, in their language:
+4. When it finishes, read `final.md` next to the board (the joint plan and who
+   sat where), and on the board the `## Final check` section and anything
+   still disputed (or the `## Cancelled` note). Each seat's blind first plan
+   is in `plans/<letter>.md`. Report to the user, in their language:
    - the joint plan (short — its numbered points),
    - what is still disputed and who holds which side,
    - in anonymous mode, who was who,
    - the list-price total from `## Spend` (it runs on subscriptions; nothing is billed),
-   - the board path, for the full discussion.
+   - which seats failed, if any (they are marked failed, never replaced),
+   - the run folder, for the full discussion.
    If it says `## Stopped by owner` or `## Cancelled`, say so plainly and do
    not invent a plan.
 

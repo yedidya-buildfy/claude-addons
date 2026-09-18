@@ -73,18 +73,27 @@ TOOLS = [
 ]
 
 
-def _inside(root, path):
+def _under(p, top):
+    return p == top or p.startswith(top + os.sep)
+
+
+def _inside(root, path, hide=()):
+    """Resolve a look-up path. Refused outside the project folder, and inside
+    any council folder — a seat must not read the other seats' plans."""
     real_root = os.path.realpath(root)
     p = os.path.realpath(os.path.join(real_root, path or "."))
-    if p != real_root and not p.startswith(real_root + os.sep):
+    if not _under(p, real_root):
         raise ValueError("outside the project folder")
+    if any(_under(p, os.path.realpath(h)) for h in (os.path.join(real_root, "council"), *hide)):
+        raise ValueError("the council folder is off limits")
     return p
 
 
-def _grep(root, pattern, path):
+def _grep(root, pattern, path, hide=()):
     rx, hits, size = re.compile(pattern), [], 0
-    for d, dirs, files in os.walk(_inside(root, path)):
-        dirs[:] = sorted(x for x in dirs if x not in SKIP_DIRS)
+    hidden = {os.path.realpath(h) for h in hide}
+    for d, dirs, files in os.walk(_inside(root, path, hide)):
+        dirs[:] = sorted(x for x in dirs if x not in SKIP_DIRS and os.path.realpath(os.path.join(d, x)) not in hidden)
         for name in sorted(files):
             full = os.path.join(d, name)
             try:
@@ -101,16 +110,16 @@ def _grep(root, pattern, path):
     return "\n".join(hits) or "no matches"
 
 
-def run_tool(root, name, args):
+def run_tool(root, name, args, hide=()):
     try:
         if name == "read_file":
-            with open(_inside(root, args["path"]), encoding="utf-8", errors="replace") as f:
+            with open(_inside(root, args["path"], hide), encoding="utf-8", errors="replace") as f:
                 out = f.read(LIMIT + 1)
         elif name == "list_dir":
-            p = _inside(root, args.get("path"))
+            p = _inside(root, args.get("path"), hide)
             out = "\n".join(e + ("/" if os.path.isdir(os.path.join(p, e)) else "") for e in sorted(os.listdir(p)))
         elif name == "grep":
-            out = _grep(root, args["pattern"], args.get("path"))
+            out = _grep(root, args["pattern"], args.get("path"), hide)
         else:
             return f"unknown tool {name}"
     except (OSError, ValueError, KeyError, re.error) as e:
@@ -122,9 +131,11 @@ def run_tool(root, name, args):
 
 PLAN_SYSTEM = (
     "You are one of several AI models at a planning meeting. Write your own complete plan for "
-    "the question. You have not seen anyone else's plan. You may use the look-up tools to read "
-    "the project folder (at most {steps} look-ups). Be concrete. Do not say which model you are. "
-    "End with a numbered plan.")
+    "the question, fully on your own: nobody else's plan exists for you yet. You may use the "
+    "look-up tools to read the project folder (at most {steps} look-ups). Be concrete. Do not say "
+    "which model you are. End with a numbered plan.")
+WHY = ("If you change your mind or agree with someone, say in one sentence why you were "
+       "convinced (e.g. 'Convinced by B: the cache is per-user, so my global lock is wrong').")
 TURN_SYSTEM = (
     "You are {me}, a participant in a planning meeting. The shared board holds everyone's first "
     "plans and the discussion so far. This is a discussion turn, not a new plan. Reply with "
@@ -134,7 +145,20 @@ TURN_SYSTEM = (
     "propose a change. Refer to others by their label.\n"
     "- MORE: <reason> — you need more look-up steps than your {steps} before you can answer; "
     "the chair decides.\n"
-    "You may use the look-up tools before answering. Do not say which model you are.")
+    + WHY + "\nYou may use the look-up tools before answering. Do not say which model you are.")
+FIRST_SYSTEM = (
+    "You are {me}, a participant in a planning meeting. The shared board holds everyone's first "
+    "plans, written independently. This is your first discussion turn: react to the OTHER plans, "
+    "by label — what is better than yours, what is wrong or missing, what you would take over. "
+    "At most {words} words, no new full plan, no PASS. Or reply MORE: <reason> if you need more "
+    "look-up steps than your {steps}; the chair decides.\n"
+    + WHY + "\nYou may use the look-up tools before answering. Do not say which model you are.")
+CRITIQUE_SYSTEM = (
+    "You are {me}, a participant in a planning meeting. The table reached agreement and the "
+    "chair's draft joint plan is at the end of the board. Before it is final, attack it: look "
+    "for a problem, risk, gap or mistake in it. Reply NO ISSUES if you honestly find nothing "
+    "that matters, or ISSUE: <what is wrong and why it matters> in at most {words} words. "
+    "You may use the look-up tools first. Do not say which model you are.")
 CHAIR_SYSTEM = (
     "You chair this planning meeting. A round just ended; decide whether the discussion should "
     "go on. Answer STOP or CONTINUE, then one short line why. Stop when more talk will not "
@@ -142,6 +166,23 @@ CHAIR_SYSTEM = (
 GRANT_SYSTEM = (
     "You chair this planning meeting. A participant asks for more look-up time. Answer GRANT or "
     "DENY, then a few words why. Grant only when the look-up could change the plan.")
+DRAFT_SYSTEM = (
+    "You chair this planning meeting and the table has reached agreement. Write the draft joint "
+    "plan: a numbered plan first, then a section '### Still disputed' listing each open "
+    "disagreement and who holds which side, by label (or 'none'). Add nothing nobody raised. "
+    "Everyone will now check it for problems before it is final.")
+REVIEW_SYSTEM = (
+    "You chair this planning meeting. The table checked your draft joint plan for problems; "
+    "their findings are at the end of the board. If any finding is a significant problem that "
+    "needs discussion, answer CONTINUE: <the problem, one line>. Otherwise answer FINISH, then "
+    "the final joint plan — the draft amended for the minor findings, same format "
+    "(numbered plan, then '### Still disputed').")
+LAST_REVIEW_SYSTEM = (
+    "You chair this planning meeting. The table checked your draft joint plan for problems; "
+    "their findings are at the end of the board. There is no time left for more discussion. "
+    "Answer FINISH, then the final joint plan — the draft amended where a finding is clearly "
+    "right, and every significant unresolved finding listed under '### Still disputed' "
+    "with who raised it, by label.")
 JOINT_SYSTEM = (
     "You chair this planning meeting and the discussion is over. Write the joint plan the table "
     "agreed on: a numbered plan first, then a section '### Still disputed' listing each open "
@@ -151,8 +192,9 @@ JOINT_SYSTEM = (
 class Turn:
     """One conversation with one model. Each tool round-trip is one step."""
 
-    def __init__(self, post, seat, system, user, steps, root, price, tools=True):
+    def __init__(self, post, seat, system, user, steps, root, price, tools=True, hide=()):
         self.post, self.seat, self.system, self.root, self.price = post, seat, system, root, price
+        self.hide = hide
         self.tools = TOOLS if tools else None
         self.msgs = [{"role": "user", "content": user}]
         self.allowance, self.used, self.cost = steps, 0, 0.0
@@ -173,7 +215,7 @@ class Turn:
             for c in calls:
                 self.used += 1
                 results.append({"type": "tool_result", "tool_use_id": c["id"],
-                                "content": run_tool(self.root, c["name"], c.get("input", {}))})
+                                "content": run_tool(self.root, c["name"], c.get("input", {}), self.hide)})
             if self.used >= self.allowance:
                 results.append({"type": "text", "text": "Your look-up steps are used up. "
                                                         "Answer now, in text, without tools."})
@@ -188,28 +230,47 @@ class Turn:
 
 
 class Meeting:
+    """One run lives in one folder: board.md (the shared board), plans/<letter>.md
+    (each first plan, written blind), final.md (the joint plan)."""
+
+    CONSENSUS = ("chair called it", "everyone passed")
+
     def __init__(self, cfg, question, post, prices, root, board_file, log=print):
         self.cfg, self.question, self.post, self.root = cfg, question, post, root
         self.board_file, self.log = board_file, log
+        self.run_dir = os.path.dirname(board_file)
         self.seats = cfg["seats"]                                  # chair last
-        self.labels = core.seat_labels([s["label"] for s in self.seats], cfg["anon"])
+        self.labels = core.seat_labels(len(self.seats))
         self.prices = [core.price_for(prices, s["id"]) for s in self.seats]
         self.chair = len(self.seats) - 1
-        self.gone = set()                                          # seats that did not answer
+        self.gone = set()                                          # failed seats: out for the rest of the run
+        self.round = 0
         self.ledger = core.Ledger(self.labels, cfg["budget"])
 
-    # -- board --
+    # -- files --
     def write(self, text):
-        os.makedirs(os.path.dirname(self.board_file), exist_ok=True)
+        os.makedirs(self.run_dir, exist_ok=True)
         with open(self.board_file, "a") as f:                      # also creates it for an empty write
             f.write(text)
         first = text.strip().splitlines()[0] if text.strip() else ""
         if first:
             self.log(first[:110])
 
+    def save(self, rel, text):
+        path = os.path.join(self.run_dir, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+
     def board(self):
         with open(self.board_file) as f:
             return f.read()
+
+    def who(self, i):
+        return "" if self.cfg["anon"] else f" ({self.seats[i]['label']})"
+
+    def live(self):
+        return [i for i in range(len(self.seats)) if i not in self.gone]
 
     def seat_note(self, i):
         lab, left = self.labels[i], self.ledger.left(self.labels[i])
@@ -218,33 +279,37 @@ class Meeting:
 
     # -- calls --
     def attempt(self, i, system, user, steps, tools=True):
-        """(turn, text) or None when the seat failed twice."""
-        err = None
-        for _ in range(2):
-            turn = Turn(self.post, self.seats[i], system, user, steps, self.root, self.prices[i], tools)
-            try:
-                return turn, turn.run()
-            except CallError as e:
-                err = e
-        self.log(f"{self.labels[i]} did not answer: {err}")
-        return None
+        """(turn, text), or None when the seat failed. No retry, no stand-in model:
+        a failed seat is marked failed and the rest of the table goes on."""
+        turn = Turn(self.post, self.seats[i], system, user, steps, self.root, self.prices[i], tools,
+                    hide=(self.run_dir,))
+        try:
+            return turn, turn.run()
+        except CallError as e:
+            self.fail(i, e)
+            return None
+
+    def fail(self, i, err):
+        self.gone.add(i)
+        self.log(f"{self.labels[i]} failed: {err}")
 
     def handover(self):
-        """Chair failed: the next seat that still answers takes the chair."""
+        """The chair failed: the chair's job (not its seat) moves to the last seat still in."""
         old = self.chair
-        self.gone.add(old)
-        live = [i for i in range(len(self.seats)) if i not in self.gone]
+        live = self.live()
         if not live:
             return False
         self.chair = live[-1]
-        self.write(f"\n_chair {self.labels[old]} did not answer; {self.labels[self.chair]} takes the chair_\n")
+        self.write(f"\n_chair {self.labels[old]} failed; {self.labels[self.chair]} takes the chair_\n")
         return True
 
-    def chair_call(self, system, user):
+    def chair_call(self, system, user, reserve=False):
+        if self.chair in self.gone and not self.handover():
+            return None
         while True:
             res = self.attempt(self.chair, system, user, 0, tools=False)
             if res:
-                self.ledger.charge(self.labels[self.chair], res[0].cost)
+                self.ledger.charge(self.labels[self.chair], res[0].cost, reserve=reserve)
                 return res
             if not self.handover():
                 return None
@@ -253,8 +318,24 @@ class Meeting:
     def run(self):
         self.write(core.board_header(self.question, self.seats, self.labels, self.cfg, self.ledger))
         self.plans()
-        self.discuss()
-        self.joint()
+        final = None
+        if len(self.live()) < 1:
+            self.write("\n_every seat failed; no discussion_\n")
+        else:
+            self.write("\n## Discussion\n")
+            while final is None:
+                why = self.discuss()
+                self.write(f"\n_discussion ended: {why}_\n")
+                if not self.live():
+                    break
+                if why not in self.CONSENSUS:
+                    final = self.joint(JOINT_SYSTEM)                  # no rounds/budget left: no final check
+                    break
+                draft = self.joint(DRAFT_SYSTEM, "Draft joint plan")
+                if draft is None:
+                    break
+                final = self.final_check(draft)                    # None = a real problem, talk on
+        self.finish(final)
         self.write(core.spend_block(self.ledger, self.labels[self.chair]))
 
     def stopped(self):
@@ -262,35 +343,44 @@ class Meeting:
         self.write(core.spend_block(self.ledger, self.labels[self.chair]))
 
     def plans(self):
-        self.write("\n## Plans\n\n_written in parallel, nobody saw the others_\n")
+        """Every seat plans blind, in parallel; the discussion waits for all of them."""
+        self.write("\n## Plans\n\n_written in parallel, nobody saw the others · each also in plans/_\n")
         system = PLAN_SYSTEM.format(steps=self.cfg["steps"])
         user = f"Question: {self.question}\n\nProject folder: {self.root}"
+
+        def one(i):
+            res = self.attempt(i, system, user, self.cfg["steps"])
+            lab = self.labels[i]
+            body = res[1] if res else "_failed — no plan_"
+            self.save(f"plans/{lab}.md", f"# {lab}{self.who(i)} — plan\n\n{self.question}\n\n{body}\n")
+            return res
+
         with ThreadPoolExecutor(len(self.seats)) as ex:
-            results = list(ex.map(lambda i: self.attempt(i, system, user, self.cfg["steps"]),
-                                  range(len(self.seats))))
+            results = list(ex.map(one, range(len(self.seats))))
         for i, res in enumerate(results):
             lab = self.labels[i]
             if res is None:
-                self.gone.add(i)
-                self.write(f"\n### {lab} — did not answer (error)\n")
+                self.write(f"\n### {lab}{self.who(i)} — failed\n")
                 continue
             turn, text = res
             self.ledger.charge(lab, turn.cost)
-            self.write(f"\n### {lab}{core.tag(turn.cost, turn.used, self.ledger.left(lab))}\n\n{text}\n")
+            self.write(f"\n### {lab}{self.who(i)}{core.tag(turn.cost, turn.used, self.ledger.left(lab))}"
+                       f"\n\n{text}\n")
         if self.chair in self.gone:
-            self.gone.discard(self.chair)
             self.handover()
 
     def discuss(self):
-        self.write("\n## Discussion\n")
+        """Rounds from where the last one stopped, until a stop reason."""
         rounds = self.cfg["rounds"]
-        for r in range(1, rounds + 1):
+        while self.round < rounds:
+            self.round += 1
+            r = self.round
             self.write(f"\n— round {r} —\n")
             passed = True
             for i in range(len(self.seats)):
                 if i in self.gone or self.ledger.all_empty():
                     continue
-                passed = not self.turn(i) and passed
+                passed = not self.turn(i, first=r == 1) and passed
             chair_stop = False
             if not (passed or self.ledger.all_empty() or r >= rounds):
                 res = self.chair_call(CHAIR_SYSTEM, self.board())
@@ -300,24 +390,27 @@ class Meeting:
                     lab = self.labels[self.chair]
                     self.write(f"\n**chair {lab}:** {'stop' if chair_stop else 'continue'} — {why}"
                                f"{core.tag(turn.cost, None, self.ledger.left(lab))}\n")
+            if not self.live():
+                return "every seat failed"
             why = core.stop_reason(r, rounds, passed, chair_stop, self.ledger.all_empty())
             if why:
-                self.write(f"\n_discussion ended: {why}_\n")
-                return
+                return why
+        return "max rounds"
 
-    def turn(self, i):
+    def turn(self, i, first=False):
         """One discussion turn. True when the seat said something."""
         lab = self.labels[i]
         if self.ledger.empty(lab):
             self.write(f"\n### {lab} passes · seat empty\n")
             return False
-        system = TURN_SYSTEM.format(me=lab, words=core.WORD_CAP, steps=self.cfg["steps"])
+        cap = core.FIRST_CAP if first else core.WORD_CAP
+        system = (FIRST_SYSTEM if first else TURN_SYSTEM).format(me=lab, words=cap, steps=self.cfg["steps"])
         res = self.attempt(i, system, self.board() + "\n\n" + self.seat_note(i), self.cfg["steps"])
         if res is None:
-            self.write(f"\n### {lab} — did not answer (error)\n")
+            self.write(f"\n### {lab} — failed\n")
             return False
         turn, text = res
-        kind, body, trimmed = core.parse_turn(text)
+        kind, body, trimmed = core.parse_turn(text, cap)
         if kind == "more":
             self.write(f"\n### {lab} asks for more time — {body}\n")
             left = self.ledger.left(lab)
@@ -332,7 +425,7 @@ class Meeting:
                        f"{'' if affordable else ' — seat cannot afford it'}\n")
             turn.extend(text, self.cfg["steps"] if granted else 0)
             try:
-                kind, body, trimmed = core.parse_turn(turn.run())
+                kind, body, trimmed = core.parse_turn(turn.run(), cap)
             except CallError:
                 kind = "pass"
             if kind == "more":                                     # only one extension a round
@@ -345,21 +438,65 @@ class Meeting:
         self.write(f"\n### {lab}{tag}{' (trimmed)' if trimmed else ''}\n\n{body}\n")
         return True
 
-    def joint(self):
-        reserve = self.ledger.cap is not None
-        while True:
-            res = self.attempt(self.chair, JOINT_SYSTEM, self.board(), 0, tools=False)
-            if res or not self.handover():
-                break
+    def joint(self, system, title=None):
+        """The chair writes the (draft) joint plan, paid from the reserve.
+        With a title it goes on the board now; the final one goes on in finish()."""
+        res = self.chair_call(system, self.board(), reserve=self.ledger.cap is not None)
         if not res:
             self.write("\n_no one could write the joint plan_\n")
-            return
+            return None
         turn, text = res
-        self.ledger.charge(self.labels[self.chair], turn.cost, reserve=reserve)
-        self.write(f"\n## Joint plan{core.tag(turn.cost)}{' from the reserve' if reserve else ''}\n\n{text}\n")
+        if title:
+            self.write(f"\n## {title} · by {self.labels[self.chair]}{core.tag(turn.cost)}\n\n{text}\n")
+        return text
+
+    def final_check(self, draft):
+        """Agreement is not the end: every seat hunts for a flaw in the draft.
+        Returns the final plan, or None when the chair reopens the discussion."""
+        self.write("\n## Final check\n\n_every seat looks for a problem, risk, gap or mistake in the draft_\n")
+        system = CRITIQUE_SYSTEM
+        issues = False
+        for i in self.live():
+            lab = self.labels[i]
+            if self.ledger.empty(lab):
+                continue
+            res = self.attempt(i, system.format(me=lab, words=core.WORD_CAP),
+                               self.board() + "\n\n" + self.seat_note(i), self.cfg["steps"])
+            if res is None:
+                self.write(f"\n### {lab} — failed\n")
+                continue
+            turn, text = res
+            self.ledger.charge(lab, turn.cost)
+            kind, body = core.parse_critique(text)
+            issues |= kind == "issue"
+            tag = core.tag(turn.cost, turn.used, self.ledger.left(lab))
+            self.write(f"\n### {lab} · no issues{tag}\n" if kind == "ok" else f"\n### {lab} · issue{tag}\n\n{body}\n")
+        if not issues:
+            self.write("\n_no issues found — the draft stands_\n")
+            return draft
+        more = self.round < self.cfg["rounds"] and not self.ledger.all_empty()
+        res = self.chair_call(REVIEW_SYSTEM if more else LAST_REVIEW_SYSTEM, self.board(),
+                              reserve=self.ledger.cap is not None)
+        if not res:
+            return draft
+        turn, text = res
+        reopen, body = core.parse_review(text)
+        lab = self.labels[self.chair]
+        if reopen and more:
+            self.write(f"\n**chair {lab}:** back to the table — {body}{core.tag(turn.cost)}\n")
+            return None
+        self.write(f"\n**chair {lab}:** finish{core.tag(turn.cost)}\n")
+        return body if body and not reopen else draft
+
+    def finish(self, final):
+        if final:
+            self.write(f"\n## Joint plan\n\n{final}\n")
+        who = "\n".join(f"- {lab} = {s['label']} · {s['effort']}{' · failed' if i in self.gone else ''}"
+                        for i, (lab, s) in enumerate(zip(self.labels, self.seats)))
         if self.cfg["anon"]:
-            self.write("\n## Who was who\n\n" + "\n".join(
-                f"- {lab} = {s['label']} · {s['effort']}" for lab, s in zip(self.labels, self.seats)) + "\n")
+            self.write("\n## Who was who\n\n" + who + "\n")
+        self.save("final.md", f"# Council — {self.question}\n\n"
+                  + (final or "_no joint plan — see board.md_") + "\n\n## Seats\n\n" + who + "\n")
 
 
 # ---- entry -----------------------------------------------------------------
@@ -387,12 +524,12 @@ SPLIT_REQUESTS = os.path.expanduser("~/.claude/terminal-state/split-requests")
 AUTOSTART_SKIP = os.path.expanduser("~/.claude/terminal-state/autostart-skip-once")
 
 
-def split(question, board, requests=SPLIT_REQUESTS, run=subprocess.run, wait=3.0):
+def split(question, board, requests=SPLIT_REQUESTS, run=subprocess.run, wait=3.0, extra=()):
     """Open the wizard in a pane next to the calling session; it needs a real
     keyboard, which a command run by Claude never has. tmux if we are inside it,
     else ask the VS Code extension (it splits the terminal that owns our process),
     else a plain Terminal window. Returns where it opened."""
-    cmd = shlex.join(["ccx", "council", "--board", board, question])
+    cmd = shlex.join(["ccx", "council", "--board", board, *extra, "--", question])
     cwd = os.getcwd()
     if os.environ.get("TMUX"):
         run(["tmux", "split-window", "-h", "-c", cwd, cmd + "; printf 'press Enter to close '; read _"], check=True)
@@ -420,38 +557,70 @@ def split(question, board, requests=SPLIT_REQUESTS, run=subprocess.run, wait=3.0
     return "terminal"
 
 
-def main():
-    ap = argparse.ArgumentParser(prog="ccx council", description="Several models plan together on one board.")
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        prog="ccx council", description="Several models plan together on one board.",
+        epilog='example: ccx council --seat sonnet:high:2 --seat grok -- "how do we fix X?"')
     ap.add_argument("question", nargs="+")
     ap.add_argument("--base", default="http://127.0.0.1:8317")
     ap.add_argument("--key-file", default=os.path.expanduser("~/.cli-proxy-api/local-key"))
     ap.add_argument("--no-open", action="store_true", help="do not open the board in the editor")
-    ap.add_argument("--board", help="board file to write (default: ./council/<time>-<slug>.md)")
+    ap.add_argument("--board", help="board file to write; plans/ and final.md go next to it "
+                                    "(default: ./council/<time>-<slug>/board.md)")
     ap.add_argument("--split", action="store_true",
                     help="open the wizard in a pane next to this session and print the board path")
-    a = ap.parse_args()
+    ap.add_argument("--seat", action="append", default=[], metavar="MODEL[:EFFORT][:COUNT]",
+                    help="seat a model, repeatable; e.g. sonnet:high:2 = two independent Sonnet seats. "
+                         "Skips the wizard.")
+    ap.add_argument("--chair", metavar="MODEL", help="which seated model chairs (default: the last --seat)")
+    ap.add_argument("--rounds", type=int, choices=range(1, 11), metavar="1-10")
+    ap.add_argument("--steps", type=int, choices=range(1, 7), metavar="1-6", help="look-ups per turn")
+    ap.add_argument("--budget", type=float, metavar="DOLLARS", help="list-price cap, 0 = unlimited")
+    ap.add_argument("--anon", action=argparse.BooleanOptionalAction, default=None,
+                    help="hide which model is which until the end")
+    a = ap.parse_intermixed_args(argv)
+    if len(a.question) > 1 and core.stray_tokens(a.question):
+        ap.error(f"{', '.join(core.stray_tokens(a.question))} looks like a table setting, not part of "
+                 "the question. Use --seat MODEL:EFFORT:COUNT, and quote the question.")
     question = " ".join(a.question)
     root = os.getcwd()
     board = os.path.abspath(a.board or os.path.join(root, core.board_path(datetime.datetime.now(), question)))
+    rules = {k: v for k, v in (("rounds", a.rounds), ("steps", a.steps), ("anon", a.anon),
+                               ("budget", None if a.budget is None else round(a.budget * 100)))
+             if v is not None}
     if a.split:
-        print(f"opened in {split(question, board)} · board: {board}")
+        extra = [f"--seat={s}" for s in a.seat] + ([f"--chair={a.chair}"] if a.chair else [])
+        extra += [f"--{k}={v}" for k, v in (("rounds", a.rounds), ("steps", a.steps), ("budget", a.budget))
+                  if v is not None]
+        extra += [] if a.anon is None else ["--anon" if a.anon else "--no-anon"]
+        print(f"opened in {split(question, board, extra=extra)} · board: {board}")
         return 0
     with open(a.key_file) as f:
         key = f.read().strip()
     locale.setlocale(locale.LC_ALL, "")
     prices = core.load_prices(os.path.join(HERE, "ccx-council-prices.json"))
-    wizard = Wizard(load_models(a.base, key), load_state(STATE))
-    price_of = lambda mid: core.price_for(prices, mid)
-    estimate = lambda w: core.worst_case(
-        [(price_of(s["id"]), core.EFFORTS.index(s["effort"])) for s in w.config()["seats"]], w.rounds, w.steps)
-    if run_wizard(wizard, question, price_of, estimate) != "start":
-        if a.board:                             # whoever waits on this file learns it will not come
-            os.makedirs(os.path.dirname(board), exist_ok=True)
-            with open(board, "a") as f:
-                f.write(f"# Council — {question}\n\n## Cancelled\n\nThe wizard was closed before the meeting started.\n")
-        return 1
-    save_state(STATE, wizard.saved())
-    meeting = Meeting(wizard.config(), question, make_post(a.base, key), prices, root, board,
+    models, state = load_models(a.base, key), load_state(STATE)
+    if a.seat:
+        try:
+            seats = core.table_from_specs(models, a.seat, a.chair, state.get("effort"))
+        except ValueError as e:
+            ap.error(str(e))
+        cfg = {"rounds": state.get("rounds", 5), "anon": state.get("anon", False),
+               "budget": state.get("budget", 0), "steps": state.get("steps", 3)} | rules | {"seats": seats}
+    else:
+        wizard = Wizard(models, state | rules)
+        price_of = lambda mid: core.price_for(prices, mid)
+        estimate = lambda w: core.worst_case(
+            [(price_of(s["id"]), core.EFFORTS.index(s["effort"])) for s in w.config()["seats"]], w.rounds, w.steps)
+        if run_wizard(wizard, question, price_of, estimate) != "start":
+            if a.board:                             # whoever waits on this file learns it will not come
+                os.makedirs(os.path.dirname(board), exist_ok=True)
+                with open(board, "a") as f:
+                    f.write(f"# Council — {question}\n\n## Cancelled\n\nThe wizard was closed before the meeting started.\n")
+            return 1
+        save_state(STATE, wizard.saved())
+        cfg = wizard.config()
+    meeting = Meeting(cfg, question, make_post(a.base, key), prices, root, board,
                       log=lambda line: print("  " + line, file=sys.stderr))
     print(f"board: {os.path.relpath(board)}", file=sys.stderr)
     try:
@@ -462,7 +631,8 @@ def main():
     except KeyboardInterrupt:
         meeting.stopped()
         return 130
-    print(f"done · {core.usd(meeting.ledger.total())} list price · {os.path.relpath(board)}", file=sys.stderr)
+    print(f"done · {core.usd(meeting.ledger.total())} list price · {os.path.relpath(os.path.dirname(board))}/",
+          file=sys.stderr)
     return 0
 
 
