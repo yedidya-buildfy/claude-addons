@@ -1,0 +1,34 @@
+{
+  "id": "skill-tab-name",
+  "order": 20,
+  "default": true,
+  "requires": [
+    "tab-status"
+  ],
+  "title": "שם לטאב לפי בקשה",
+  "summary": "כשמבקשים מקלוד לשנות את שם הטאב, או כשהשם האוטומטי נכשל, הוא יודע איך.",
+  "detect": {
+    "file": "~/.claude/skills/tab-name/SKILL.md"
+  },
+  "files": [
+    {
+      "from": "SKILL.md",
+      "to": "~/.claude/skills/tab-name/SKILL.md"
+    }
+  ],
+  "claudeMd": {
+    "file": "CLAUDE.md.snippet",
+    "setting": "claudeMd"
+  },
+  "settings": [
+    {
+      "key": "claudeMd",
+      "type": "bool",
+      "default": false,
+      "label": "להוסיף תזכורת גם לקובץ ההוראות הכללי של קלוד",
+      "detect": {
+        "claudeMdContains": "**`tab-name`** — Tab naming is automatic"
+      }
+    }
+  ]
+}

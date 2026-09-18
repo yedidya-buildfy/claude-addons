@@ -1,0 +1,7 @@
+{
+  "id": "skill-conversation-summary", "order": 40, "default": true,
+  "title": "סיכום שיחה",
+  "summary": "\"סכם לי\" נותן סיכום בשפה פשוטה של מה שהשתנה בפועל בשיחה.",
+  "detect": {"file": "~/.claude/skills/conversation-summary/SKILL.md"},
+  "files": [{"from": "SKILL.md", "to": "~/.claude/skills/conversation-summary/SKILL.md"}]
+}

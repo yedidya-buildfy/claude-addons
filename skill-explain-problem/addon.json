@@ -1,0 +1,7 @@
+{
+  "id": "skill-explain-problem", "order": 41, "default": true,
+  "title": "פירוק בעיה",
+  "summary": "\"תפרק לי את זה\" מסביר בעיה בארבעה חלקים: למה עכשיו, מה ההשפעה, מה אם לא נוגעים, ומה האפשרויות.",
+  "detect": {"file": "~/.claude/skills/explain-problem/SKILL.md"},
+  "files": [{"from": "SKILL.md", "to": "~/.claude/skills/explain-problem/SKILL.md"}]
+}

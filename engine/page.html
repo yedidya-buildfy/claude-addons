@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>תוספים לקלוד</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #ffffff; --ink: #1d1c1a; --muted: #6b6862; --line: #e4e1db;
+    --accent: #c2410c; --accent-ink: #fff; --ok: #15803d; --bad: #b91c1c; --warn: #a16207;
+    --shadow: 0 1px 2px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161513; --card: #211f1c; --ink: #eeeae4; --muted: #a09b93; --line: #34312c;
+            --accent: #f97316; --accent-ink: #1a0d04; --ok: #4ade80; --bad: #f87171; --warn: #facc15; --shadow: none; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Arial Hebrew", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 120px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px;
+          margin-bottom: 10px; box-shadow: var(--shadow); }
+  .row { display: flex; gap: 14px; align-items: flex-start; }
+  .row .text { flex: 1; min-width: 0; }
+  .title { font-weight: 600; font-size: 16px; }
+  .summary { color: var(--muted); margin-top: 2px; }
+  .tag { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-inline-start: 6px; font-weight: 400; }
+  .drift { color: var(--warn); font-size: 13px; margin-top: 6px; }
+  .changed { outline: 2px solid var(--accent); outline-offset: -1px; }
+  /* switch */
+  .switch { position: relative; width: 44px; height: 26px; flex: none; margin-top: 2px; }
+  .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; position: absolute; cursor: pointer; z-index: 1; }
+  .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .15s; }
+  .switch span::after { content: ""; position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%;
+                        background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(-18px); }
+  .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .settings { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); display: grid; gap: 10px; }
+  .settings label { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .settings input[type=text] { flex: 1; min-width: 180px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
+                               background: var(--bg); color: var(--ink); font: 14px ui-monospace, Menlo, monospace; direction: ltr; }
+  button { font: inherit; border-radius: 8px; padding: 8px 16px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .bar { position: fixed; inset: auto 0 0 0; background: var(--card); border-top: 1px solid var(--line); padding: 12px 16px; }
+  .bar .inner { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
+  .bar .msg { flex: 1; color: var(--muted); }
+  #result { white-space: pre-wrap; font: 13px/1.6 ui-monospace, Menlo, monospace; direction: ltr; text-align: left;
+            background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 16px; display: none; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>תוספים לקלוד</h1>
+  <p class="lead">מה מופעל במחשב הזה. שינוי כאן נשמר רק אחרי "שמור", ואחרי שראית מה בדיוק ישתנה.</p>
+  <div id="result"></div>
+  <div id="list">טוען…</div>
+</main>
+<div class="bar"><div class="inner">
+  <span class="msg" id="msg">אין שינויים</span>
+  <button id="reset" disabled>בטל</button>
+  <button id="save" class="primary" disabled>שמור</button>
+</div></div>
+<script>
+const T = "__TOKEN__";
+const api = async (p, body) => {
+  const r = await fetch(p + "?t=" + T, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+let saved = [], draft = {};
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function snapshot(list) {
+  const d = {};
+  for (const a of list) d[a.id] = { on: a.on, settings: Object.fromEntries(a.settings.map((s) => [s.key, s.value])) };
+  return d;
+}
+function dirty() {
+  const base = snapshot(saved);
+  return Object.keys(draft).filter((id) => JSON.stringify(draft[id]) !== JSON.stringify(base[id]));
+}
+
+function render() {
+  const byId = Object.fromEntries(saved.map((a) => [a.id, a]));
+  const changed = new Set(dirty());
+  $("#list").innerHTML = saved.map((a) => {
+    const d = draft[a.id];
+    const needs = a.requires.map((r) => byId[r]?.title || r);
+    const settings = d.on && a.settings.length + a.actions.length ? `<div class="settings">${
+      a.settings.map((s) => s.type === "bool"
+        ? `<label><span class="switch"><input type="checkbox" data-set="${a.id}:${s.key}" ${d.settings[s.key] ? "checked" : ""}><span></span></span>${esc(s.label)}</label>`
+        : `<label>${esc(s.label)}<input type="text" data-set="${a.id}:${s.key}" value="${esc(d.settings[s.key] ?? "")}" placeholder="ייווצר אוטומטית בשמירה"></label>`).join("")
+    }${a.actions.map((x) => `<div><button data-action="${a.id}:${x.id}">${esc(x.label)}</button> <span data-out="${a.id}:${x.id}"></span></div>`).join("")}</div>` : "";
+    return `<section class="card ${changed.has(a.id) ? "changed" : ""}">
+      <div class="row">
+        <div class="text">
+          <div class="title">${esc(a.title)}${a.required ? '<span class="tag">תמיד פעיל</span>' : ""}${needs.length ? `<span class="tag">צריך את: ${esc(needs.join(", "))}</span>` : ""}</div>
+          <div class="summary">${esc(a.summary)}</div>
+          ${a.drift.length ? `<div class="drift">⚠ שונה ידנית או חסר: ${esc(a.drift.join(", "))}</div>` : ""}
+        </div>
+        ${a.required ? "" : `<span class="switch"><input type="checkbox" aria-label="${esc(a.title)}" data-on="${a.id}" ${d.on ? "checked" : ""}><span></span></span>`}
+      </div>${settings}</section>`;
+  }).join("");
+  const n = changed.size;
+  $("#msg").textContent = n ? `${n} שינויים שלא נשמרו` : "אין שינויים";
+  $("#save").disabled = $("#reset").disabled = !n;
+}
+
+document.addEventListener("change", (e) => {
+  const on = e.target.dataset.on, set = e.target.dataset.set;
+  if (on) {
+    draft[on].on = e.target.checked;
+    // keep dependencies consistent instead of letting the save fail
+    for (const a of saved) {
+      if (e.target.checked && a.id !== on && saved.find((x) => x.id === on).requires.includes(a.id)) draft[a.id].on = true;
+      if (!e.target.checked && a.requires.includes(on)) draft[a.id].on = false;
+    }
+    render();
+  }
+  if (set) { const [id, key] = set.split(":"); draft[id].settings[key] = e.target.type === "checkbox" ? e.target.checked : e.target.value.trim(); render(); }
+});
+document.addEventListener("click", async (e) => {
+  const act = e.target.dataset.action;
+  if (!act) return;
+  const [addon, action] = act.split(":");
+  const out = document.querySelector(`[data-out="${act}"]`);
+  e.target.disabled = true; out.textContent = "שולח…";
+  try { await api("/api/action", { addon, action }); out.innerHTML = '<span class="ok">נשלח ✓</span>'; }
+  catch (err) { out.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+  e.target.disabled = false;
+});
+
+function payload(dryRun) {
+  const enabled = {}, settings = {};
+  for (const [id, d] of Object.entries(draft)) { enabled[id] = d.on; settings[id] = d.settings; }
+  return { enabled, settings, dryRun };
+}
+function describe(r, dry) {
+  const lines = [];
+  for (const c of r.changes) lines.push(`${dry ? "ישתנה" : "שונה"}  ${c.action}  ${c.file}${c.note ? "  (" + c.note + ")" : ""}`);
+  for (const x of r.ran) lines.push(`${x.planned ? "יורץ" : x.ok ? "הורץ ✓" : "נכשל ✗"}  ${x.id}${x.error ? ": " + x.error : ""}`);
+  for (const n of r.notes) lines.push("הערה: " + n);
+  if (r.backup) lines.push("גיבוי של כל מה ששונה: " + r.backup);
+  return lines.join("\n") || (dry ? "שום קובץ לא ישתנה" : "הכל כבר מעודכן");
+}
+
+let confirming = false;
+$("#save").onclick = async () => {
+  const box = $("#result");
+  box.style.display = "block";
+  try {
+    if (!confirming) {
+      const r = await api("/api/apply", payload(true));
+      box.innerHTML = `<b>זה מה שישתנה — לחץ שוב על "אשר" כדי לבצע:</b>\n\n${esc(describe(r, true))}`;
+      confirming = true; $("#save").textContent = "אשר";
+      return;
+    }
+    $("#save").disabled = true;
+    const r = await api("/api/apply", payload(false));
+    saved = r.state; draft = snapshot(saved);
+    box.innerHTML = `<span class="${r.ran.some((x) => !x.ok) ? "bad" : "ok"}"><b>${r.ran.some((x) => !x.ok) ? "נשמר, חוץ ממה שנכשל למטה" : "נשמר ✓"}</b></span> — טרמינל חדש יטען את השינויים.\n\n${esc(describe(r, false))}`;
+  } catch (err) {
+    box.innerHTML = `<b class="bad">לא נשמר, שום קובץ לא שונה:</b>\n${esc(err.message)}`;
+  }
+  confirming = false; $("#save").textContent = "שמור"; render();
+};
+$("#reset").onclick = () => { draft = snapshot(saved); confirming = false; $("#save").textContent = "שמור"; $("#result").style.display = "none"; render(); };
+
+api("/api/state").then((s) => { saved = s; draft = snapshot(s); render(); })
+  .catch((e) => { $("#list").innerHTML = `<p class="bad">${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>

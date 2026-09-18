@@ -117,11 +117,9 @@ if ! git pull --ff-only origin "$DEFAULT_BRANCH" >> "$LOG_FILE" 2>&1; then
   exit 0
 fi
 
-# Run installer in update mode to sync all changed scripts
-if [ -x "$REPO/install.sh" ]; then
-  log "running install.sh --update..."
-  "$REPO/install.sh" --update >> "$LOG_FILE" 2>&1 || err "install.sh --update finished with warnings"
-fi
+# Make this machine match its saved choices with the new version
+log "applying add-ons..."
+"$REPO/install.sh" --update >> "$LOG_FILE" 2>&1 || err "applying add-ons failed — see $LOG_FILE, or run: addons status"
 
 # If ccx-rewrite was running, restart it to pick up new code
 REWRITE_PID="$HOME/.cli-proxy-api/ccx-rewrite.pid"

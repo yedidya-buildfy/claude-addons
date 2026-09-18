@@ -1,0 +1,9 @@
+{
+  "id": "agent-locks", "order": 100, "default": true,
+  "title": "אזהרה על התנגשות בין סשנים",
+  "summary": "כשסשן אחר עובד על אותו קובץ, או באמצע דחיפה, מופיעה אזהרה עם מי ומאיזו שעה. אף פעם לא חוסם.",
+  "detect": {"file": "~/.claude/scripts/agent-locks.mjs"},
+  "files": [{"from": "agent-locks.mjs", "to": "~/.claude/scripts/agent-locks.mjs", "mode": "755"}],
+  "claudeSettings": [{"file": "settings.json.snippet"}],
+  "ownsCommands": "\\.claude/scripts/agent-locks\\.mjs"
+}

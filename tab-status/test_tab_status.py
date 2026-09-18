@@ -374,9 +374,9 @@ class MigrationChecks(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / ".zshrc").write_text("# keep before\n" + LEGACY_TN + "\n# keep after\n")
-            env = dict(os.environ, HOME=tmp)
-            installed = subprocess.run(["bash", str(ROOT.parent / "install.sh")], env=env,
-                                       input="y\ny\n" + "n\n" * 20, text=True, capture_output=True, timeout=20)
+            env = dict(os.environ, HOME=tmp, ADDONS_NO_RUN="1")
+            installed = subprocess.run(["bash", str(ROOT.parent / "install.sh"), "--yes"], env=env,
+                                       text=True, capture_output=True, timeout=20)
             self.assertEqual(installed.returncode, 0, installed.stderr)
             # Observe the wrapper's boundary: it must forward intact arguments
             # to the naming command, not paint its own green title.
@@ -401,10 +401,10 @@ class MigrationChecks(unittest.TestCase):
             for p in profiles:
                 p.parent.mkdir(parents=True)
                 p.write_text(json.dumps(original))
-            env = dict(os.environ, HOME=tmp, CLAUDE_CONFIG_DIR=str(home / ".claude-ccx"))
+            env = dict(os.environ, HOME=tmp, CLAUDE_CONFIG_DIR=str(home / ".claude-ccx"), ADDONS_NO_RUN="1")
             for _ in range(2):
-                result = subprocess.run(["bash", str(ROOT.parent / "install.sh")], env=env,
-                                        input="y\n" + "n\n" * 20, text=True, capture_output=True, timeout=20)
+                result = subprocess.run(["bash", str(ROOT.parent / "install.sh"), "--yes"], env=env,
+                                        text=True, capture_output=True, timeout=20)
                 self.assertEqual(result.returncode, 0, result.stderr)
             for p in profiles:
                 data = json.loads(p.read_text())

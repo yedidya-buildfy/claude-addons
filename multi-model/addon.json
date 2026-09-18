@@ -1,0 +1,40 @@
+{
+  "id": "multi-model",
+  "order": 80,
+  "default": false,
+  "title": "מודלים של מנויים אחרים (ccx)",
+  "summary": "מריץ את קלוד קוד על ChatGPT, Grok ו‑Gemini דרך המנויים שלך. כיבוי מנתק אותו מהטרמינל; התוכנה וההתחברויות נשארות.",
+  "detect": {
+    "any": [
+      {
+        "file": "~/.claude/scripts/ccx"
+      },
+      {
+        "file": "/opt/homebrew/bin/ccx"
+      },
+      {
+        "file": "/usr/local/bin/ccx"
+      }
+    ]
+  },
+  "run": {
+    "cmd": "./install.sh --yes --skip-login",
+    "when": "changed"
+  },
+  "shell": "zshrc.snippet",
+  "settings": [
+    {
+      "key": "claudeViaCcx",
+      "type": "bool",
+      "default": true,
+      "label": "הפקודה claude עוברת דרך ccx",
+      "detect": {
+        "shellContains": "scripts/ccx --as-claude"
+      },
+      "render": {
+        "true": "alias claude=\"$HOME/.claude/scripts/ccx --as-claude --\"",
+        "false": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+#!/bin/sh
+# `addons` — open the add-ons page, or run an engine command (addons help).
+repo=$(cat "$HOME/.claude/addons-repo-path" 2>/dev/null)
+[ -f "$repo/engine/addons.mjs" ] || { echo "addons: repository not found — run install.sh from your clone" >&2; exit 1; }
+exec node "$repo/engine/addons.mjs" "$@"

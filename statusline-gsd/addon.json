@@ -1,0 +1,16 @@
+{
+  "id": "statusline-gsd", "order": 50, "default": true,
+  "title": "שורת מצב",
+  "summary": "בתחתית כל סשן: המודל, המשימה, כמה מהקונטקסט נוצל, וכמה נשאר מהמנוי.",
+  "detect": {"file": "~/.claude/gsd-statusline.js"},
+  "files": [
+    {"from": "gsd-statusline.js", "to": "~/.claude/gsd-statusline.js"},
+    {"from": "provider-usage.js", "to": "~/.claude/provider-usage.js"},
+    {"from": "usage-fetch.sh", "to": "~/.claude/scripts/usage-fetch.sh", "mode": "755"}
+  ],
+  "claudeSettings": [
+    {"file": "settings.json.snippet"},
+    {"file": "settings.jq.snippet", "when": "jq"}
+  ],
+  "ownsCommands": "gsd-statusline\\.js|stream-rate\\.log"
+}

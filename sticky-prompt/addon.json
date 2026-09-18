@@ -1,0 +1,9 @@
+{
+  "id": "sticky-prompt", "order": 70, "default": true,
+  "title": "ההודעה שלך נעוצה למעלה",
+  "summary": "ההודעה האחרונה ששלחת נשארת נעוצה בראש הטרמינל; לחיצה עליה קופצת אליה.",
+  "detect": {"file": "~/.claude/scripts/sticky-claude"},
+  "files": [{"from": "sticky-claude", "to": "~/.claude/scripts/sticky-claude", "mode": "755"}],
+  "vscodeSettings": "vscode-settings.snippet",
+  "shell": "zshrc.snippet"
+}

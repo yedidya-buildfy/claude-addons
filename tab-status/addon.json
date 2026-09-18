@@ -1,0 +1,24 @@
+{
+  "id": "tab-status", "order": 10, "default": true,
+  "title": "נקודת מצב על הטאב",
+  "summary": "נקודה צבעונית על הטאב של הטרמינל ב‑VS Code: פנוי, עובד, מחכה לך, או סיים ודחף.",
+  "detect": {"file": "~/.claude/scripts/tab.sh"},
+  "files": [
+    {"from": "tab.sh", "to": "~/.claude/scripts/tab.sh", "mode": "755"},
+    {"from": "tab-watcher.sh", "to": "~/.claude/scripts/tab-watcher.sh", "mode": "755"},
+    {"from": "tn", "to": "~/.claude/scripts/tn", "mode": "755"},
+    {"from": "tab-dots-selftest.sh", "to": "~/.claude/scripts/tab-dots-selftest.sh", "mode": "755"},
+    {"from": "tab-state.py", "to": "~/.claude/scripts/tab-state.py"},
+    {"from": "tab-autoname.py", "to": "~/.claude/scripts/tab-autoname.py"},
+    {"from": "test_tab_status.py", "to": "~/.claude/scripts/test_tab_status.py"},
+    {"from": "test_tab_naming.py", "to": "~/.claude/scripts/test_tab_naming.py"},
+    {"from": "vscode-extension/package.json", "to": "~/.vscode/extensions/claude-tab-rename/package.json", "when": "vscode"},
+    {"from": "vscode-extension/extension.js", "to": "~/.vscode/extensions/claude-tab-rename/extension.js", "when": "vscode"}
+  ],
+  "dirs": ["~/.claude/terminal-state"],
+  "claudeSettings": [{"file": "settings.json.snippet"}],
+  "ownsCommands": "\\.claude/scripts/(tab\\.sh|tab-autoname\\.py)( |$)",
+  "vscodeSettings": "vscode-settings.snippet",
+  "vscodeKeybindings": "vscode-keybindings.snippet",
+  "shell": "zshrc.snippet"
+}

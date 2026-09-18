@@ -1,0 +1,12 @@
+{
+  "id": "core", "order": 0, "required": true,
+  "title": "עדכונים אוטומטיים והפקודה addons",
+  "summary": "מושך גרסה חדשה של התוספים ברקע בפתיחת סשן, ומתקין את הפקודה addons שפותחת את הדף הזה.",
+  "files": [
+    {"from": "claude-addons-update.sh", "to": "~/.claude/scripts/claude-addons-update.sh", "mode": "755"},
+    {"from": "addons", "to": "~/.claude/scripts/addons", "mode": "755"}
+  ],
+  "claudeSettings": [{"file": "settings.json.snippet"}],
+  "ownsCommands": "claude-addons-update\\.sh",
+  "shell": "zshrc.snippet"
+}

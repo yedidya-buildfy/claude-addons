@@ -1,0 +1,9 @@
+{
+  "id": "hebrew-guard", "order": 5, "required": true,
+  "title": "עברית קריאה בטרמינל",
+  "summary": "בכל פתיחת סשן בודק שעברית בטרמינל של VS Code לא יוצאת הפוכה, ומתקן לבד.",
+  "files": [{"from": "hebrew-guard.py", "to": "~/.claude/scripts/hebrew-guard.py", "mode": "755"}],
+  "claudeSettings": [{"file": "settings.json.snippet"}],
+  "ownsCommands": "hebrew-guard\\.py",
+  "run": {"cmd": "python3 ~/.claude/scripts/hebrew-guard.py >/dev/null", "when": "always"}
+}

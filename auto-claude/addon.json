@@ -1,0 +1,12 @@
+{
+  "id": "auto-claude", "order": 999, "default": false,
+  "title": "טרמינל נפתח ישר בקלוד",
+  "summary": "כל טרמינל חדש נפתח ישר בתוך קלוד. Ctrl-C פעמיים ואתה בטרמינל רגיל.",
+  "detect": {"shellContains": "claude-addons: auto-claude"},
+  "shell": "zshrc.snippet",
+  "settings": [
+    {"key": "skipPermissions", "type": "bool", "default": true,
+     "label": "בלי בקשות אישור (מריץ פקודות בלי לשאול)",
+     "render": {"true": " --dangerously-skip-permissions", "false": ""}}
+  ]
+}

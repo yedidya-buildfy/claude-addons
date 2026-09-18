@@ -1,0 +1,1 @@
+{"hooks":{"MessageDisplay":[{"hooks":[{"type":"command","timeout":5,"command":"jq -rj '(.session_id)+\" \"+(now*1000|floor|tostring)+\" \"+(.delta|length|tostring)+\" \"+(.delta|explode|map(select(.<128))|length|tostring)+\"\\n\"' >> ~/.claude/cache/stream-rate.log"}]}]}}

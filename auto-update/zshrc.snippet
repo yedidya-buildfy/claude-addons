@@ -1,0 +1,5 @@
+# ~/.claude/scripts on PATH, for `addons`, `ccx` and `tn`.
+case ":$PATH:" in
+  *":$HOME/.claude/scripts:"*) ;;
+  *) export PATH="$HOME/.claude/scripts:$PATH" ;;
+esac

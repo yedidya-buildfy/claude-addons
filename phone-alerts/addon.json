@@ -1,0 +1,14 @@
+{
+  "id": "phone-alerts", "order": 90, "default": false,
+  "title": "התראות לטלפון",
+  "summary": "הודעה לטלפון כשקלוד שואל שאלה, מחכה לאישור תוכנית או מסיים. דרך אפליקציית ntfy, בלי חשבון.",
+  "detect": {"file": "~/.claude/scripts/ntfy.sh"},
+  "files": [{"from": "ntfy.sh", "to": "~/.claude/scripts/ntfy.sh", "mode": "755"}],
+  "claudeSettings": [{"file": "settings.json.snippet"}],
+  "ownsCommands": "\\.claude/scripts/ntfy\\.sh( |$)",
+  "settings": [
+    {"key": "topic", "type": "secret", "file": "~/.claude/ntfy-topic", "generate": "ntfy",
+     "label": "נושא פרטי (להירשם אליו באפליקציה)"}
+  ],
+  "actions": [{"id": "test", "label": "שלח התראת בדיקה", "cmd": "echo '{}' | ~/.claude/scripts/ntfy.sh ask"}]
+}

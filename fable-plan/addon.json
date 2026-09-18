@@ -1,0 +1,7 @@
+{
+  "id": "fable-plan", "order": 60, "default": false,
+  "title": "פייבל מתכנן",
+  "summary": "הפקודה fplan פותחת סשן שבו פייבל מתכנן ואופוס מבצע. לא משנה סשנים רגילים.",
+  "detect": {"shellContains": "alias fplan="},
+  "shell": "zshrc.snippet"
+}
