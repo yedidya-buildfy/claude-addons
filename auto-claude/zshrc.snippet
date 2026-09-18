@@ -1,0 +1,14 @@
+
+# claude-addons: auto-claude — every new terminal opens straight into
+# `claude --dangerously-skip-permissions`. Ctrl-C twice leaves Claude and drops
+# you at a normal shell prompt. Keep this block LAST so the `claude` alias
+# above it is the one that runs.
+# Skipped for: non-interactive shells, `zsh -c`, shells Claude itself spawns,
+# VS Code's background environment probe, SSH logins, and nested shells.
+# One terminal without it: CLAUDE_AUTOSTART_OFF=1 zsh
+if [[ -o interactive && -t 0 && -t 1 && -z "$ZSH_EXECUTION_STRING" \
+      && -z "$CLAUDECODE" && -z "$CLAUDE_AUTOSTARTED" && -z "$CLAUDE_AUTOSTART_OFF" \
+      && -z "$VSCODE_RESOLVING_ENVIRONMENT" && -z "$SSH_CONNECTION" ]]; then
+  export CLAUDE_AUTOSTARTED=1
+  claude --dangerously-skip-permissions
+fi

@@ -34,6 +34,7 @@ is_installed() {
     skill-extras) [ -f "$CLAUDE_DIR/skills/explain-problem/SKILL.md" ] ;;
     statusline-gsd) [ -f "$CLAUDE_DIR/gsd-statusline.js" ] ;;
     fable-plan) grep -q "alias fplan=" "$ZSHRC" 2>/dev/null ;;
+    auto-claude) grep -q "claude-addons: auto-claude" "$ZSHRC" 2>/dev/null ;;
     sticky-prompt) [ -f "$CLAUDE_DIR/scripts/sticky-claude" ] ;;
     multi-model) [ -f "$CLAUDE_DIR/scripts/ccx" ] || [ -f "$(brew --prefix 2>/dev/null)/bin/ccx" ] ;;
     phone-alerts) [ -f "$CLAUDE_DIR/scripts/ntfy.sh" ] ;;
@@ -170,7 +171,7 @@ cyan "claude-addons installer"
 echo
 
 # --- tab-status ---
-cyan "[1/10] tab-status (colored dot on VS Code terminal tabs)"
+cyan "[1/11] tab-status (colored dot on VS Code terminal tabs)"
 if confirm "Install tab-status?" "tab-status"; then
   mkdir -p "$CLAUDE_DIR/scripts" "$CLAUDE_DIR/terminal-state"
 
@@ -232,7 +233,7 @@ fi
 echo
 
 # --- skill-tab-name ---
-cyan "[2/10] skill-tab-name (Claude picks tab names automatically)"
+cyan "[2/11] skill-tab-name (Claude picks tab names automatically)"
 if confirm "Install the \`tab-name\` skill?" "skill-tab-name"; then
   mkdir -p "$CLAUDE_DIR/skills/tab-name"
   cp "$ROOT/skill-tab-name/SKILL.md" "$CLAUDE_DIR/skills/tab-name/SKILL.md"
@@ -256,7 +257,7 @@ fi
 echo
 
 # --- skill-design-in-browser ---
-cyan "[3/10] skill-design-in-browser (design UI in the browser before coding)"
+cyan "[3/11] skill-design-in-browser (design UI in the browser before coding)"
 if confirm "Install the \`design-in-browser\` skill?" "skill-design-in-browser"; then
   mkdir -p "$CLAUDE_DIR/skills/design-in-browser"
   cp "$ROOT/skill-design-in-browser/SKILL.md" "$CLAUDE_DIR/skills/design-in-browser/SKILL.md"
@@ -268,7 +269,7 @@ fi
 echo
 
 # --- extra skills ---
-cyan "[4/10] skill-extras (chat summary + problem breakdown)"
+cyan "[4/11] skill-extras (chat summary + problem breakdown)"
 if confirm "Install the \`conversation-summary\` and \`explain-problem\` skills?" "skill-extras"; then
   for skill in conversation-summary explain-problem; do
     mkdir -p "$CLAUDE_DIR/skills/$skill"
@@ -281,7 +282,7 @@ fi
 echo
 
 # --- statusline-gsd ---
-cyan "[5/10] statusline-gsd (model + task + context bar + plan usage at bottom)"
+cyan "[5/11] statusline-gsd (model + task + context bar + plan usage at bottom)"
 if confirm "Install GSD statusline?" "statusline-gsd"; then
   cp "$ROOT/statusline-gsd/gsd-statusline.js" "$CLAUDE_DIR/gsd-statusline.js"
   cp "$ROOT/statusline-gsd/provider-usage.js" "$CLAUDE_DIR/provider-usage.js"
@@ -313,7 +314,7 @@ HOOKJSON
 fi
 
 # --- fable-plan ---
-cyan "[6/10] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
+cyan "[6/11] fable-plan (Fable 5 plans, Sonnet 5 executes — \`fplan\` shell alias)"
 if confirm "Install fable-plan?" "fable-plan"; then
   if grep -q "alias fplan=" "$ZSHRC" 2>/dev/null; then
     dim "    fplan alias already in ~/.zshrc, skipping"
@@ -329,7 +330,7 @@ fi
 echo
 
 # --- sticky-prompt ---
-cyan "[7/10] sticky-prompt (the message you sent pinned to the top of the terminal)"
+cyan "[7/11] sticky-prompt (the message you sent pinned to the top of the terminal)"
 if confirm "Install sticky-prompt?" "sticky-prompt"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/sticky-prompt/sticky-claude" "$CLAUDE_DIR/scripts/sticky-claude"
@@ -361,7 +362,7 @@ fi
 echo
 
 # --- multi-model ---
-cyan "[8/10] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
+cyan "[8/11] multi-model (run Claude Code on your ChatGPT / Grok / Antigravity subscriptions)"
 if confirm "Install multi-model?" "multi-model"; then
   # A failure here (e.g. an unaccepted Xcode license) must not skip the
   # components after it, so the rest of an update still lands.
@@ -390,7 +391,7 @@ if confirm "Install multi-model?" "multi-model"; then
 fi
 
 # --- phone-alerts ---
-cyan "[9/10] phone-alerts (push to your phone when Claude needs you)"
+cyan "[9/11] phone-alerts (push to your phone when Claude needs you)"
 if confirm "Install phone-alerts?" "phone-alerts"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/phone-alerts/ntfy.sh" "$CLAUDE_DIR/scripts/ntfy.sh"
@@ -414,7 +415,7 @@ fi
 
 # --- agent-locks ---
 echo
-cyan "[10/10] agent-locks (warn when two sessions touch the same file, or deploy at once)"
+cyan "[10/11] agent-locks (warn when two sessions touch the same file, or deploy at once)"
 if confirm "Install agent-locks?" "agent-locks"; then
   mkdir -p "$CLAUDE_DIR/scripts"
   cp "$ROOT/agent-locks/agent-locks.mjs" "$CLAUDE_DIR/scripts/agent-locks.mjs"
@@ -429,6 +430,21 @@ if confirm "Install agent-locks?" "agent-locks"; then
   fi
   green "    merged hooks into ~/.claude/settings.json"
   dim "    it only warns - see who holds what with: node ~/.claude/scripts/agent-locks.mjs list"
+fi
+
+# --- auto-claude (last: its ~/.zshrc block must come after the claude alias) ---
+echo
+cyan "[11/11] auto-claude (every new terminal opens straight into Claude, no permission prompts)"
+if confirm "Install auto-claude?" "auto-claude"; then
+  if grep -q "claude-addons: auto-claude" "$ZSHRC" 2>/dev/null; then
+    dim "    already in ~/.zshrc, skipping"
+  else
+    backup "$ZSHRC"
+    cat "$ROOT/auto-claude/zshrc.snippet" >> "$ZSHRC"
+    green "    appended to ~/.zshrc — open a new terminal to see it"
+  fi
+  dim "    Ctrl-C twice leaves Claude for a normal shell"
+  dim "    WARNING: --dangerously-skip-permissions runs commands without asking"
 fi
 
 # --- hebrew-guard (always on: a safety check, not an optional extra) ---
