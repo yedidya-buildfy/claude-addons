@@ -97,7 +97,7 @@ install_link() {
   ln -s "$CLAUDE_SCRIPTS/ccx" "$CCX_COMMAND"
 }
 
-RUNTIME=(ccx ccx-models.py ccx-rewrite.js sanitize-schema.js ccx-rewrite-selftest.js ccx-rewrite-plan-selftest.js ccx-models-selftest.py install-config.py install-config-selftest.py config.template.yaml)
+RUNTIME=(ccx ccx-models.py ccx-rewrite.js sanitize-schema.js ccx-rewrite-selftest.js ccx-rewrite-plan-selftest.js ccx-models-selftest.py install-config.py install-config-selftest.py config.template.yaml ccx-council.py ccx_council_core.py ccx_council_wizard.py ccx-council-prices.json ccx-council-selftest.py)
 for name in "${RUNTIME[@]}"; do
   [ -f "$ROOT/$name" ] || { printf 'Missing installer source: %s\n' "$name" >&2; exit 1; }
 done

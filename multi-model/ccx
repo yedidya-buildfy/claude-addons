@@ -49,6 +49,7 @@ ccx — Claude Code on your other subscriptions
   ccx --list --all           every model the proxy reaches, hidden ones marked
   ccx --refresh              re-apply the current-generation filter
   ccx --agents               rewrite the per-provider subagents
+  ccx council "<question>"   several models plan together on one board
   ccx --login [PROVIDER]     OAuth sign-in. PROVIDER: claude codex xai
                              antigravity kimi. Omit to be asked for each.
   ccx --logout PROVIDER      forget that provider's sign-in, so the next
@@ -214,6 +215,7 @@ while [ $# -gt 0 ]; do
     --all)     LIST_ARGS+=(--all); shift ;;
     --refresh) CMD=refresh; shift ;;
     --agents)  CMD=agents; shift ;;
+    council)   CMD=council; shift; COUNCIL_ARGS=("$@"); break ;;
     --status)  CMD=status; shift ;;
     update|--update) CMD=update; shift ;;
     --restart) CMD=restart; shift ;;
@@ -265,6 +267,9 @@ case "$CMD" in
   refresh)
     require_key || exit 1; ensure_proxy || exit 1; refresh_filter
     cyan "filter rebuilt"; models_py list; exit 0 ;;
+  council)
+    require_key || exit 1; ensure_proxy || exit 1
+    exec python3 "$SCRIPT_DIR/ccx-council.py" --base "http://127.0.0.1:$PORT" --key-file "$KEY_FILE" "${COUNCIL_ARGS[@]}" ;;
   agents)
     require_key || exit 1; ensure_proxy || exit 1; write_agents
     cyan "subagents written to $AGENT_DIR"; exit 0 ;;
