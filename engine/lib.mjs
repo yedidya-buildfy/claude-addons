@@ -97,6 +97,24 @@ export function migrateConfig(manifests, P) {
   return cfg;
 }
 
+// engine/defaults.json is pushed to every machine ONCE per version: it overwrites
+// that machine's choices a single time, and from then on the machine's own
+// choices rule (the version it adopted is recorded in its config).
+export function adoptDefaults(manifests, cfg, P) {
+  const text = readText(path.join(P.repo, "engine", "defaults.json"));
+  if (!text) return false;
+  const d = JSON.parse(text);
+  if ((cfg.defaultsVersion ?? 0) >= d.version) return false;
+  for (const m of manifests) {
+    if (m.required || !(m.id in d.enabled)) continue;
+    const v = d.enabled[m.id];
+    cfg.enabled[m.id] = v === "if-installed" ? detect(m.detect, P) : !!v;
+  }
+  for (const [id, vals] of Object.entries(d.settings || {})) Object.assign((cfg.settings[id] ??= {}), vals);
+  cfg.defaultsVersion = d.version;
+  return true;
+}
+
 export function resolve(manifests, cfg, P) {
   const enabled = {};
   const values = {};

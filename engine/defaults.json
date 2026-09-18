@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "note": "Pushed once to every machine; after that each machine keeps its own choices.",
+  "enabled": {
+    "tab-status": true,
+    "skill-tab-name": true,
+    "skill-design-in-browser": true,
+    "skill-conversation-summary": true,
+    "skill-explain-problem": true,
+    "statusline-gsd": true,
+    "fable-plan": true,
+    "sticky-prompt": true,
+    "multi-model": "if-installed",
+    "phone-alerts": false,
+    "agent-locks": true,
+    "auto-claude": true
+  },
+  "settings": {
+    "auto-claude": {
+      "skipPermissions": true
+    },
+    "multi-model": {
+      "claudeViaCcx": false
+    },
+    "skill-tab-name": {
+      "claudeMd": true
+    }
+  }
+}

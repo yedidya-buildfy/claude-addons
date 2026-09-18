@@ -257,3 +257,16 @@ test("a user's line touching an old add-on paragraph is never removed", () => {
   assert.match(text, /sticky-claude/);
   assert.doesNotMatch(text, /fplan/);            // pure add-on paragraph: removed
 });
+
+test("shared defaults are adopted once, then the machine's own choices rule", async () => {
+  const { adoptDefaults } = await import("../lib.mjs");
+  const { P } = sandbox();
+  const cfg = { version: 1, enabled: { "auto-claude": false, "phone-alerts": true }, settings: {} };
+  assert.equal(adoptDefaults(manifests, cfg, P), true);
+  assert.equal(cfg.enabled["auto-claude"], true);
+  assert.equal(cfg.enabled["phone-alerts"], false);
+  assert.equal(cfg.enabled["multi-model"], false);          // "if-installed": ccx is not on this machine
+  cfg.enabled["auto-claude"] = false;                        // the owner switches it off
+  assert.equal(adoptDefaults(manifests, cfg, P), false);
+  assert.equal(cfg.enabled["auto-claude"], false);           // and it stays off
+});

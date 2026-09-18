@@ -8,12 +8,16 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { execSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { paths, loadManifests, loadConfig, migrateConfig, apply, status, withLock } from "./lib.mjs";
+import { paths, loadManifests, loadConfig, migrateConfig, adoptDefaults, apply, status, withLock } from "./lib.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const P = paths(process.env.HOME, repo);
 const manifests = loadManifests(repo);
-const config = () => loadConfig(P) ?? migrateConfig(manifests, P);
+const config = () => {
+  const cfg = loadConfig(P) ?? migrateConfig(manifests, P);
+  adoptDefaults(manifests, cfg, P);
+  return cfg;
+};
 
 const HELP = `addons                      open the settings page in the browser
 addons apply [--dry-run]    make this machine match the saved choices
