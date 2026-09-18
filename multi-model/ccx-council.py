@@ -12,9 +12,11 @@ import json
 import locale
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -381,14 +383,56 @@ def open_board(path):
     subprocess.Popen(opener, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+SPLIT_REQUESTS = os.path.expanduser("~/.claude/terminal-state/split-requests")
+
+
+def split(question, board, requests=SPLIT_REQUESTS, run=subprocess.run, wait=3.0):
+    """Open the wizard in a pane next to the calling session; it needs a real
+    keyboard, which a command run by Claude never has. tmux if we are inside it,
+    else ask the VS Code extension (it splits the terminal that owns our process),
+    else a plain Terminal window. Returns where it opened."""
+    cmd = shlex.join(["ccx", "council", "--board", board, question])
+    cwd = os.getcwd()
+    if os.environ.get("TMUX"):
+        run(["tmux", "split-window", "-h", "-c", cwd, cmd + "; exec $SHELL"], check=True)
+        return "tmux"
+    os.makedirs(requests, exist_ok=True)
+    req = os.path.join(requests, f"{os.getpid()}.json")
+    with open(req + ".tmp", "w") as f:
+        json.dump({"pid": os.getpid(), "cwd": cwd, "command": cmd, "name": "council"}, f)
+    os.replace(req + ".tmp", req)          # the watcher only ever sees a whole file
+    end = time.time() + wait
+    while time.time() < end:
+        if not os.path.exists(req):
+            return "vscode"
+        time.sleep(0.1)
+    try:
+        os.remove(req)
+    except FileNotFoundError:
+        return "vscode"                    # claimed at the last moment
+    script = "cd " + shlex.quote(cwd) + "; " + cmd
+    # the command travels as an argument, so quotes and Hebrew need no AppleScript escaping
+    run(["osascript", "-e", "on run argv", "-e", 'tell application "Terminal" to do script (item 1 of argv)',
+         "-e", 'tell application "Terminal" to activate', "-e", "end run", script], check=True)
+    return "terminal"
+
+
 def main():
     ap = argparse.ArgumentParser(prog="ccx council", description="Several models plan together on one board.")
     ap.add_argument("question", nargs="+")
     ap.add_argument("--base", default="http://127.0.0.1:8317")
     ap.add_argument("--key-file", default=os.path.expanduser("~/.cli-proxy-api/local-key"))
     ap.add_argument("--no-open", action="store_true", help="do not open the board in the editor")
+    ap.add_argument("--board", help="board file to write (default: ./council/<time>-<slug>.md)")
+    ap.add_argument("--split", action="store_true",
+                    help="open the wizard in a pane next to this session and print the board path")
     a = ap.parse_args()
     question = " ".join(a.question)
+    root = os.getcwd()
+    board = os.path.abspath(a.board or os.path.join(root, core.board_path(datetime.datetime.now(), question)))
+    if a.split:
+        print(f"opened in {split(question, board)} · board: {board}")
+        return 0
     with open(a.key_file) as f:
         key = f.read().strip()
     locale.setlocale(locale.LC_ALL, "")
@@ -398,10 +442,12 @@ def main():
     estimate = lambda w: core.worst_case(
         [(price_of(s["id"]), core.EFFORTS.index(s["effort"])) for s in w.config()["seats"]], w.rounds, w.steps)
     if run_wizard(wizard, question, price_of, estimate) != "start":
+        if a.board:                             # whoever waits on this file learns it will not come
+            os.makedirs(os.path.dirname(board), exist_ok=True)
+            with open(board, "a") as f:
+                f.write(f"# Council — {question}\n\n## Cancelled\n\nThe wizard was closed before the meeting started.\n")
         return 1
     save_state(STATE, wizard.saved())
-    root = os.getcwd()
-    board = os.path.join(root, core.board_path(datetime.datetime.now(), question))
     meeting = Meeting(wizard.config(), question, make_post(a.base, key), prices, root, board,
                       log=lambda line: print("  " + line, file=sys.stderr))
     print(f"board: {os.path.relpath(board)}", file=sys.stderr)

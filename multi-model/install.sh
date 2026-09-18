@@ -119,6 +119,12 @@ for name in "${RUNTIME[@]}"; do
 done
 install_link
 
+# /council inside a session: same skill for plain claude and for ccx.
+for profile in "$HOME/.claude" "$HOME/.claude-ccx"; do
+  [ -d "$profile" ] || continue
+  install_file "$ROOT/skills/council/SKILL.md" "$profile/skills/council/SKILL.md" "home/${profile#"$HOME"/}/skills/council/SKILL.md" 644
+done
+
 if [ -f "$ROOT/../auto-update/claude-addons-update.sh" ]; then
   install_file "$ROOT/../auto-update/claude-addons-update.sh" "$CLAUDE_SCRIPTS/claude-addons-update.sh" "home/.claude/scripts/claude-addons-update.sh" 755
   mkdir -p "$HOME/.claude"

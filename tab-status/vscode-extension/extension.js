@@ -13,6 +13,7 @@ const SCRIPTS = path.join(os.homedir(), ".claude", "scripts");
 const STATE = path.join(os.homedir(), ".claude", "terminal-state");
 const LOG = path.join(STATE, "rename-debug.log");
 const SAFE = /^[A-Za-z0-9_-]+$/;
+const SPLIT_REQUESTS = path.join(STATE, "split-requests");
 
 function log(line) {
   // ponytail: unbounded debug log, kept while the tty resolution is under watch.
@@ -140,9 +141,73 @@ function watchForUpdates(context) {
   context.subscriptions.push({ dispose: () => fs.unwatchFile(self) });
 }
 
+// `ccx council --split` needs a keyboard, which a command Claude runs never has.
+// It drops {pid, cwd, command} into SPLIT_REQUESTS; the window whose terminal is
+// an ancestor of that pid splits that terminal and runs the command there. Every
+// window watches, only the owner acts, and the rename makes the claim atomic.
+function ancestors(pid) {
+  const parent = new Map();
+  for (const row of ps(["-eo", "pid=,ppid="]).split("\n")) {
+    const [p, pp] = row.trim().split(/\s+/);
+    if (p) parent.set(p, pp);
+  }
+  const out = new Set();
+  for (let cur = String(pid); cur && cur !== "0" && cur !== "1" && !out.has(cur); cur = parent.get(cur)) {
+    out.add(cur);
+  }
+  return out;
+}
+
+async function ownerOf(pid) {
+  const up = ancestors(pid);
+  for (const terminal of vscode.window.terminals) {
+    const shell = await terminal.processId;
+    if (shell && up.has(String(shell))) return terminal;
+  }
+  return null;
+}
+
+async function splitRequest(name) {
+  if (!name || !name.endsWith(".json")) return;
+  const file = path.join(SPLIT_REQUESTS, name);
+  let request;
+  try {
+    request = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return;
+  }
+  const owner = await ownerOf(request.pid);
+  if (!owner) return;
+  try {
+    fs.renameSync(file, file + ".taken");   // another window may have won the race
+  } catch {
+    return;
+  }
+  fs.rmSync(file + ".taken", { force: true });
+  const pane = vscode.window.createTerminal({
+    name: request.name || "council",
+    cwd: request.cwd,
+    location: { parentTerminal: owner },
+  });
+  pane.show(false);
+  pane.sendText(request.command);
+  log(`split pid=${request.pid} -> ${request.command}`);
+}
+
+function watchSplitRequests(context) {
+  try {
+    fs.mkdirSync(SPLIT_REQUESTS, { recursive: true });
+    const watcher = fs.watch(SPLIT_REQUESTS, (_event, name) => splitRequest(name));
+    context.subscriptions.push({ dispose: () => watcher.close() });
+  } catch (e) {
+    log(`split watcher failed: ${e.message}`);
+  }
+}
+
 function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand("claudeTab.rename", rename));
   watchForUpdates(context);
+  watchSplitRequests(context);
 }
 
 module.exports = { activate, deactivate() {} };

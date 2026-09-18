@@ -1,13 +1,14 @@
 {
   "name": "claude-tab-rename",
   "displayName": "Claude Tab Rename",
-  "description": "Rename a terminal tab without freezing its status dot.",
-  "version": "1.0.0",
+  "description": "Rename a terminal tab without freezing its status dot; open `ccx council` in a split next to the session.",
+  "version": "1.1.0",
   "publisher": "claude-addons",
   "license": "MIT",
   "engines": { "vscode": "^1.80.0" },
   "categories": ["Other"],
   "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
   "contributes": {
     "commands": [
       {

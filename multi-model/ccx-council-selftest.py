@@ -5,6 +5,7 @@ import importlib.util
 import os
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
@@ -287,6 +288,48 @@ def test_meeting_budget_and_anon():
     assert "discussion ended: budget spent" in board and "from the reserve" in board
     assert "DEAR" not in board.split("## Who was who")[0]       # names hidden until the end
     assert "- A = DEAR · high" in board
+
+
+def test_split_falls_back_when_nobody_claims():
+    with tempfile.TemporaryDirectory() as d:
+        ran = []
+        env = os.environ.pop("TMUX", None)
+        try:
+            where = council.split("Q it's?", "/tmp/b.md", requests=d, run=lambda a, **k: ran.append(a), wait=0.2)
+        finally:
+            if env is not None:
+                os.environ["TMUX"] = env
+        assert where == "terminal" and ran[0][0] == "osascript" and os.listdir(d) == []
+        assert ran[0][-1].endswith("ccx council --board /tmp/b.md 'Q it'\"'\"'s?'")
+
+
+def test_split_uses_tmux_inside_tmux():
+    ran = []
+    os.environ["TMUX"] = "/tmp/fake,1,0"
+    try:
+        assert council.split("Q", "/tmp/b.md", run=lambda a, **k: ran.append(a)) == "tmux"
+    finally:
+        del os.environ["TMUX"]
+    assert ran[0][:3] == ["tmux", "split-window", "-h"]
+
+
+def test_split_claimed_by_editor():
+    import threading
+    with tempfile.TemporaryDirectory() as d:
+        def claim():                                   # stands in for the VS Code extension
+            for _ in range(50):
+                for f in os.listdir(d):
+                    if f.endswith(".json"):
+                        os.remove(os.path.join(d, f))
+                        return
+                time.sleep(0.02)
+        threading.Thread(target=claim).start()
+        env = os.environ.pop("TMUX", None)
+        try:
+            assert council.split("Q", "/tmp/b.md", requests=d, run=lambda *a, **k: 1 / 0, wait=2) == "vscode"
+        finally:
+            if env is not None:
+                os.environ["TMUX"] = env
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
