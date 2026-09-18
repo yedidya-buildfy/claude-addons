@@ -384,6 +384,7 @@ def open_board(path):
 
 
 SPLIT_REQUESTS = os.path.expanduser("~/.claude/terminal-state/split-requests")
+AUTOSTART_SKIP = os.path.expanduser("~/.claude/terminal-state/autostart-skip-once")
 
 
 def split(question, board, requests=SPLIT_REQUESTS, run=subprocess.run, wait=3.0):
@@ -394,7 +395,7 @@ def split(question, board, requests=SPLIT_REQUESTS, run=subprocess.run, wait=3.0
     cmd = shlex.join(["ccx", "council", "--board", board, question])
     cwd = os.getcwd()
     if os.environ.get("TMUX"):
-        run(["tmux", "split-window", "-h", "-c", cwd, cmd + "; exec $SHELL"], check=True)
+        run(["tmux", "split-window", "-h", "-c", cwd, cmd + "; printf 'press Enter to close '; read _"], check=True)
         return "tmux"
     os.makedirs(requests, exist_ok=True)
     req = os.path.join(requests, f"{os.getpid()}.json")
@@ -411,6 +412,8 @@ def split(question, board, requests=SPLIT_REQUESTS, run=subprocess.run, wait=3.0
     except FileNotFoundError:
         return "vscode"                    # claimed at the last moment
     script = "cd " + shlex.quote(cwd) + "; " + cmd
+    # a new Terminal shell would auto-start Claude and swallow the command; auto-claude skips once on this file
+    open(AUTOSTART_SKIP, "w").close()
     # the command travels as an argument, so quotes and Hebrew need no AppleScript escaping
     run(["osascript", "-e", "on run argv", "-e", 'tell application "Terminal" to do script (item 1 of argv)',
          "-e", 'tell application "Terminal" to activate', "-e", "end run", script], check=True)

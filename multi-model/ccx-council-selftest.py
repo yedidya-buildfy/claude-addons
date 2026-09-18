@@ -294,12 +294,13 @@ def test_split_falls_back_when_nobody_claims():
     with tempfile.TemporaryDirectory() as d:
         ran = []
         env = os.environ.pop("TMUX", None)
+        council.AUTOSTART_SKIP = os.path.join(d, "skip")
         try:
             where = council.split("Q it's?", "/tmp/b.md", requests=d, run=lambda a, **k: ran.append(a), wait=0.2)
         finally:
             if env is not None:
                 os.environ["TMUX"] = env
-        assert where == "terminal" and ran[0][0] == "osascript" and os.listdir(d) == []
+        assert where == "terminal" and ran[0][0] == "osascript" and os.listdir(d) == ["skip"]
         assert ran[0][-1].endswith("ccx council --board /tmp/b.md 'Q it'\"'\"'s?'")
 
 

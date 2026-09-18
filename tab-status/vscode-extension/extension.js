@@ -187,6 +187,7 @@ async function splitRequest(name) {
   const pane = vscode.window.createTerminal({
     name: request.name || "council",
     cwd: request.cwd,
+    env: { CLAUDE_AUTOSTART_OFF: "1" },     // auto-claude would start Claude here and swallow the command
     location: { parentTerminal: owner },
   });
   pane.show(false);

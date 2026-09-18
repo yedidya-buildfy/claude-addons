@@ -123,6 +123,7 @@ install_link
 for profile in "$HOME/.claude" "$HOME/.claude-ccx"; do
   [ -d "$profile" ] || continue
   install_file "$ROOT/skills/council/SKILL.md" "$profile/skills/council/SKILL.md" "home/${profile#"$HOME"/}/skills/council/SKILL.md" 644
+  install_file "$ROOT/skills/מועצה/SKILL.md" "$profile/skills/מועצה/SKILL.md" "home/${profile#"$HOME"/}/skills/מועצה/SKILL.md" 644
 done
 
 if [ -f "$ROOT/../auto-update/claude-addons-update.sh" ]; then

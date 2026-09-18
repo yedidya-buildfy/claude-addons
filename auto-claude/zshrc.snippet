@@ -5,6 +5,11 @@
 # Skipped for: non-interactive shells, `zsh -c`, shells Claude itself spawns,
 # VS Code's background environment probe, SSH logins, and nested shells.
 # One terminal without it: CLAUDE_AUTOSTART_OFF=1 zsh
+# `ccx council` opening a Terminal window asks for one skip with a marker file.
+if [[ -o interactive && -e "$HOME/.claude/terminal-state/autostart-skip-once" ]]; then
+  rm -f "$HOME/.claude/terminal-state/autostart-skip-once"
+  export CLAUDE_AUTOSTART_OFF=1
+fi
 if [[ -o interactive && -t 0 && -t 1 && -z "$ZSH_EXECUTION_STRING" \
       && -z "$CLAUDECODE" && -z "$CLAUDE_AUTOSTARTED" && -z "$CLAUDE_AUTOSTART_OFF" \
       && -z "$VSCODE_RESOLVING_ENVIRONMENT" && -z "$SSH_CONNECTION" ]]; then
