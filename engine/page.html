@@ -68,6 +68,28 @@
   #result { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin-top: 20px; display: none; }
   #result pre { white-space: pre-wrap; margin: 8px 0 0; direction: ltr; text-align: left; font: 13px/1.6 ui-monospace, Menlo, monospace; color: var(--muted); }
   .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .kinds { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .kind { font-size: 12px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 0 7px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 -18px; padding: 0 14px; overflow-x: auto; }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 7px 10px; color: var(--muted); white-space: nowrap; font-size: 14px; }
+  .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .pane { padding-top: 12px; display: grid; gap: 14px; }
+  table.legend { border-collapse: collapse; width: 100%; }
+  table.legend td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.legend td:first-child { width: 36px; font-size: 18px; text-align: center; }
+  .doc { font-size: 14px; line-height: 1.7; max-height: 560px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px 16px; }
+  .doc h1 { font-size: 19px; } .doc h2 { font-size: 16px; color: var(--ink); margin: 18px 0 6px; } .doc h3 { font-size: 14px; color: var(--ink); }
+  .doc pre { background: var(--bg); border-radius: 8px; padding: 10px 12px; overflow-x: auto; direction: ltr; text-align: left; font: 12.5px/1.55 ui-monospace, Menlo, monospace; }
+  .doc code { font: 12.5px ui-monospace, Menlo, monospace; background: var(--bg); border-radius: 4px; padding: 0 4px; direction: ltr; unicode-bidi: isolate; }
+  .doc pre code { background: none; padding: 0; }
+  .doc table { border-collapse: collapse; margin: 8px 0; } .doc th, .doc td { border: 1px solid var(--line); padding: 4px 8px; text-align: start; }
+  .doc blockquote { margin: 8px 0; padding: 2px 12px; border-inline-start: 3px solid var(--line); color: var(--muted); }
+  .doc :is(p, li, h1, h2, h3, h4, td, th, blockquote) { unicode-bidi: plaintext; text-align: start; }
+  .front { background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; margin: 10px 0; font-size: 13.5px; }
+  .front b { display: block; color: var(--accent); font-size: 12px; margin-bottom: 2px; }
+  .docbar { display: flex; gap: 10px; align-items: center; color: var(--faint); font-size: 13px; flex-wrap: wrap; }
+  .files li { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 4px 0; }
+  button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -87,8 +109,8 @@
 <script>
 const T = "__TOKEN__";
 const GROUPS = ["טרמינל", "קלוד", "סקילים", "התראות", "מערכת", "אחר"];
-const api = async (p, body) => {
-  const r = await fetch(p + "?t=" + T, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
+const api = async (p, body, query = {}) => {
+  const r = await fetch(p + "?" + new URLSearchParams({ t: T, ...query }), body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
@@ -119,6 +141,7 @@ function card(a, byId, changed) {
           ${needs.length ? `<span class="tag">צריך: ${esc(needs.join(", "))}</span>` : ""}
           ${changed.has(a.id) ? '<span class="tag pending">לא נשמר</span>' : ""}</div>
         <div class="summary">${code(a.summary)}</div>
+        ${a.kinds.length ? `<div class="kinds">${a.kinds.map((k) => `<span class="kind">${esc(k)}</span>`).join("")}</div>` : ""}
         ${a.drift.length ? `<div class="drift">⚠ שונה ידנית או חסר: <span class="ltr">${esc(a.drift.join(", "))}</span></div>` : ""}
       </div>
       ${a.required ? "" : `<span class="switch"><input type="checkbox" aria-label="${esc(a.title)}" data-on="${a.id}" ${d.on ? "checked" : ""}><span></span></span>`}
@@ -126,13 +149,62 @@ function card(a, byId, changed) {
     ${settings}
     <details data-id="${a.id}" ${open.has(a.id) ? "open" : ""}>
       <summary>פרטים</summary>
-      <div class="more">
-        <div><h3>מה זה עושה</h3><ul>${a.details.map((x) => `<li>${code(x)}</li>`).join("")}</ul></div>
-        ${a.howToCheck ? `<div class="check"><h3>איך לבדוק שזה עובד</h3>${code(a.howToCheck)}</div>` : ""}
-        <div class="touch"><h3>מה זה משנה במחשב</h3><ul>${a.touches.map((x) => `<li>${code(x)}</li>`).join("")}</ul></div>
-      </div>
+      <div class="more">${panel(a)}</div>
     </details>
   </section>`;
+}
+
+// the inside of "פרטים": an overview, then each readable document, then the files
+const tab = {}, docCache = {};
+function panel(a) {
+  const tabs = [["overview", "סקירה"], ...a.docs.map((d) => [d.id, d.label]), ["files", "קבצים"]];
+  const cur = tab[a.id] || "overview";
+  let body;
+  if (cur === "overview") {
+    body = `<div><h3>מה זה עושה</h3><ul>${a.details.map((x) => `<li>${code(x)}</li>`).join("")}</ul></div>
+      ${a.legend.length ? `<div><h3>מקרא</h3><table class="legend">${a.legend.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${code(v)}</td></tr>`).join("")}</table></div>` : ""}
+      ${a.howToCheck ? `<div class="check"><h3>איך לבדוק שזה עובד</h3>${code(a.howToCheck)}</div>` : ""}`;
+  } else if (cur === "files") {
+    body = `<div class="touch"><h3>מה זה משנה במחשב</h3><ul>${a.touches.filter((t) => !t.startsWith("קובץ ")).map((x) => `<li>${code(x)}</li>`).join("") || "<li>רק את הקבצים שלמטה</li>"}</ul></div>
+      ${a.files.length ? `<div><h3>קבצים שהוא מתקין</h3><ul class="files">${a.files.map((f) => `<li><span class="ltr">${esc(f.to)}</span>${f.installed ? `<button class="link" data-open="${a.id}" data-file="${f.i}">פתח</button>` : `<span class="tag">לא מותקן</span>`}</li>`).join("")}</ul></div>` : ""}`;
+  } else {
+    const d = docCache[a.id + "|" + cur];
+    body = d ? `<div class="docbar">קובץ: <span class="ltr">${esc(d.path)}</span><button class="link" data-open="${a.id}" data-doc="${esc(cur)}">פתח בעורך</button></div><div class="doc">${md(d.text)}</div>` : "טוען…";
+    if (!d) api(`/api/doc`, null, { addon: a.id, doc: cur }).then((r) => { docCache[a.id + "|" + cur] = r; render(); }).catch((e) => { docCache[a.id + "|" + cur] = { text: e.message, path: "" }; render(); });
+  }
+  return `<div class="tabs">${tabs.map(([id, l]) => `<button data-tab="${a.id}" data-t="${esc(id)}" class="${id === cur ? "on" : ""}">${esc(l)}</button>`).join("")}</div><div class="pane">${body}</div>`;
+}
+
+// just enough markdown for the add-on docs: headings, lists, tables, code, quotes, emphasis
+function md(src) {
+  const inline = (t) => esc(t).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>").replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, l, u) => /^https?:/.test(u) ? `<a href="${u}" target="_blank" rel="noopener">${l}</a>` : l);
+  const out = [];
+  // a skill's header: its name and the description Claude uses to decide when to fire it
+  const fm = src.match(/^---\n([\s\S]*?)\n---\n/);
+  if (fm) {
+    src = src.slice(fm[0].length);
+    const get = (k) => (fm[1].match(new RegExp(`^${k}:\\s*([\\s\\S]*?)(?=\\n[\\w-]+:|$)`, "m")) || [])[1]?.trim();
+    const desc = get("description"), when = get("when_to_use");
+    if (desc) out.push(`<div class="front"><b>מתי קלוד מפעיל אותו (לפי התיאור שלו)</b><p>${inline(desc)}${when ? " " + inline(when) : ""}</p></div>`);
+  }
+  const lines = src.replace(/^<\/?div[^>]*>\s*$/gm, "").split("\n");
+  for (let i = 0; i < lines.length;) {
+    const l = lines[i];
+    if (/^```/.test(l)) { const buf = []; i++; while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]); i++; out.push(`<pre><code>${esc(buf.join("\n"))}</code></pre>`); continue; }
+    const h = l.match(/^(#{1,4}) (.*)/); if (h) { out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+    if (/^\|/.test(l)) { const rows = []; while (i < lines.length && /^\|/.test(lines[i])) rows.push(lines[i++]);
+      const cells = (r) => r.replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+      out.push(`<table>${rows.filter((r) => !/^\|[\s:|-]+\|$/.test(r)).map((r, n) => `<tr>${cells(r).map((c) => n ? `<td>${inline(c)}</td>` : `<th>${inline(c)}</th>`).join("")}</tr>`).join("")}</table>`); continue; }
+    if (/^\s*([-*]|\d+\.) /.test(l)) { const tag = /^\s*\d/.test(l) ? "ol" : "ul"; const items = [];
+      while (i < lines.length && /^\s*([-*]|\d+\.) /.test(lines[i])) { let it = lines[i++].replace(/^\s*([-*]|\d+\.) /, ""); while (i < lines.length && /^\s{2,}\S/.test(lines[i]) && !/^\s*([-*]|\d+\.) /.test(lines[i])) it += " " + lines[i++].trim(); items.push(`<li>${inline(it)}</li>`); }
+      out.push(`<${tag}>${items.join("")}</${tag}>`); continue; }
+    if (/^> /.test(l)) { const buf = []; while (i < lines.length && /^> ?/.test(lines[i])) buf.push(lines[i++].replace(/^> ?/, "")); out.push(`<blockquote>${inline(buf.join(" "))}</blockquote>`); continue; }
+    if (!l.trim() || /^---+$/.test(l)) { i++; continue; }
+    const buf = []; while (i < lines.length && lines[i].trim() && !/^(#|```|\||>|\s*([-*]|\d+\.) )/.test(lines[i])) buf.push(lines[i++]);
+    out.push(`<p>${inline(buf.join(" "))}</p>`);
+  }
+  return out.join("");
 }
 
 function render() {
@@ -164,7 +236,14 @@ document.addEventListener("change", (e) => {
   cancelConfirm(); render();
 });
 document.addEventListener("click", async (e) => {
-  const act = e.target.dataset?.action;
+  const ds = e.target.dataset || {};
+  if (ds.tab) { tab[ds.tab] = ds.t; render(); return; }
+  if (ds.open) {
+    try { await api("/api/open", ds.doc ? { addon: ds.open, doc: ds.doc } : { addon: ds.open, file: Number(ds.file) }); e.target.textContent = "נפתח ✓"; }
+    catch (err) { e.target.textContent = err.message; }
+    return;
+  }
+  const act = ds.action;
   if (!act) return;
   const [addon, action] = act.split(":");
   const out = document.querySelector(`[data-out="${act}"]`);

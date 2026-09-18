@@ -98,6 +98,8 @@ function serve() {
     return manifests.map((m) => ({
       id: m.id, title: m.title, summary: m.summary, required: !!m.required, requires: m.requires || [],
       group: m.group || "אחר", details: m.details || [], howToCheck: m.howToCheck || "", touches: touches(m),
+      legend: m.legend || [], kinds: kinds(m), docs: docs(m).map(({ id, label }) => ({ id, label })),
+      files: (m.files || []).map((f, i) => ({ i, to: f.to, installed: fs.existsSync(f.to.replace("~", P.home)) })),
       on: st[m.id].on, drift: [...st[m.id].missing, ...st[m.id].edited].map((f) => f.replace(P.home, "~")),
       settings: m.settings.map((s) => ({
         key: s.key, label: s.label, type: s.type,
@@ -116,6 +118,26 @@ function serve() {
     ...(m.claudeMd ? ["תזכורת בקובץ ההוראות הכללי של קלוד (רק אם סימנת)"] : []),
     ...(m.run ? [`מריץ את ההתקנה של התוסף (${m.run.when === "always" ? "בכל עדכון" : "רק כשהוא השתנה"})`] : []),
   ];
+
+  // what kind of thing this add-on is, in words
+  const kinds = (m) => {
+    const k = [];
+    if ((m.files || []).some((f) => f.to.includes("/skills/"))) k.push("סקיל");
+    if (m.claudeSettings?.length) k.push(m.id === "statusline-gsd" ? "שורת מצב" : "הוקים בקלוד");
+    if (m.shell) k.push("פקודות בטרמינל");
+    if ((m.files || []).some((f) => f.to.includes(".vscode/extensions"))) k.push("תוסף VS Code");
+    if (m.run?.when === "changed") k.push("תוכנה נפרדת");
+    return k;
+  };
+  // readable documents: the add-on's README, and the text of each skill it installs
+  const docs = (m) => {
+    const out = [];
+    if (fs.existsSync(path.join(m.dir, "README.md"))) out.push({ id: "readme", label: "תיעוד מלא", file: path.join(m.dir, "README.md") });
+    for (const f of m.files || []) {
+      if (f.to.includes("/skills/") && f.from.endsWith(".md")) out.push({ id: `skill:${f.from}`, label: "תוכן הסקיל (מה קלוד קורא)", file: path.join(m.dir, f.from) });
+    }
+    return out;
+  };
 
   const body = (req) => new Promise((ok, bad) => {
     let s = ""; req.on("data", (c) => { s += c; if (s.length > 1e6) req.destroy(); });
@@ -154,6 +176,25 @@ function serve() {
           ran: r.ran, notes: r.notes.map((n) => n.replaceAll(P.home, "~")), backup: r.backup?.replace(P.home, "~"),
           state: b.dryRun ? undefined : state(),
         });
+      }
+      if (req.method === "GET" && url.pathname === "/api/doc") {
+        const m = manifests.find((x) => x.id === url.searchParams.get("addon"));
+        const d = m && docs(m).find((x) => x.id === url.searchParams.get("doc"));
+        if (!d) return send(404, { error: "no such document" });
+        return send(200, { text: fs.readFileSync(d.file, "utf8"), path: d.file.replace(P.home, "~") });
+      }
+      // open a document or an installed file in the editor; only paths the manifest names
+      if (req.method === "POST" && url.pathname === "/api/open") {
+        const b = await body(req);
+        const m = manifests.find((x) => x.id === b.addon);
+        let file = null;
+        if (m && typeof b.doc === "string") file = docs(m).find((x) => x.id === b.doc)?.file;
+        if (m && Number.isInteger(b.file)) file = m.files?.[b.file]?.to.replace("~", P.home);
+        if (!file || !fs.existsSync(file)) return send(404, { error: "הקובץ לא נמצא" });
+        let editor = "open";
+        try { execSync("command -v code", { stdio: "ignore", shell: "/bin/sh" }); editor = "code"; } catch {}
+        spawn(editor, editor === "open" ? ["-t", file] : [file], { stdio: "ignore", detached: true }).unref();
+        return send(200, { ok: true });
       }
       if (req.method === "POST" && url.pathname === "/api/action") {
         const b = await body(req);
