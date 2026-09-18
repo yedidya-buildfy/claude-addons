@@ -38,11 +38,13 @@ err() {
 }
 
 # Rate limit background runs. A fetch is cheap and a push should reach the other
-# machines the same day it happens, so this is minutes, not hours.
+# machines within minutes, so the gap is short. A skipped run is logged, so the
+# log always explains why an update did not happen yet.
 if [ "$FORCE" = 0 ] && [ -f "$STAMP_FILE" ]; then
   now=$(date +%s)
   last=$(stat -f %m "$STAMP_FILE" 2>/dev/null || echo 0)
-  if [ $((now - last)) -lt 900 ]; then
+  if [ $((now - last)) -lt 180 ]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] skipped: checked $((now - last))s ago (every 3 minutes at most)" >> "$LOG_FILE"
     exit 0
   fi
 fi

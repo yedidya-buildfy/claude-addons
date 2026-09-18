@@ -46,7 +46,7 @@ cd claude-addons
 
 ## עדכונים אוטומטיים
 
-בפתיחת סשן קלוד (לכל היותר פעם ברבע שעה) המאגר נמשך ברקע והמנוע מיישם את הבחירות מחדש. עדכון מיידי: `ccx update` או `~/.claude/scripts/claude-addons-update.sh --force`.
+בפתיחת סשן קלוד ובפתיחת טרמינל (לכל היותר פעם ב‑3 דקות) המאגר נמשך ברקע והמנוע מיישם את הבחירות מחדש. עדכון מיידי: `~/.claude/scripts/claude-addons-update.sh --force`. למה עדכון לא הגיע: `tail ~/.claude/cache/addons-update.log`.
 
 ## Bootstrap באמצעות AI
 

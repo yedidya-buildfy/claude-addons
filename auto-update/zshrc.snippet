@@ -3,3 +3,7 @@ case ":$PATH:" in
   *":$HOME/.claude/scripts:"*) ;;
   *) export PATH="$HOME/.claude/scripts:$PATH" ;;
 esac
+
+# Look for add-on updates when a terminal opens too, not only when a Claude
+# session starts (throttled inside the script; silent, in the background).
+[[ -o interactive && -z "$CLAUDECODE" ]] && { "$HOME/.claude/scripts/claude-addons-update.sh" --quiet >/dev/null 2>&1 &! }
