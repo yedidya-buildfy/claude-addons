@@ -80,6 +80,34 @@ odd = BOX.replace(b"first row of the message", b"a;b\\c")
 check("semicolon and backslash escaped in the name",
       b"\x1b]633;E;a\\x3bb\\x5cc second row\a" in sticky.Marker().feed(odd))
 
+# Hebrew keyboard on a slash command: typed key by key, as a terminal sends it
+def typed(keys, names=("מועצה",), fix=None):
+    fix = fix or sticky.SlashFix(names)
+    out = b"".join(fix.feed(k.encode()) for k in keys)
+    # replay the backspaces the way the input box would
+    box = ""
+    for c in out.decode():
+        box = box[:-1] if c == "\x7f" else box + c
+    return box
+
+check("/בךקשר becomes /clear", typed("/בךקשר") == "/clear")
+check("the slash key on Hebrew (a dot) also works", typed(".בךקשר") == "/clear")
+check("dash inside a command", typed("/בםגק-רקהןק'") == "/code-review")
+check("arguments after the command stay Hebrew", typed("/צםגקך שלום") == "/model שלום")
+check("a Hebrew-named command is left alone", typed("/מועצה") == "/מועצה")
+check("leaves the Hebrew name when it stops matching", typed("/מם") == "/no")
+check("an ordinary Hebrew message is untouched", typed("שלום /בךקשר") == "שלום /בךקשר")
+check("a path is untouched", typed("/tmp/קובץ") == "/tmp/קובץ")
+check("a sentence starting with a dot is untouched", typed(". שלום") == ". שלום")
+check("after Enter the next message counts again",
+      typed(["שלום", "\r", "/", "בךקשר"]).endswith("/clear"))
+check("deleting the slash and retyping works",
+      typed(["/", "\x7f", "/", "בךקשר"]) == "/clear")
+check("Esc on an empty box does not break it", typed(["\x1b", "/בךקשר"]) == "\x1b/clear")
+split_fix = sticky.SlashFix()
+check("Hebrew split mid-letter across reads",
+      split_fix.feed(b"/\xd7") + split_fix.feed(b"\x91") == b"/c")
+
 if fail:
     for f in fail:
         print("FAIL:", f)

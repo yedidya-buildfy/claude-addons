@@ -24,6 +24,7 @@ Sticky scroll pins at most `terminal.integrated.stickyScroll.maxLineCount` rows
 (default 5, hard max 10) and never more than 40% of the terminal height, so a
 long message is shown cut with an ellipsis. That is VS Code's cut, not ours.
 """
+import codecs
 import fcntl
 import os
 import pty
@@ -110,6 +111,102 @@ class Marker:
         return held
 
 
+# Hebrew letter -> the English key it sits on (standard Hebrew layout).
+HEB_TO_KEY = dict(zip("קראטוןםפשדגכעיחלךףזסבהנמצתץ'׳/",
+                      "ertyuiopasdfghjkl;zxcvbnm,.wwq"))
+
+
+def hebrew_command_names():
+    """Commands whose own name is Hebrew (e.g. /מועצה) — left in Hebrew."""
+    names = set()
+    for base in (os.path.expanduser("~/.claude"), os.path.join(os.getcwd(), ".claude")):
+        for sub in ("skills", "commands"):
+            try:
+                entries = os.listdir(os.path.join(base, sub))
+            except OSError:
+                continue
+            for name in entries:
+                name = name[:-3] if name.endswith(".md") else name
+                if any("א" <= c <= "ת" for c in name):
+                    names.add(name)
+    return names
+
+
+class SlashFix:
+    """Typing a slash command while the keyboard is still on Hebrew: `/בךקשר`
+    reaches Claude as `/clear`, live, so its command menu matches as you type.
+
+    Only the first word of a message that starts with `/` is touched (or with
+    `.`, which the Hebrew layout puts on the slash key). The input box itself is
+    Claude's, so its state is tracked from the keys alone; after an arrow key
+    the tracking stops guessing until the next Enter.
+    """
+
+    def __init__(self, hebrew_names=()):
+        self.names = tuple(hebrew_names)
+        self.decoder = codecs.getincrementaldecoder("utf-8")("surrogateescape")
+        self.typed = 0      # characters in the input box, as far as we know
+        self.word = None    # original chars after the leading slash, or None
+        self.lead = "/"
+        self.raw = False    # current word sent as typed (a Hebrew command name)
+
+    def feed(self, data):
+        text = self.decoder.decode(data)
+        if "\x1b" in text:
+            if text in ("\x1b[A", "\x1b[B", "\x1bOA", "\x1bOB"):
+                if self.word is None:           # history recall fills the box
+                    self.typed = self.typed or 1
+                return data                     # else: moving in the command menu
+            self.word = None
+            if "\x1b[200~" in text or "\r" in text:   # paste, Alt+Enter
+                self.typed += 1
+            return text.encode("utf-8", "surrogateescape")  # Esc, Shift+Tab: box unchanged
+        return "".join(map(self.key, text)).encode("utf-8", "surrogateescape")
+
+    def key(self, ch):
+        if ch in "\r\n\x03\x15":            # Enter, Ctrl-C, Ctrl-U: box is empty
+            self.typed, self.word = 0, None
+            return ch
+        if ch in "\x7f\x08":
+            if self.word:
+                self.word = self.word[:-1]
+                self.raw = self.is_name(self.word)
+            elif self.word is not None:
+                self.word = None
+            self.typed = max(0, self.typed - 1)
+            return ch
+        self.typed += 1
+        if self.word is None:
+            if self.typed == 1 and ch in "/.":
+                self.word, self.lead, self.raw = "", ch, False
+            return ch
+        if ch not in HEB_TO_KEY:
+            # `-`, `_`, digits are the same on both layouts; anything else
+            # (a space, an English letter, a path) means leave the rest alone
+            if self.lead == "/" and ch in "-_0123456789":
+                self.word += ch
+            else:
+                self.word = None
+            return ch
+        word = self.word + ch
+        fix = ""
+        if self.lead == "." and not self.word:
+            fix, self.lead = "\x7f/", "/"   # `.` was the slash key on Hebrew
+        if self.lead == "/" and self.is_name(word):
+            self.word, self.raw = word, True
+            return fix + ch
+        out = fix + ("\x7f" * len(self.word) + convert(word) if self.raw else convert(ch))
+        self.word, self.raw = word, False
+        return out
+
+    def is_name(self, word):
+        return bool(word) and any(n.startswith(word) for n in self.names)
+
+
+def convert(text):
+    return "".join(HEB_TO_KEY.get(c, c) for c in text)
+
+
 def write_all(fd, data):
     while data:
         try:
@@ -145,6 +242,7 @@ def main():
     stdin_fd = sys.stdin.fileno()
     saved = termios.tcgetattr(stdin_fd)
     marker = Marker()
+    slash = None if os.environ.get("STICKY_HEBREW_SLASH") == "0" else SlashFix(hebrew_command_names())
     try:
         tty.setraw(stdin_fd)
         while True:
@@ -157,7 +255,7 @@ def main():
             if stdin_fd in readable:
                 data = os.read(stdin_fd, 65536)
                 if data:
-                    write_all(fd, data)
+                    write_all(fd, slash.feed(data) if slash else data)
             if fd in readable:
                 try:
                     data = os.read(fd, 65536)
