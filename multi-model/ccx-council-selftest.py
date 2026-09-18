@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""Self-test for ccx council. No network, no real HOME.  ./ccx-council-selftest.py"""
+import datetime
+import importlib.util
+import os
+import sys
+import tempfile
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, HERE)
+import ccx_council_core as core  # noqa: E402
+from ccx_council_wizard import Wizard, load_state, render, save_state  # noqa: E402
+
+spec = importlib.util.spec_from_file_location("council", os.path.join(HERE, "ccx-council.py"))
+council = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(council)
+
+PRICES = {"models": {
+    "cheap": {"in": 1.0, "cached": 0.1, "out": 4.0},
+    "dear": {"in": 5.0, "cached": 0.5, "out": 25.0},
+}}
+
+
+# ---- core ----------------------------------------------------------------
+
+def test_price_and_cost():
+    assert core.price_for(PRICES, "cheap")["unknown"] is False
+    unknown = core.price_for(PRICES, "mystery")
+    assert unknown["unknown"] is True and unknown["out"] == 25.0   # never looks free
+    usage = {"input_tokens": 1000, "cache_creation_input_tokens": 1000,
+             "cache_read_input_tokens": 10000, "output_tokens": 2000}
+    # (2000*1 + 10000*0.1 + 2000*4) / 1e6
+    assert abs(core.call_cost(PRICES["models"]["cheap"], usage) - 0.011) < 1e-12
+    assert core.call_cost(PRICES["models"]["cheap"], {}) == 0
+
+
+def test_money_labels():
+    assert core.usd(0.0123) == "$0.012" and core.usd(1.5) == "$1.50"
+    assert core.budget_label(0) == "unlimited" and core.budget_label(235) == "$2.35"
+    assert core.next_preset(0, 1) == 50 and core.next_preset(235, 1) == 500
+    assert core.next_preset(235, -1) == 200 and core.next_preset(50, -1) == 0
+    assert core.next_preset(1000, 1) == 1000 and core.next_preset(0, -1) == 0
+
+
+def test_ledger():
+    unlimited = core.Ledger(["A", "B"], 0)
+    unlimited.charge("A", 5.0)
+    assert unlimited.left("A") is None and not unlimited.empty("A") and not unlimited.all_empty()
+    led = core.Ledger(["A", "B"], 100)                # $1.00 → seats $0.425, reserve $0.15
+    assert abs(led.seat - 0.425) < 1e-12
+    led.charge("A", 0.5)
+    assert led.left("A") == 0.0 and led.empty("A") and not led.all_empty()
+    led.charge("B", 0.425)
+    assert led.all_empty()
+    led.charge("B", 0.1, reserve=True)
+    assert abs(led.total() - 1.025) < 1e-12        # one call may overshoot: stop signal, not a wall
+
+
+def test_parse_turn():
+    assert core.parse_turn("  PASS — nothing to add") == ("pass", "", False)
+    assert core.parse_turn("more: need the sync log") == ("more", "need the sync log", False)
+    kind, body, trimmed = core.parse_turn("word " * 200)
+    assert kind == "say" and trimmed and len(body.split()) == core.WORD_CAP + 1   # + the "…"
+    assert core.parse_turn("Agree with B.") == ("say", "Agree with B.", False)
+    assert core.parse_turn("PASSIVE voice is fine")[0] == "say"
+
+
+def test_parse_chair_and_grant():
+    assert core.parse_chair("STOP — agreement reached") == (True, "agreement reached")
+    assert core.parse_chair("continue: cache question open") == (False, "cache question open")
+    assert core.parse_chair("hmm")[0] is False            # unclear → go on; rounds cap still guards
+    assert core.parse_grant("GRANT — could change the plan") and not core.parse_grant("DENY")
+
+
+def test_stop_reason():
+    assert core.stop_reason(1, 5, False, False, False) is None
+    assert core.stop_reason(5, 5, False, False, False) == "max rounds"
+    assert core.stop_reason(2, 5, False, True, False) == "chair called it"
+    assert core.stop_reason(2, 5, True, False, False) == "everyone passed"
+    assert core.stop_reason(2, 5, False, False, True) == "budget spent"
+
+
+def test_labels_and_path():
+    assert core.seat_labels(["GPT", "Gemini", "Opus"], True) == ["A", "B", "C"]
+    assert core.seat_labels(["GPT", "Opus"], False) == ["GPT", "Opus"]
+    now = datetime.datetime(2026, 9, 18, 14, 30)
+    assert core.board_path(now, "Why is the Last-minute discount missing?") == \
+        "council/2026-09-18-1430-why-is-the-last-minute-discount.md"
+    assert core.board_path(now, "למה ההנחה לא מגיעה?") == "council/2026-09-18-1430-council.md"
+
+
+def test_board_text():
+    assert core.tag(0.081, 2, 0.005) == " · 2 steps · $0.081 · $0.005 left"
+    assert core.tag(0.5) == " · $0.50"
+    seats = [{"label": "GPT 5.6 Sol", "effort": "xhigh"}, {"label": "Claude Opus 5", "effort": "high"}]
+    cfg = {"rounds": 5, "anon": False, "budget": 100, "steps": 3}
+    led = core.Ledger(["GPT 5.6 Sol", "Claude Opus 5"], 100)
+    head = core.board_header("Q?", seats, ["GPT 5.6 Sol", "Claude Opus 5"], cfg, led)
+    assert "chair Claude Opus 5" in head and "$0.42 a seat" in head and "GPT 5.6 Sol · xhigh" in head
+    anon = core.board_header("Q?", seats, ["A", "B"], dict(cfg, anon=True), led)
+    assert "GPT" not in anon and "chair B" in anon
+    led.charge("GPT 5.6 Sol", 0.2)
+    led.charge("Claude Opus 5", 0.1, reserve=True)
+    spend = core.spend_block(led, "Claude Opus 5")
+    assert "joint plan (Claude Opus 5, reserve): $0.10" in spend and "total $0.30** of $1.00" in spend
+
+
+def test_worst_case():
+    cheap = dict(PRICES["models"]["cheap"], unknown=False)
+    one = core.worst_case([(cheap, 2), (cheap, 2)], 1, 1)
+    more = core.worst_case([(cheap, 2), (cheap, 2)], 5, 3)
+    assert 0 < one < more
+
+
+# ---- wizard ----------------------------------------------------------------
+
+MODELS = [{"id": "opus", "label": "Claude Opus 5"}, {"id": "sol", "label": "GPT 5.6 Sol"},
+          {"id": "pro", "label": "Gemini 3.1 Pro"}]
+
+
+def press(w, *keys):
+    out = None
+    for k in keys:
+        out = w.key(k)
+    return out
+
+
+def test_wizard_flow():
+    w = Wizard(MODELS)
+    assert w.step == 0 and w.effort["opus"] == 2                       # default high
+    press(w, "down", "right", "right", "enter")                         # chair = sol at max
+    assert w.chair == 1 and w.effort["sol"] == 4 and w.step == 1
+    assert w.seated == {0, 1}                                           # first default chair stays seated
+    w.cur = 0
+    press(w, "space", "enter")                                          # unseat opus → only the chair left
+    assert w.step == 1 and "at least 2" in w.note
+    press(w, "space", "left", "enter")                                  # seat opus again at medium
+    assert w.step == 2 and w.effort["opus"] == 1
+    press(w, "esc")
+    assert w.step == 1 and w.cur == 0
+    w.cur = 1
+    press(w, "space")
+    assert 1 in w.seated                                                # the chair can't be unseated
+    press(w, "enter", "right", "down", "right", "down", "right", "down", "left")
+    assert (w.rounds, w.anon, w.budget, w.steps) == (6, True, 50, 2)
+    cfg = w.config()
+    assert [s["id"] for s in cfg["seats"]] == ["opus", "sol"]           # chair last
+    assert cfg["seats"][1]["effort"] == "max"
+    assert press(w, "enter") == "start"
+
+
+def test_wizard_budget_dials():
+    w = Wizard(MODELS)
+    press(w, "enter", "down", "space", "enter")                         # opus chair + sol → settings
+    w.cur = 2
+    press(w, "space", "2", "right", "3", "5")
+    assert w.budget == 235 and w.edit
+    press(w, "enter")
+    assert not w.edit
+    press(w, "7")                                                       # typing opens the dials too
+    assert w.edit and w.budget == 2735                                  # dollars shift in: 2 → 27
+    press(w, "esc", "space", "left", "up")                              # hundredths dial wraps 5 → 6
+    assert w.budget == 2736
+    press(w, "enter", "right")
+    assert w.budget == 2736                                             # no preset above $27.36
+    press(w, "left")
+    assert w.budget == 1000
+
+
+def test_wizard_remembers():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "council.json")
+        assert load_state(path) == {}
+        w = Wizard(MODELS)
+        press(w, "down", "down", "enter", "enter", "right")             # chair pro, opus seated, 6 rounds
+        save_state(path, w.saved())
+        w2 = Wizard(MODELS + [{"id": "new", "label": "New"}], load_state(path))
+        assert w2.chair == 2 and w2.seated == {0, 2} and w2.rounds == 6
+        assert w2.effort["new"] == 2                                    # unseen model → high
+
+
+def text_of(lines):
+    return "\n".join("".join(t for _, t in line) for line in lines)
+
+
+def test_render():
+    w = Wizard(MODELS)
+    price = lambda mid: dict(PRICES["models"]["cheap"], unknown=mid == "pro")
+    shot = text_of(render(w, "Q?", price, lambda w: 1.234))
+    assert "1 chair" in shot and "Claude Opus 5" in shot and "high" in shot and "price ?" in shot
+    press(w, "enter", "down", "space", "enter")
+    w.cur = 2
+    press(w, "space", "2")
+    shot = text_of(render(w, "Q?", price, lambda w: 1.234))
+    assert "$ 2.00" in shot and "worst case ≈ $1.23" in shot
+
+
+# ---- runner ----------------------------------------------------------------
+
+def test_tools_stay_inside():
+    with tempfile.TemporaryDirectory() as root:
+        os.makedirs(os.path.join(root, "src"))
+        with open(os.path.join(root, "src", "a.py"), "w") as f:
+            f.write("x = 1\nsync_window = 2\n")
+        with open(os.path.join(root, "big.txt"), "w") as f:
+            f.write("y" * 30_000)
+        assert council.run_tool(root, "read_file", {"path": "src/a.py"}).startswith("x = 1")
+        assert council.run_tool(root, "list_dir", {"path": "."}) == "big.txt\nsrc/"
+        assert council.run_tool(root, "grep", {"pattern": "sync_"}) == "src/a.py:2: sync_window = 2"
+        assert "outside" in council.run_tool(root, "read_file", {"path": "../../etc/passwd"})
+        assert "outside" in council.run_tool(root, "read_file", {"path": "/etc/passwd"})
+        assert council.run_tool(root, "read_file", {"path": "big.txt"}).endswith("[cut at 20 KB]")
+        assert council.run_tool(root, "shell", {}) == "unknown tool shell"
+        assert council.run_tool(root, "grep", {"pattern": "("}).startswith("error:")
+
+
+def fake_proxy(script):
+    """script: model id -> list of replies for discussion turns; everything else is canned."""
+    calls = []
+
+    def post(model, effort, system, messages, tools=None, max_tokens=16000):
+        calls.append((model, effort, system[:30]))
+        usage = {"input_tokens": 1000, "output_tokens": 200}
+        text = lambda t: {"content": [{"type": "text", "text": t}], "usage": usage}
+        if model == "broken":
+            raise council.CallError("429 usage_limit_reached")
+        if "complete plan" in system:
+            return text(f"1. plan by {model}")
+        if "go on" in system:
+            return text("STOP — agreement on the small fix")
+        if "more look-up time" in system:
+            return text("GRANT — could change the plan")
+        if "discussion is over" in system:
+            return text("1. push discounted nights\n### Still disputed\n- none")
+        last = messages[-1]["content"]
+        if isinstance(last, list) and last and last[0].get("type") == "tool_result":
+            assert "sync_window" in last[0]["content"]
+        reply = script[model].pop(0)
+        if reply == "TOOL":
+            return {"content": [{"type": "tool_use", "id": "t1", "name": "grep",
+                                 "input": {"pattern": "sync_"}}], "usage": usage}
+        return text(reply)
+    return post, calls
+
+
+def run_meeting(seats, script, **cfg):
+    root = tempfile.mkdtemp()
+    with open(os.path.join(root, "a.py"), "w") as f:
+        f.write("sync_window = 2\n")
+    post, calls = fake_proxy(script)
+    conf = {"seats": seats, "rounds": 5, "anon": False, "budget": 0, "steps": 3} | cfg
+    board = os.path.join(root, "council", "b.md")
+    council.Meeting(conf, "Why?", post, PRICES, root, board, log=lambda *_: None).run()
+    return open(board).read(), calls
+
+
+def seat(i, e="high"):
+    return {"id": i, "label": i.upper(), "effort": e}
+
+
+def test_meeting_happy_path():
+    board, calls = run_meeting(
+        [seat("cheap", "low"), seat("dear")],
+        {"cheap": ["TOOL", "Agree with DEAR, it is the sync window."],
+         "dear": ["MORE: need the sync log", "Then the small fix."]})
+    assert "## Plans" in board and "1. plan by cheap" in board and "1. plan by dear" in board
+    assert "### CHEAP · 1 step" in board                        # the grep counted as a step
+    assert "### DEAR asks for more time — need the sync log" in board and "granted" in board
+    assert "discussion ended: chair called it" in board
+    assert "## Joint plan" in board and "### Still disputed" in board and "## Spend" in board
+    assert ("cheap", "low", "You are one of several AI mode") in calls   # effort travels per seat
+
+
+def test_meeting_everyone_passes_and_broken_seat():
+    board, _ = run_meeting([seat("broken"), seat("cheap"), seat("dear")],
+                           {"cheap": ["PASS"], "dear": ["PASS"]})
+    assert "### BROKEN — did not answer" in board
+    assert "discussion ended: everyone passed" in board and "## Joint plan" in board
+
+
+def test_meeting_budget_and_anon():
+    board, calls = run_meeting([seat("dear"), seat("dear"), seat("cheap")], {"cheap": ["y"]},
+                               budget=1, anon=True)
+    # $0.01 → seats of $0.0028: both dear plans ($0.01 each) empty their seats,
+    # cheap (the chair) speaks once and empties its own → budget spent
+    assert "### A passes · seat empty" in board and "### B passes · seat empty" in board
+    assert "discussion ended: budget spent" in board and "from the reserve" in board
+    assert "DEAR" not in board.split("## Who was who")[0]       # names hidden until the end
+    assert "- A = DEAR · high" in board
+
+
+TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+
+if __name__ == "__main__":
+    for t in TESTS:
+        t()
+        print("  ok  ", t.__name__)
+    print("all passed")
