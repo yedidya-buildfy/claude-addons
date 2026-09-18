@@ -1,6 +1,6 @@
 # ccx council — several models plan together on one board — design
 
-Date: 2026-09-18 · Status: awaiting review
+Date: 2026-09-18 · Status: approved (design + browser mockup), architecture revised after probe
 
 ## Why
 
@@ -27,14 +27,14 @@ are short comments or a pass, like people in a room.
 fills live → a joint plan at the bottom of the board.
 
 Non-goals (v1): a browser board, write/edit tools for participants (look-ups
-only — read files, search, run read-only checks), resuming a stopped council, more than one council at a time per
+only — read a file, list a folder, search text; no shell), resuming a stopped council, more than one council at a time per
 folder.
 
 ## Flow
 
 ### 0. Setup screen (terminal, arrow keys) — three-step wizard
 
-Runs before Claude Code starts, so it can be a real TUI (Python `curses`,
+A real TUI (Python `curses`,
 stdlib — ccx already needs python3). Chosen from three browser mockups
 (one table / wizard / round table) on 2026-09-18: the wizard. Chrome is
 English (terminals render mixed Hebrew badly); the question itself stays as typed.
@@ -95,7 +95,7 @@ board under `## Plans`.
 
 Rounds go round-robin in a fixed order (chair last). On its turn a participant
 reads the whole board, may take up to *steps per turn* look-ups (read a file,
-search, run a read-only check — each one is another model call), and ends with
+list a folder, search text — each one is another model call), and ends with
 exactly one of:
 
 - `PASS` — nothing to add; turn goes on.
@@ -133,35 +133,38 @@ max rounds, anonymity, budget, seat size and steps per turn; the board ends
 with `## Spend` — list-price cost per participant and the total. Each message: `### Round 2 · B` (or `· GPT 5.6 Sol`).
 
 The board is the only memory participants share — each turn is a fresh
-subagent call given the board text, so no hidden side channel.
+conversation given the board text, so no hidden side channel.
 
 ## Architecture
 
+**No Claude Code session, no subagents.** A probe on 2026-09-18 called the
+local proxy's Messages endpoint directly and showed everything the council
+needs is there per request:
+
+- effort per request works (`output_config.effort`): Gemini 3.7 Flash, same
+  prompt, `low` → 112 output tokens, `high` → 555;
+- every response carries usage (`input_tokens`, `output_tokens`, and
+  `cache_read_input_tokens` where the provider caches — Grok did);
+- a subscription at its limit answers `429 usage_limit_reached` at once (GPT
+  did during the probe) — handled as "did not answer".
+
+So one Python program talks to the proxy, runs the meeting deterministically
+(stop rules and money are code, not an LLM clerk's judgement) and writes the
+board. Look-ups are three read-only tools the program itself executes, which
+is also how steps per turn are counted and capped.
+
 | Unit | Job | Lives in |
 |---|---|---|
-| `council` subcommand of `ccx` | parse `ccx council "<q>"`, run the setup screen, write the run config, generate per-run agents, start Claude Code with the council prompt | `multi-model/ccx` |
-| setup screen | the curses picker above; reads models from the same source as `--list`, writes `council.json` | `multi-model/ccx-council.py` |
-| per-run agents | one agent file per participant: `council-<n>.md` with that row's `model:` and `effort:`; deleted when the council ends | written into `$CLAUDE_CONFIG_DIR/agents` |
-| council skill | the moderator: runs stages 1–3, writes the board, never takes a side | `multi-model/skills/council/SKILL.md`, installed by the addon |
+| `council` subcommand | `ccx council "<q>"` → ensure proxy + key → run the program | `multi-model/ccx` |
+| core (pure, no I/O) | prices + cost of a call, budget/seats/reserve, turn parsing, stop rules, board text | `multi-model/ccx_council_core.py` |
+| wizard | wizard state (pure) + curses drawing | `multi-model/ccx_council_wizard.py` |
+| runner | proxy client, look-up tools, the meeting loop, board file | `multi-model/ccx-council.py` |
+| price table | one row per model | `multi-model/ccx-council-prices.json` |
+| self-test | core + wizard state, fake proxy for the loop | `multi-model/ccx-council-selftest.py` |
 
-Moderator = the main Claude Code session. It only clerks: dispatches agents,
-appends their output verbatim, applies the stop rules. It does not add opinions
-of its own (the chair may be Claude; the clerk still is not a participant).
-
-Stage 1 runs the participant agents in parallel; stage 2 runs them strictly one
-at a time (each turn must see the previous one).
-
-### Per-model effort — the one real risk
-
-Today's `ask-*` agents carry a fixed `model:` and no effort, and the effort
-chosen in the session is global. Plan: generated per-run agent files put
-`effort:` in their frontmatter. **Unverified** that Claude Code honours
-per-agent effort through the proxy for non-Claude models. First implementation
-task is a spike: one agent at `low`, one at `max`, same prompt, capture what the
-proxy forwards (method from the 8.9.2026 effort measurement). Fallback if
-frontmatter is ignored: the proxy's per-alias level suffix, also unverified.
-If neither works, the effort column ships disabled with a note, rather than
-pretending.
+Model rows come from `ccx-models.py picker` (the `/model` list), minus the
+hybrid "plan → execute" rows; `[1m]` suffixes are stripped for the request.
+Stage 1 runs participants in parallel threads; stage 2 strictly one at a time.
 
 ## Errors
 
@@ -171,8 +174,9 @@ pretending.
   board says so.
 - A turn that is a full new plan or over the cap → trimmed to the cap, board
   marks `(trimmed)`.
-- Ctrl-C → board ends with `## Stopped by owner`; per-run agents are cleaned
-  up on the next `ccx` start if still present.
+- Ctrl-C → board ends with `## Stopped by owner` and `## Spend` so far.
+- A look-up outside the folder the council runs in is refused (resolved path
+  must stay inside it); each look-up result is capped at 20 KB.
 
 ## Price model
 
@@ -190,10 +194,8 @@ weight, and it is what the budget counts.
 - **Cost of one call** = fresh input × input price + cached input × cached
   price + output × output price. Reasoning ("thinking") tokens are billed as
   output — that is where effort shows up in the price.
-- **Where the counts come from** — each call's own reported usage (fresh,
-  cached, output). **Unverified** which layer exposes all three per call: the
-  subagent result, or the proxy (every call passes through it and each response
-  carries usage). Part of the first spike, together with per-agent effort.
+- **Where the counts come from** — each response's own `usage` (verified by
+  the probe). Cache-write tokens, when reported, are priced as fresh input.
 - **Board growth** — every turn re-reads the whole board, so each round costs
   more than the last. Most of that re-read is cached (cheap), which is why the
   cached price matters and why turns stay short.
@@ -219,17 +221,18 @@ Four brakes, weakest first: steps-per-turn cap (default 3) → the seat → the
 chair's granted/denied on `MORE` (once a round) → the overall budget. Plus the
 social one: cost and steps printed on every message.
 
-**Unverified**: whether a subagent's number of tool round-trips can be capped
-from its definition. If not, the clerk enforces it by giving each look-up as
-its own call and counting them.
+The program counts steps itself: every tool round-trip is one step. When the
+steps run out the model is told to answer in text now; a tool call after that
+is treated as `PASS`.
 
 ## Testing
 
 - Self-test for the setup screen's state logic (wizard steps and Esc back,
   toggle, chair move, effort / rounds / budget / steps bounds, ≥2 rule, remembered choices) without a terminal, in the style
   of the existing `ccx-*-selftest.py` files. Never against the real HOME.
-- Self-test that per-run agent files are generated with the right model and
-  effort and removed afterwards.
+- Loop test against a fake proxy (scripted replies): parallel plans land on
+  the board, a tool call is executed and counted, `MORE` goes to the chair,
+  a 429 becomes "did not answer", chair failure hands the chair on.
 - Stop-rule check: a scripted board where all pass → ends; chair says stop →
   ends; rounds cap → ends; all seats empty → chair wraps up from the reserve;
   empty seat can only pass; `MORE` twice in a round → second one refused.
