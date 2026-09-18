@@ -431,6 +431,19 @@ if confirm "Install agent-locks?" "agent-locks"; then
   dim "    it only warns - see who holds what with: node ~/.claude/scripts/agent-locks.mjs list"
 fi
 
+# --- hebrew-guard (always on: a safety check, not an optional extra) ---
+echo
+cyan "[hebrew-guard] keep Hebrew readable in the VS Code terminal"
+mkdir -p "$CLAUDE_DIR/scripts"
+cp "$ROOT/hebrew-guard/hebrew-guard.py" "$CLAUDE_DIR/scripts/hebrew-guard.py"
+chmod +x "$CLAUDE_DIR/scripts/hebrew-guard.py"
+cat "$ROOT/hebrew-guard/settings.json.snippet" | json_merge "$CLAUDE_SETTINGS"
+if [ -f "$HOME/.claude-ccx/settings.json" ]; then
+  cat "$ROOT/hebrew-guard/settings.json.snippet" | json_merge "$HOME/.claude-ccx/settings.json"
+fi
+python3 "$CLAUDE_DIR/scripts/hebrew-guard.py" >/dev/null || true
+green "    every new session checks the terminal drawing mode and right-to-left plugins, and repairs them"
+
 # --- auto-update setup ---
 echo
 cyan "[auto-update] automatic background updates from repository"
