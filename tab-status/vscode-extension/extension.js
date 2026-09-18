@@ -184,14 +184,17 @@ async function splitRequest(name) {
     return;
   }
   fs.rmSync(file + ".taken", { force: true });
+  // Run the command as the pane's own process (`zsh -ic`), never typed into a
+  // shell: auto-claude skips `-c` shells, so Claude can't start here and swallow it.
   const pane = vscode.window.createTerminal({
     name: request.name || "council",
     cwd: request.cwd,
-    env: { CLAUDE_AUTOSTART_OFF: "1" },     // auto-claude would start Claude here and swallow the command
+    shellPath: process.env.SHELL || "/bin/zsh",
+    shellArgs: ["-ic", `${request.command}; printf '\\npress Enter to close '; read _`],
+    env: { CLAUDE_AUTOSTART_OFF: "1" },
     location: { parentTerminal: owner },
   });
   pane.show(false);
-  pane.sendText(request.command);
   log(`split pid=${request.pid} -> ${request.command}`);
 }
 
