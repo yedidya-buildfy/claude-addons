@@ -71,6 +71,10 @@ def test_parse_chair_and_grant():
     assert core.parse_chair("continue: cache question open") == (False, "cache question open")
     assert core.parse_chair("hmm")[0] is False            # unclear → go on; rounds cap still guards
     assert core.parse_grant("GRANT — could change the plan") and not core.parse_grant("DENY")
+    assert core.parse_chair("**STOP**") == (True, "") and core.parse_chair("**STOP** — done")[0]   # seen live
+    assert core.parse_turn("**PASS**")[0] == "pass" and core.parse_critique("**No issues.**")[0] == "ok"
+    assert core.parse_critique("**ISSUE:** no rollback") == ("issue", "no rollback")
+    assert core.parse_review("**CONTINUE**: gap") == (True, "gap")
 
 
 def test_stop_reason():

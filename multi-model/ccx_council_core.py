@@ -81,6 +81,12 @@ class Ledger:
 
 # ---- turns ---------------------------------------------------------------
 
+def _lead(text):
+    """Drop markdown a model wraps its keyword in: '**STOP** — …' reads as 'STOP — …'."""
+    t = re.sub(r"^[\s#>]+", "", text.strip())
+    return re.sub(r"[*_`]", "", t[:40]).lstrip() + t[40:]
+
+
 def _cap(t, cap):
     words = t.split()
     return (" ".join(words[:cap]) + " …", True) if len(words) > cap else (t, False)
@@ -88,7 +94,7 @@ def _cap(t, cap):
 
 def parse_turn(text, cap=WORD_CAP):
     """A discussion turn is PASS, MORE: <reason>, or a short message."""
-    t = text.strip()
+    t = _lead(text)
     if re.match(r"PASS\b", t, re.I):
         return ("pass", "", False)
     m = re.match(r"MORE\s*:\s*(.*)", t, re.I | re.S)
@@ -100,7 +106,7 @@ def parse_turn(text, cap=WORD_CAP):
 def parse_critique(text):
     """Final check on the agreed plan: NO ISSUES, or ISSUE: <what>. Anything
     else counts as an issue, so a vague answer still reaches the chair."""
-    t = text.strip()
+    t = _lead(text)
     if re.match(r"NO ISSUES?\b", t, re.I):
         return ("ok", "")
     m = re.match(r"ISSUES?\s*:\s*(.*)", t, re.I | re.S)
@@ -110,7 +116,7 @@ def parse_critique(text):
 def parse_review(text):
     """Chair after the final check: (True, why) to reopen the discussion, or
     (False, final plan) to finish — an empty plan means keep the draft."""
-    t = text.strip()
+    t = _lead(text)
     m = re.match(r"CONTINUE\b\W*(.*)", t, re.I | re.S)
     if m:
         return (True, m.group(1).strip()[:200])
@@ -118,14 +124,14 @@ def parse_review(text):
 
 
 def parse_chair(text):
-    m = re.match(r"(STOP|CONTINUE)\b\W*(.*)", text.strip(), re.I | re.S)
+    m = re.match(r"(STOP|CONTINUE)\b\W*(.*)", _lead(text), re.I | re.S)
     if not m:
         return (False, text.strip()[:200])
     return (m.group(1).upper() == "STOP", m.group(2).strip()[:200])
 
 
 def parse_grant(text):
-    return bool(re.match(r"GRANT", text.strip(), re.I))
+    return bool(re.match(r"GRANT", _lead(text), re.I))
 
 
 def stop_reason(round_no, max_rounds, all_passed, chair_stop, all_empty):
