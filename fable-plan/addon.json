@@ -1,7 +1,17 @@
 {
-  "id": "fable-plan", "order": 60, "default": false,
+  "id": "fable-plan",
+  "order": 60,
+  "default": false,
   "title": "פייבל מתכנן",
-  "summary": "הפקודה fplan פותחת סשן שבו פייבל מתכנן ואופוס מבצע. לא משנה סשנים רגילים.",
-  "detect": {"shellContains": "alias fplan="},
-  "shell": "zshrc.snippet"
+  "summary": "הפקודה fplan פותחת סשן שבו פייבל מתכנן ומודל אחר מבצע. לא משנה סשנים רגילים.",
+  "detect": {
+    "shellContains": "alias fplan="
+  },
+  "shell": "zshrc.snippet",
+  "group": "קלוד",
+  "details": [
+    "fplan: סשן שבו פייבל מתכנן (במצב תוכנית) ואופוס/סונט מבצעים. תקף רק לסשן הזה; סשנים רגילים לא משתנים.",
+    "fplans: אותו רעיון דרך ccx (צריך את \"מודלים של מנויים אחרים\")."
+  ],
+  "howToCheck": "הקלד fplan בטרמינל חדש."
 }

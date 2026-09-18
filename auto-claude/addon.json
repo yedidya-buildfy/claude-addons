@@ -1,12 +1,30 @@
 {
-  "id": "auto-claude", "order": 999, "default": false,
+  "id": "auto-claude",
+  "order": 999,
+  "default": false,
   "title": "טרמינל נפתח ישר בקלוד",
   "summary": "כל טרמינל חדש נפתח ישר בתוך קלוד. Ctrl-C פעמיים ואתה בטרמינל רגיל.",
-  "detect": {"shellContains": "claude-addons: auto-claude"},
+  "detect": {
+    "shellContains": "claude-addons: auto-claude"
+  },
   "shell": "zshrc.snippet",
   "settings": [
-    {"key": "skipPermissions", "type": "bool", "default": true,
-     "label": "בלי בקשות אישור (מריץ פקודות בלי לשאול)",
-     "render": {"true": " --dangerously-skip-permissions", "false": ""}}
-  ]
+    {
+      "key": "skipPermissions",
+      "type": "bool",
+      "default": true,
+      "label": "בלי בקשות אישור (מריץ פקודות בלי לשאול)",
+      "render": {
+        "true": " --dangerously-skip-permissions",
+        "false": ""
+      }
+    }
+  ],
+  "group": "טרמינל",
+  "details": [
+    "כל טרמינל חדש מריץ לבד את claude, כאילו הקלדת אותו. Ctrl-C פעמיים ואתה בטרמינל רגיל.",
+    "אם \"הפקודה claude עוברת דרך ccx\" דלוק, הטרמינל נפתח ב‑ccx.",
+    "לא נפתח בפקודות שקלוד עצמו מריץ, בחיבור SSH, או בטרמינל בתוך טרמינל."
+  ],
+  "howToCheck": "פתח טרמינל חדש: קלוד עולה לבד."
 }

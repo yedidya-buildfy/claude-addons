@@ -1,7 +1,22 @@
 {
-  "id": "skill-design-in-browser", "order": 30, "default": true,
+  "id": "skill-design-in-browser",
+  "order": 30,
+  "default": true,
   "title": "עיצוב בדפדפן",
   "summary": "קלוד מעצב מסך כדף לדוגמה עם 2–3 גרסאות בדפדפן, ונוגע בקוד רק אחרי שבחרת.",
-  "detect": {"file": "~/.claude/skills/design-in-browser/SKILL.md"},
-  "files": [{"from": "SKILL.md", "to": "~/.claude/skills/design-in-browser/SKILL.md"}]
+  "detect": {
+    "file": "~/.claude/skills/design-in-browser/SKILL.md"
+  },
+  "files": [
+    {
+      "from": "SKILL.md",
+      "to": "~/.claude/skills/design-in-browser/SKILL.md"
+    }
+  ],
+  "group": "סקילים",
+  "details": [
+    "כשאתה מבקש לעצב מסך, קלוד בונה קודם דף לדוגמה עם 2–3 גרסאות בלשוניות בדפדפן.",
+    "רק אחרי שבחרת גרסה הוא מעביר אותה לקוד האמיתי."
+  ],
+  "howToCheck": "כתוב לקלוד: \"תראה לי אופציות עיצוב לדף X\"."
 }

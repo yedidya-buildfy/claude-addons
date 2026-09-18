@@ -1,9 +1,25 @@
 {
-  "id": "sticky-prompt", "order": 70, "default": true,
+  "id": "sticky-prompt",
+  "order": 70,
+  "default": true,
   "title": "ההודעה שלך נעוצה למעלה",
   "summary": "ההודעה האחרונה ששלחת נשארת נעוצה בראש הטרמינל; לחיצה עליה קופצת אליה.",
-  "detect": {"file": "~/.claude/scripts/sticky-claude"},
-  "files": [{"from": "sticky-claude", "to": "~/.claude/scripts/sticky-claude", "mode": "755"}],
+  "detect": {
+    "file": "~/.claude/scripts/sticky-claude"
+  },
+  "files": [
+    {
+      "from": "sticky-claude",
+      "to": "~/.claude/scripts/sticky-claude",
+      "mode": "755"
+    }
+  ],
   "vscodeSettings": "vscode-settings.snippet",
-  "shell": "zshrc.snippet"
+  "shell": "zshrc.snippet",
+  "group": "טרמינל",
+  "details": [
+    "ההודעה האחרונה ששלחת נשארת נעוצה בראש הטרמינל. גוללים למעלה והנעוץ מתחלף להודעה שמעליה; לחיצה קופצת אליה.",
+    "הפקודה claude עוברת דרך עוטף קטן שמסמן את ההודעות. command claude מריץ בלי העוטף."
+  ],
+  "howToCheck": "שלח הודעה וגלול למעלה: ההודעה נשארת בראש."
 }

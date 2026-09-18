@@ -1,9 +1,31 @@
 {
-  "id": "hebrew-guard", "order": 5, "required": true,
+  "id": "hebrew-guard",
+  "order": 5,
+  "required": true,
   "title": "עברית קריאה בטרמינל",
   "summary": "בכל פתיחת סשן בודק שעברית בטרמינל של VS Code לא יוצאת הפוכה, ומתקן לבד.",
-  "files": [{"from": "hebrew-guard.py", "to": "~/.claude/scripts/hebrew-guard.py", "mode": "755"}],
-  "claudeSettings": [{"file": "settings.json.snippet"}],
+  "files": [
+    {
+      "from": "hebrew-guard.py",
+      "to": "~/.claude/scripts/hebrew-guard.py",
+      "mode": "755"
+    }
+  ],
+  "claudeSettings": [
+    {
+      "file": "settings.json.snippet"
+    }
+  ],
   "ownsCommands": "hebrew-guard\\.py",
-  "run": {"cmd": "python3 ~/.claude/scripts/hebrew-guard.py >/dev/null", "when": "always"}
+  "run": {
+    "cmd": "python3 ~/.claude/scripts/hebrew-guard.py >/dev/null",
+    "when": "always"
+  },
+  "group": "מערכת",
+  "details": [
+    "עברית בטרמינל של VS Code יוצאת עם אותיות הפוכות בתוך המילים כשציור הטרמינל בכרטיס המסך כבוי, או כשפעיל תוסף \"תיקון עברית\" (שהופך אותה פעמיים).",
+    "בכל פתיחת סשן בודק את שני הדברים ומתקן לבד. שקט כשהכל תקין.",
+    "טקסט דהוי? Reload Window ב‑VS Code, לא לכבות את כרטיס המסך."
+  ],
+  "howToCheck": "כתוב בעברית בסשן חדש: האותיות צריכות לצאת בסדר הנכון."
 }

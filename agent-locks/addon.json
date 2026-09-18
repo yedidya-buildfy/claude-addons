@@ -1,9 +1,29 @@
 {
-  "id": "agent-locks", "order": 100, "default": true,
+  "id": "agent-locks",
+  "order": 100,
+  "default": true,
   "title": "אזהרה על התנגשות בין סשנים",
   "summary": "כשסשן אחר עובד על אותו קובץ, או באמצע דחיפה, מופיעה אזהרה עם מי ומאיזו שעה. אף פעם לא חוסם.",
-  "detect": {"file": "~/.claude/scripts/agent-locks.mjs"},
-  "files": [{"from": "agent-locks.mjs", "to": "~/.claude/scripts/agent-locks.mjs", "mode": "755"}],
-  "claudeSettings": [{"file": "settings.json.snippet"}],
-  "ownsCommands": "\\.claude/scripts/agent-locks\\.mjs"
+  "detect": {
+    "file": "~/.claude/scripts/agent-locks.mjs"
+  },
+  "files": [
+    {
+      "from": "agent-locks.mjs",
+      "to": "~/.claude/scripts/agent-locks.mjs",
+      "mode": "755"
+    }
+  ],
+  "claudeSettings": [
+    {
+      "file": "settings.json.snippet"
+    }
+  ],
+  "ownsCommands": "\\.claude/scripts/agent-locks\\.mjs",
+  "group": "קלוד",
+  "details": [
+    "כשכמה סשנים עובדים באותה תיקייה: לפני כתיבה לקובץ שסשן אחר מחזיק, או דחיפה בזמן שסשן אחר דוחף, מופיעה אזהרה עם מי ומאיזו שעה.",
+    "רק מזהיר, אף פעם לא חוסם. משתחרר לבד כשהסשן מחכה לך."
+  ],
+  "howToCheck": "בטרמינל: node ~/.claude/scripts/agent-locks.mjs list"
 }

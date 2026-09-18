@@ -47,7 +47,7 @@ git pull
 
 ## Repository structure
 
-The root installer offers every add-on interactively. The standalone multi-model installer is the source of truth for installing `ccx`; the root installer delegates to it.
+Every add-on is described once, in `<addon>/addon.json`. `engine/addons.mjs` (the global `addons` command) is the only code that installs, updates and removes them; `install.sh`, `uninstall.sh` and the background updater are thin calls into it. Adding an add-on = one folder with one manifest; never add per-add-on logic to the installers. Tests: `node --test engine/test/engine.test.mjs` (sandboxed HOME, never the real one). The standalone multi-model installer is still the source of truth for installing `ccx`; its manifest runs it.
 
 The multi-model runtime has four responsibilities:
 

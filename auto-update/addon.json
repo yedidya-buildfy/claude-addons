@@ -1,12 +1,33 @@
 {
-  "id": "core", "order": 0, "required": true,
+  "id": "core",
+  "order": 0,
+  "required": true,
   "title": "עדכונים אוטומטיים והפקודה addons",
   "summary": "מושך גרסה חדשה של התוספים ברקע בפתיחת סשן, ומתקין את הפקודה addons שפותחת את הדף הזה.",
   "files": [
-    {"from": "claude-addons-update.sh", "to": "~/.claude/scripts/claude-addons-update.sh", "mode": "755"},
-    {"from": "addons", "to": "~/.claude/scripts/addons", "mode": "755"}
+    {
+      "from": "claude-addons-update.sh",
+      "to": "~/.claude/scripts/claude-addons-update.sh",
+      "mode": "755"
+    },
+    {
+      "from": "addons",
+      "to": "~/.claude/scripts/addons",
+      "mode": "755"
+    }
   ],
-  "claudeSettings": [{"file": "settings.json.snippet"}],
+  "claudeSettings": [
+    {
+      "file": "settings.json.snippet"
+    }
+  ],
   "ownsCommands": "claude-addons-update\\.sh",
-  "shell": "zshrc.snippet"
+  "shell": "zshrc.snippet",
+  "group": "מערכת",
+  "details": [
+    "בכל פתיחת סשן קלוד בודק ברקע אם יש גרסה חדשה של התוספים (לכל היותר פעם ברבע שעה), מושך אותה ומיישם לפי הבחירות שלך כאן.",
+    "מוסיף את הפקודה addons, שפותחת את הדף הזה.",
+    "אם יש בתיקיית התוספים שינויים שלא נשמרו, העדכון מדלג כדי לא לדרוס אותם."
+  ],
+  "howToCheck": "פתח סשן קלוד חדש, ואז: addons status"
 }

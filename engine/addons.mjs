@@ -97,6 +97,7 @@ function serve() {
     const st = Object.fromEntries(status(manifests, cfg, P).map((s) => [s.id, s]));
     return manifests.map((m) => ({
       id: m.id, title: m.title, summary: m.summary, required: !!m.required, requires: m.requires || [],
+      group: m.group || "אחר", details: m.details || [], howToCheck: m.howToCheck || "", touches: touches(m),
       on: st[m.id].on, drift: [...st[m.id].missing, ...st[m.id].edited].map((f) => f.replace(P.home, "~")),
       settings: m.settings.map((s) => ({
         key: s.key, label: s.label, type: s.type,
@@ -105,6 +106,16 @@ function serve() {
       actions: (m.actions || []).map((a) => ({ id: a.id, label: a.label })),
     }));
   };
+
+  // what switching this add-on on writes, in words
+  const touches = (m) => [
+    ...(m.files || []).map((f) => `קובץ ${f.to}`),
+    ...(m.claudeSettings ? ["הוקים בהגדרות של קלוד (גם בפרופיל של ccx)"] : []),
+    ...(m.shell ? ["שורות בקובץ ההפעלה של הטרמינל (~/.zshrc), בתוך האזור המנוהל"] : []),
+    ...(m.vscodeSettings || m.vscodeKeybindings ? ["הגדרות וקיצורי מקלדת של VS Code"] : []),
+    ...(m.claudeMd ? ["תזכורת בקובץ ההוראות הכללי של קלוד (רק אם סימנת)"] : []),
+    ...(m.run ? [`מריץ את ההתקנה של התוסף (${m.run.when === "always" ? "בכל עדכון" : "רק כשהוא השתנה"})`] : []),
+  ];
 
   const body = (req) => new Promise((ok, bad) => {
     let s = ""; req.on("data", (c) => { s += c; if (s.length > 1e6) req.destroy(); });

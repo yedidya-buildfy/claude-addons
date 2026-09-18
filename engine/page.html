@@ -6,59 +6,78 @@
 <title>תוספים לקלוד</title>
 <style>
   :root {
-    --bg: #f6f5f2; --card: #ffffff; --ink: #1d1c1a; --muted: #6b6862; --line: #e4e1db;
-    --accent: #c2410c; --accent-ink: #fff; --ok: #15803d; --bad: #b91c1c; --warn: #a16207;
-    --shadow: 0 1px 2px rgba(0,0,0,.05);
+    --bg: #f5f4f1; --card: #fff; --ink: #1c1b19; --muted: #6a665f; --faint: #8f8a82; --line: #e3dfd8;
+    --accent: #c2410c; --accent-soft: #fdf1ea; --accent-ink: #fff; --ok: #15803d; --bad: #b91c1c; --warn: #a16207;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #161513; --card: #211f1c; --ink: #eeeae4; --muted: #a09b93; --line: #34312c;
-            --accent: #f97316; --accent-ink: #1a0d04; --ok: #4ade80; --bad: #f87171; --warn: #facc15; --shadow: none; }
+    :root { --bg: #151412; --card: #1f1d1a; --ink: #eeeae4; --muted: #a39e96; --faint: #7d786f; --line: #332f2a;
+            --accent: #fb923c; --accent-soft: #2b1d12; --accent-ink: #1a0d04; --ok: #4ade80; --bad: #f87171; --warn: #facc15; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Arial Hebrew", sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 120px; }
-  h1 { font-size: 24px; margin: 0 0 4px; }
-  .lead { color: var(--muted); margin: 0 0 24px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px;
-          margin-bottom: 10px; box-shadow: var(--shadow); }
-  .row { display: flex; gap: 14px; align-items: flex-start; }
-  .row .text { flex: 1; min-width: 0; }
-  .title { font-weight: 600; font-size: 16px; }
+         font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Arial Hebrew", sans-serif; }
+  main { max-width: 780px; margin: 0 auto; padding: 36px 16px 140px; }
+  header h1 { font-size: 26px; margin: 0; letter-spacing: -.01em; }
+  header p { color: var(--muted); margin: 4px 0 0; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--faint); margin: 30px 4px 8px; letter-spacing: .02em; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; transition: border-color .15s; }
+  .card.changed { border-color: var(--accent); }
+  .head { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; }
+  .head .text { flex: 1; min-width: 0; }
+  .title { font-weight: 600; font-size: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .summary { color: var(--muted); margin-top: 2px; }
-  .tag { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-inline-start: 6px; font-weight: 400; }
+  .tag { font-size: 12px; font-weight: 500; color: var(--muted); background: var(--bg); border-radius: 999px; padding: 1px 9px; }
+  .tag.pending { color: var(--accent); background: var(--accent-soft); }
   .drift { color: var(--warn); font-size: 13px; margin-top: 6px; }
-  .changed { outline: 2px solid var(--accent); outline-offset: -1px; }
+  details { border-top: 1px solid var(--line); }
+  summary { cursor: pointer; padding: 9px 18px; color: var(--muted); font-size: 14px; list-style: none; user-select: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "‹"; display: inline-block; width: 14px; transition: transform .15s; }
+  details[open] summary::before { transform: rotate(-90deg); }
+  summary:hover { color: var(--ink); }
+  .more { padding: 0 18px 16px 18px; display: grid; gap: 12px; }
+  .more ul { margin: 0; padding-inline-start: 18px; }
+  .more li { margin: 3px 0; }
+  .more h3 { font-size: 13px; color: var(--faint); margin: 0 0 4px; font-weight: 600; }
+  .more .check { background: var(--bg); border-radius: 10px; padding: 8px 12px; }
+  .ltr { direction: ltr; unicode-bidi: isolate; font: 13px ui-monospace, Menlo, monospace; }
+  .touch li { color: var(--muted); font-size: 14px; }
+  .settings { border-top: 1px solid var(--line); padding: 12px 18px 14px; display: grid; gap: 10px; }
+  .settings label { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; cursor: pointer; }
+  .settings .field { flex: 1; min-width: 200px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
+                     background: var(--bg); color: var(--ink); font: 14px ui-monospace, Menlo, monospace; direction: ltr; }
   /* switch */
-  .switch { position: relative; width: 44px; height: 26px; flex: none; margin-top: 2px; }
+  .switch { position: relative; width: 44px; height: 26px; flex: none; }
   .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; position: absolute; cursor: pointer; z-index: 1; }
   .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .15s; }
   .switch span::after { content: ""; position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%;
-                        background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+                        background: #fff; box-shadow: 0 1px 2px #0003; transition: transform .15s; }
   .switch input:checked + span { background: var(--accent); }
   .switch input:checked + span::after { transform: translateX(-18px); }
   .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .settings { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); display: grid; gap: 10px; }
-  .settings label { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .settings input[type=text] { flex: 1; min-width: 180px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
-                               background: var(--bg); color: var(--ink); font: 14px ui-monospace, Menlo, monospace; direction: ltr; }
-  button { font: inherit; border-radius: 8px; padding: 8px 16px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .switch.small { width: 36px; height: 22px; }
+  .switch.small span::after { width: 16px; height: 16px; }
+  .switch.small input:checked + span::after { transform: translateX(-14px); }
+  button { font: inherit; border-radius: 9px; padding: 8px 16px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
   button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-  button:disabled { opacity: .5; cursor: default; }
-  .bar { position: fixed; inset: auto 0 0 0; background: var(--card); border-top: 1px solid var(--line); padding: 12px 16px; }
-  .bar .inner { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
+  button:disabled { opacity: .45; cursor: default; }
+  .bar { position: fixed; inset: auto 0 0 0; background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(8px);
+         border-top: 1px solid var(--line); padding: 12px 16px; }
+  .bar .inner { max-width: 780px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
   .bar .msg { flex: 1; color: var(--muted); }
-  #result { white-space: pre-wrap; font: 13px/1.6 ui-monospace, Menlo, monospace; direction: ltr; text-align: left;
-            background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 16px; display: none; }
+  #result { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; margin-top: 20px; display: none; }
+  #result pre { white-space: pre-wrap; margin: 8px 0 0; direction: ltr; text-align: left; font: 13px/1.6 ui-monospace, Menlo, monospace; color: var(--muted); }
   .ok { color: var(--ok); } .bad { color: var(--bad); }
 </style>
 </head>
 <body>
 <main>
-  <h1>תוספים לקלוד</h1>
-  <p class="lead">מה מופעל במחשב הזה. שינוי כאן נשמר רק אחרי "שמור", ואחרי שראית מה בדיוק ישתנה.</p>
-  <div id="result"></div>
-  <div id="list">טוען…</div>
+  <header>
+    <h1>תוספים לקלוד</h1>
+    <p id="count">טוען…</p>
+  </header>
+  <div id="result" role="status"></div>
+  <div id="list"></div>
 </main>
 <div class="bar"><div class="inner">
   <span class="msg" id="msg">אין שינויים</span>
@@ -67,67 +86,85 @@
 </div></div>
 <script>
 const T = "__TOKEN__";
+const GROUPS = ["טרמינל", "קלוד", "סקילים", "התראות", "מערכת", "אחר"];
 const api = async (p, body) => {
   const r = await fetch(p + "?t=" + T, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {});
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 };
-let saved = [], draft = {};
+let saved = [], draft = {}, open = new Set();
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// commands and paths read left-to-right inside Hebrew text
+const code = (s) => String(s).split(/((?:~\/|\.\/)?[A-Za-z][\w.~\/-]*(?: (?:--?[\w-]+|<[^>]+>|[\w.~\/-]+))*)/g)
+  .map((m, i) => i % 2 && /[a-z]/.test(m) && m.length > 2 ? `<span class="ltr">${esc(m)}</span>` : esc(m)).join("");
 
-function snapshot(list) {
-  const d = {};
-  for (const a of list) d[a.id] = { on: a.on, settings: Object.fromEntries(a.settings.map((s) => [s.key, s.value])) };
-  return d;
-}
-function dirty() {
-  const base = snapshot(saved);
-  return Object.keys(draft).filter((id) => JSON.stringify(draft[id]) !== JSON.stringify(base[id]));
+const snapshot = (list) => Object.fromEntries(list.map((a) => [a.id, { on: a.on, settings: Object.fromEntries(a.settings.map((s) => [s.key, s.value])) }]));
+const dirty = () => { const b = snapshot(saved); return Object.keys(draft).filter((id) => JSON.stringify(draft[id]) !== JSON.stringify(b[id])); };
+
+function card(a, byId, changed) {
+  const d = draft[a.id];
+  const needs = a.requires.map((r) => byId[r]?.title || r);
+  const settings = d.on && (a.settings.length || a.actions.length) ? `<div class="settings">${
+    a.settings.map((s) => s.type === "bool"
+      ? `<label><span class="switch small"><input type="checkbox" data-set="${a.id}:${s.key}" ${d.settings[s.key] ? "checked" : ""}><span></span></span>${esc(s.label)}</label>`
+      : `<label>${esc(s.label)}<input class="field" type="text" data-set="${a.id}:${s.key}" value="${esc(d.settings[s.key] ?? "")}" placeholder="ייווצר לבד בשמירה"></label>`).join("")
+  }${a.actions.map((x) => `<div><button data-action="${a.id}:${x.id}">${esc(x.label)}</button> <span data-out="${a.id}:${x.id}"></span></div>`).join("")}</div>` : "";
+  return `<section class="card ${changed.has(a.id) ? "changed" : ""}">
+    <div class="head">
+      <div class="text">
+        <div class="title">${esc(a.title)}
+          ${a.required ? '<span class="tag">תמיד פעיל</span>' : ""}
+          ${needs.length ? `<span class="tag">צריך: ${esc(needs.join(", "))}</span>` : ""}
+          ${changed.has(a.id) ? '<span class="tag pending">לא נשמר</span>' : ""}</div>
+        <div class="summary">${code(a.summary)}</div>
+        ${a.drift.length ? `<div class="drift">⚠ שונה ידנית או חסר: <span class="ltr">${esc(a.drift.join(", "))}</span></div>` : ""}
+      </div>
+      ${a.required ? "" : `<span class="switch"><input type="checkbox" aria-label="${esc(a.title)}" data-on="${a.id}" ${d.on ? "checked" : ""}><span></span></span>`}
+    </div>
+    ${settings}
+    <details data-id="${a.id}" ${open.has(a.id) ? "open" : ""}>
+      <summary>פרטים</summary>
+      <div class="more">
+        <div><h3>מה זה עושה</h3><ul>${a.details.map((x) => `<li>${code(x)}</li>`).join("")}</ul></div>
+        ${a.howToCheck ? `<div class="check"><h3>איך לבדוק שזה עובד</h3>${code(a.howToCheck)}</div>` : ""}
+        <div class="touch"><h3>מה זה משנה במחשב</h3><ul>${a.touches.map((x) => `<li>${code(x)}</li>`).join("")}</ul></div>
+      </div>
+    </details>
+  </section>`;
 }
 
 function render() {
   const byId = Object.fromEntries(saved.map((a) => [a.id, a]));
   const changed = new Set(dirty());
-  $("#list").innerHTML = saved.map((a) => {
-    const d = draft[a.id];
-    const needs = a.requires.map((r) => byId[r]?.title || r);
-    const settings = d.on && a.settings.length + a.actions.length ? `<div class="settings">${
-      a.settings.map((s) => s.type === "bool"
-        ? `<label><span class="switch"><input type="checkbox" data-set="${a.id}:${s.key}" ${d.settings[s.key] ? "checked" : ""}><span></span></span>${esc(s.label)}</label>`
-        : `<label>${esc(s.label)}<input type="text" data-set="${a.id}:${s.key}" value="${esc(d.settings[s.key] ?? "")}" placeholder="ייווצר אוטומטית בשמירה"></label>`).join("")
-    }${a.actions.map((x) => `<div><button data-action="${a.id}:${x.id}">${esc(x.label)}</button> <span data-out="${a.id}:${x.id}"></span></div>`).join("")}</div>` : "";
-    return `<section class="card ${changed.has(a.id) ? "changed" : ""}">
-      <div class="row">
-        <div class="text">
-          <div class="title">${esc(a.title)}${a.required ? '<span class="tag">תמיד פעיל</span>' : ""}${needs.length ? `<span class="tag">צריך את: ${esc(needs.join(", "))}</span>` : ""}</div>
-          <div class="summary">${esc(a.summary)}</div>
-          ${a.drift.length ? `<div class="drift">⚠ שונה ידנית או חסר: ${esc(a.drift.join(", "))}</div>` : ""}
-        </div>
-        ${a.required ? "" : `<span class="switch"><input type="checkbox" aria-label="${esc(a.title)}" data-on="${a.id}" ${d.on ? "checked" : ""}><span></span></span>`}
-      </div>${settings}</section>`;
+  $("#list").innerHTML = GROUPS.map((g) => {
+    const items = saved.filter((a) => a.group === g);
+    return items.length ? `<h2>${g}</h2>${items.map((a) => card(a, byId, changed)).join("")}` : "";
   }).join("");
-  const n = changed.size;
-  $("#msg").textContent = n ? `${n} שינויים שלא נשמרו` : "אין שינויים";
-  $("#save").disabled = $("#reset").disabled = !n;
+  const on = saved.filter((a) => !a.required && a.on).length, total = saved.filter((a) => !a.required).length;
+  $("#count").textContent = `${on} מתוך ${total} תוספים פעילים במחשב הזה. שינוי נשמר רק אחרי "שמור", ואחרי שראית מה בדיוק ישתנה.`;
+  $("#msg").textContent = changed.size ? `${changed.size} שינויים שלא נשמרו` : "אין שינויים";
+  $("#save").disabled = $("#reset").disabled = !changed.size;
 }
 
+document.addEventListener("toggle", (e) => { if (e.target.dataset?.id) e.target.open ? open.add(e.target.dataset.id) : open.delete(e.target.dataset.id); }, true);
 document.addEventListener("change", (e) => {
   const on = e.target.dataset.on, set = e.target.dataset.set;
   if (on) {
     draft[on].on = e.target.checked;
     // keep dependencies consistent instead of letting the save fail
+    const me = saved.find((x) => x.id === on);
     for (const a of saved) {
-      if (e.target.checked && a.id !== on && saved.find((x) => x.id === on).requires.includes(a.id)) draft[a.id].on = true;
+      if (e.target.checked && me.requires.includes(a.id)) draft[a.id].on = true;
       if (!e.target.checked && a.requires.includes(on)) draft[a.id].on = false;
     }
-    render();
   }
-  if (set) { const [id, key] = set.split(":"); draft[id].settings[key] = e.target.type === "checkbox" ? e.target.checked : e.target.value.trim(); render(); }
+  if (set) { const [id, key] = set.split(":"); draft[id].settings[key] = e.target.type === "checkbox" ? e.target.checked : e.target.value.trim(); }
+  cancelConfirm(); render();
 });
 document.addEventListener("click", async (e) => {
-  const act = e.target.dataset.action;
+  const act = e.target.dataset?.action;
   if (!act) return;
   const [addon, action] = act.split(":");
   const out = document.querySelector(`[data-out="${act}"]`);
@@ -137,41 +174,43 @@ document.addEventListener("click", async (e) => {
   e.target.disabled = false;
 });
 
-function payload(dryRun) {
-  const enabled = {}, settings = {};
-  for (const [id, d] of Object.entries(draft)) { enabled[id] = d.on; settings[id] = d.settings; }
-  return { enabled, settings, dryRun };
-}
+const payload = (dryRun) => ({
+  enabled: Object.fromEntries(Object.entries(draft).map(([id, d]) => [id, d.on])),
+  settings: Object.fromEntries(Object.entries(draft).map(([id, d]) => [id, d.settings])), dryRun,
+});
+const ACT = { create: "ייווצר", update: "ישתנה", remove: "יימחק" }, DONE = { create: "נוצר", update: "שונה", remove: "נמחק" };
 function describe(r, dry) {
-  const lines = [];
-  for (const c of r.changes) lines.push(`${dry ? "ישתנה" : "שונה"}  ${c.action}  ${c.file}${c.note ? "  (" + c.note + ")" : ""}`);
-  for (const x of r.ran) lines.push(`${x.planned ? "יורץ" : x.ok ? "הורץ ✓" : "נכשל ✗"}  ${x.id}${x.error ? ": " + x.error : ""}`);
-  for (const n of r.notes) lines.push("הערה: " + n);
-  if (r.backup) lines.push("גיבוי של כל מה ששונה: " + r.backup);
-  return lines.join("\n") || (dry ? "שום קובץ לא ישתנה" : "הכל כבר מעודכן");
+  const L = [];
+  for (const c of r.changes) L.push(`${(dry ? ACT : DONE)[c.action]}  ${c.file}${c.note ? "  (" + c.note + ")" : ""}`);
+  for (const x of r.ran) L.push(`${x.planned ? "יורץ" : x.ok ? "הורץ ✓" : "נכשל ✗"}  ${x.id}${x.error ? ": " + x.error : ""}`);
+  for (const n of r.notes) L.push("הערה: " + n);
+  if (r.backup) L.push("גיבוי של כל מה ששונה: " + r.backup);
+  return L.join("\n") || (dry ? "שום קובץ לא ישתנה" : "הכל כבר מעודכן");
 }
 
 let confirming = false;
+function cancelConfirm() { if (confirming) { confirming = false; $("#save").textContent = "שמור"; $("#result").style.display = "none"; } }
 $("#save").onclick = async () => {
   const box = $("#result");
   box.style.display = "block";
+  $("#save").disabled = true;
   try {
     if (!confirming) {
       const r = await api("/api/apply", payload(true));
-      box.innerHTML = `<b>זה מה שישתנה — לחץ שוב על "אשר" כדי לבצע:</b>\n\n${esc(describe(r, true))}`;
-      confirming = true; $("#save").textContent = "אשר";
+      box.innerHTML = `<b>זה מה שישתנה. לחץ "אשר" כדי לבצע.</b><pre>${esc(describe(r, true))}</pre>`;
+      confirming = true; $("#save").textContent = "אשר"; $("#save").disabled = false;
       return;
     }
-    $("#save").disabled = true;
     const r = await api("/api/apply", payload(false));
     saved = r.state; draft = snapshot(saved);
-    box.innerHTML = `<span class="${r.ran.some((x) => !x.ok) ? "bad" : "ok"}"><b>${r.ran.some((x) => !x.ok) ? "נשמר, חוץ ממה שנכשל למטה" : "נשמר ✓"}</b></span> — טרמינל חדש יטען את השינויים.\n\n${esc(describe(r, false))}`;
+    const failed = r.ran.some((x) => !x.ok);
+    box.innerHTML = `<b class="${failed ? "bad" : "ok"}">${failed ? "נשמר, חוץ ממה שנכשל למטה" : "נשמר ✓"}</b> טרמינל חדש יטען את השינויים.<pre>${esc(describe(r, false))}</pre>`;
   } catch (err) {
-    box.innerHTML = `<b class="bad">לא נשמר, שום קובץ לא שונה:</b>\n${esc(err.message)}`;
+    box.innerHTML = `<b class="bad">לא נשמר, ושום קובץ לא שונה:</b><pre>${esc(err.message)}</pre>`;
   }
   confirming = false; $("#save").textContent = "שמור"; render();
 };
-$("#reset").onclick = () => { draft = snapshot(saved); confirming = false; $("#save").textContent = "שמור"; $("#result").style.display = "none"; render(); };
+$("#reset").onclick = () => { draft = snapshot(saved); cancelConfirm(); render(); };
 
 api("/api/state").then((s) => { saved = s; draft = snapshot(s); render(); })
   .catch((e) => { $("#list").innerHTML = `<p class="bad">${esc(e.message)}</p>`; });
