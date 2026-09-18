@@ -61,9 +61,15 @@ Step 3 — settings, then a summary of who sits with which effort:
 ```
    max rounds      ◀  5 ▶   stops earlier if the chair calls it or everyone passes
    plans shown as  ◀ named ▶
-   budget          ◀ unlimited ▶   (unlimited | $0.5 | $1 | $2 | $5 | $10)
+   budget          ◀ unlimited ▶   ←→ quick presets: unlimited · $0.50 · $1 · $2 · $5 · $10
    steps per turn  ◀  3 ▶          (1–6)
 ```
+
+Exact budget: `space` on the budget row opens three dials,
+`$ [ 2].[3][5]` — dollars (0–99), tenths, hundredths. `←→` picks a dial,
+`↑↓` turns it (wraps), typing a digit sets it (dollars shift in two digits;
+typing a tenth jumps to hundredths). `Enter` / `space` / `Esc` closes.
+All dials at zero = unlimited. Stored in cents, so no rounding drift.
 `Esc` goes back one step; `Enter` starts.
 
 - Model list = the same list `ccx --list` shows (one row per model, not per
