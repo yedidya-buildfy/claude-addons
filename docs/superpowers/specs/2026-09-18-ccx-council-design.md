@@ -32,25 +32,37 @@ folder.
 
 ## Flow
 
-### 0. Setup screen (terminal, arrow keys)
+### 0. Setup screen (terminal, arrow keys) — three-step wizard
 
 Runs before Claude Code starts, so it can be a real TUI (Python `curses`,
-stdlib — ccx already needs python3).
+stdlib — ccx already needs python3). Chosen from three browser mockups
+(one table / wizard / round table) on 2026-09-18: the wizard. Chrome is
+English (terminals render mixed Hebrew badly); the question itself stays as typed.
 
 ```
- Council: איך לתמחר ביקורי סוף שנה?
+ ccx council  <question>
 
-   chair  in   model               effort
- > (•)   [x]  Claude Opus 5        ◀ high ▶
-   ( )   [x]  GPT 5.6 Sol          ◀ xhigh ▶
-   ( )   [x]  Gemini 3.1 Pro       ◀ high ▶
-   ( )   [ ]  Grok 4.6             ◀ medium ▶
-
-   max rounds      ◀ 5 ▶
-   plans shown as  ◀ named ▶        (named | anonymous)
-
-   ↑↓ move  space in/out  c chair  ←→ change  enter start  q quit
+   1 chair ✓  ─  2 table  ─  3 settings
 ```
+
+Step 1 — chair. One row per model with its effort:
+```
+ > (★) ● Claude Opus 5        ◀ high   ▶ ▁▃▅
+   ( ) ● GPT 5.6 Sol          ◀ xhigh  ▶ ▁▃▅▆
+```
+`↑↓` move · `←→` effort · `space`/`Enter` choose (Enter also advances).
+
+Step 2 — table. Same rows; chair row locked in with ★; `space` seats/unseats,
+`←→` effort. Shows "N at the table · worst case K model calls". Enter refused
+under 2 participants.
+
+Step 3 — settings, then a summary of who sits with which effort:
+```
+   max rounds      ◀  5 ▶   stops earlier if the chair calls it or everyone passes
+   plans shown as  ◀ named ▶
+   token budget    ◀ unlimited ▶
+```
+`Esc` goes back one step; `Enter` starts.
 
 - Model list = the same list `ccx --list` shows (one row per model, not per
   provider, so e.g. GPT Sol and GPT Luna can both sit at the table).
@@ -62,7 +74,12 @@ stdlib — ccx already needs python3).
 - Anonymous: first plans and every board message are labelled A, B, C… instead
   of model names. The label↔model key is kept out of the board and revealed
   only in the final section.
-- Needs ≥2 participants including the chair; Enter is refused otherwise.
+- Token budget: unlimited (default) / 50k / 100k / 250k / 500k / 1M / 2M,
+  summed over every participant call (input + output, as reported by each
+  call). Checked after every call; once crossed, no new turns start and the
+  chair is asked straight for the joint plan (that last call may overshoot —
+  the cap is a stop signal, not a hard wall). The board header records the
+  budget and the footer the tokens actually spent.
 - Last choices remembered per machine in `~/.claude/addons/council.json`.
 
 ### 1. First plans (parallel, private)
@@ -84,6 +101,7 @@ After each full round the chair is asked one question: continue or stop, with a
 one-line reason. The discussion ends when:
 
 - the chair says stop, or
+- the token budget is crossed, or
 - every participant passed in the same round, or
 - max rounds is reached.
 
@@ -98,7 +116,7 @@ In anonymous mode, `## Who was who` follows.
 `./council/YYYY-MM-DD-HHMM-<slug>.md` in the folder the command ran in.
 Plain Markdown, append-only, opened in the editor as soon as it is created so
 the owner watches it fill. Header records the question, participants, efforts,
-max rounds, anonymity. Each message: `### Round 2 · B` (or `· GPT 5.6 Sol`).
+max rounds, anonymity, token budget; the footer records tokens spent. Each message: `### Round 2 · B` (or `· GPT 5.6 Sol`).
 
 The board is the only memory participants share — each turn is a fresh
 subagent call given the board text, so no hidden side channel.
@@ -150,13 +168,13 @@ sees it before pressing Enter.
 
 ## Testing
 
-- Self-test for the setup screen's state logic (toggle, chair move, effort and
-  rounds bounds, ≥2 rule, remembered choices) without a terminal, in the style
+- Self-test for the setup screen's state logic (wizard steps and Esc back,
+  toggle, chair move, effort / rounds / budget bounds, ≥2 rule, remembered choices) without a terminal, in the style
   of the existing `ccx-*-selftest.py` files. Never against the real HOME.
 - Self-test that per-run agent files are generated with the right model and
   effort and removed afterwards.
 - Stop-rule check: a scripted board where all pass → ends; chair says stop →
-  ends; rounds cap → ends.
+  ends; rounds cap → ends; budget crossed → chair wraps up at once.
 - Manual run: 3 cheap models, low effort, max 2 rounds, anonymous on; confirm
   the board fills live, labels hide names until the end, joint plan has a
   disputed section.
