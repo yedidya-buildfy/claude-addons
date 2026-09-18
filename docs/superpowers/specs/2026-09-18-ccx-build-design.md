@@ -1,8 +1,8 @@
 # ccx build — plan and build a task with a team of models — design
 
-Date: 2026-09-18 · Status: design approved in the browser mockup
-(`2026-09-18-ccx-build-mockup.html`, next to this file); waiting for the
-owner to review this written spec.
+Date: 2026-09-18 · Status: approved by the owner ("תעשה את זה"). The flow page
+`2026-09-18-ccx-build-flow.html` (next to this file) is the reference; the
+earlier `2026-09-18-ccx-build-mockup.html` holds the individual screens.
 
 ## Why
 
@@ -53,6 +53,17 @@ the existing council stays as the discussion-only tool.
 
 Non-goals (v1): a browser UI, resuming a stopped run, several runs at once in
 one folder.
+
+## Screen layout: pane above, session below
+
+The Claude session stays in the VS Code terminal panel. The ccx build pane
+opens as a **terminal tab in the editor area**, which is above the panel, so
+the two sit one above the other on a wide screen. It takes the keyboard.
+The VS Code extension that already serves `split-requests` gets an optional
+`"placement": "editor"`: `createTerminal({location: TerminalLocation.Editor})`
+instead of `{parentTerminal}`. Council requests keep today's behaviour.
+tmux falls back to `split-window -v`, and Terminal.app to a new window.
+Not yet tried live, so it is the first check in the plan.
 
 ## Phases, always visible
 
@@ -167,6 +178,12 @@ The board lives in the per-run folder, as in the council:
    for you"**.
 5. The board ends with `✓ PLAN done — no code was changed`, then Spend and a
    Health line (reused from the council).
+6. **Approval** happens in the Claude session. From `/build` it is a question
+   dialog; from the `/model` row, which runs in plan mode, it is plan mode's
+   own approval dialog. There are three choices:
+   - **build it**
+   - **change something**: the lead edits the plan alone, with no new round
+   - **"מועצה"**: the whole team plans again on the edited plan
 
 ### 5. BUILD (phase 2, its own spec before coding)
 
