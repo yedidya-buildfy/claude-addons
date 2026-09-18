@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ccx build — עיצוב</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Heebo:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#f4f3ef; --ink:#1d1d1b; --muted:#6b6a64; --line:#dcdad2; --card:#fff;
+  --tab:#e9e7e0; --tab-on:#1d1d1b; --tab-on-ink:#fff;
+  --t-bg:#0f1115; --t-fg:#d6d8dc; --t-dim:#6c7280; --t-cyan:#56c8d8; --t-yellow:#e5c07b;
+  --t-green:#98c379; --t-red:#e06c75; --t-magenta:#c678dd; --t-sel:#1d2a33; --t-line:#2a2f38;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--page:#16171a;--ink:#ececea;--muted:#9a9a94;--line:#2c2d31;--card:#1e1f23;--tab:#26272c;--tab-on:#ececea;--tab-on-ink:#16171a}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.6 Heebo,system-ui,sans-serif}
+.wrap{max-width:1140px;margin:0 auto;padding:28px 16px 60px}
+h1{font-size:22px;margin:0 0 4px} .sub{color:var(--muted);margin:0 0 20px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tabs button{border:0;background:var(--tab);color:var(--ink);padding:8px 14px;border-radius:8px;font:600 14px Heebo;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--tab-on);color:var(--tab-on-ink)}
+.note{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:12px;color:var(--muted)}
+.note b{color:var(--ink)}
+.term{direction:ltr;text-align:left;background:var(--t-bg);color:var(--t-fg);border-radius:12px;
+  font:14px/1.55 "JetBrains Mono",ui-monospace,monospace;overflow:hidden;box-shadow:0 10px 30px #0003;outline:none}
+.term:focus-visible{box-shadow:0 0 0 3px var(--t-cyan),0 10px 30px #0003}
+.bar{display:flex;gap:6px;align-items:center;padding:9px 12px;background:#181b21;border-bottom:1px solid var(--t-line);color:var(--t-dim);font-size:12px}
+.bar i{width:11px;height:11px;border-radius:50%;display:inline-block;background:#3a3f48}
+.bar span{margin-left:8px}
+.screen{padding:16px 20px 18px;min-height:480px;white-space:pre-wrap;overflow-x:auto}
+.dim{color:var(--t-dim)} .cy{color:var(--t-cyan)} .ye{color:var(--t-yellow)} .gr{color:var(--t-green)} .re{color:var(--t-red)} .ma{color:var(--t-magenta)} .b{font-weight:700}
+.row{display:inline-block;min-width:100%;cursor:pointer;border-radius:4px}
+.row.sel{background:var(--t-sel)}
+.col{border-bottom:2px solid var(--t-cyan)}
+.dial{padding:0 1px;border-bottom:2px solid var(--t-dim)} .dial.on{background:var(--t-cyan);color:var(--t-bg);border-color:var(--t-cyan)}
+.he{direction:rtl;unicode-bidi:isolate;font-family:Heebo,sans-serif}
+.hint{margin-top:10px;color:var(--muted);font-size:13px}
+kbd{font:12px "JetBrains Mono",monospace;background:var(--card);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>תוכנית יישום עם כמה מודלים — איך זה נראה</h1>
+  <p class="sub">לחץ על הטרמינל והשתמש במקלדת (או בעכבר). <kbd>Enter</kbd> מתקדם; בסוף התכנון <kbd>Enter</kbd> עובר לביצוע.</p>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" data-v="normal" aria-selected="true">משימה בינונית</button>
+    <button role="tab" data-v="small" aria-selected="false">משימה קטנה</button>
+    <button role="tab" data-v="vague" aria-selected="false">בקשה עמומה</button>
+    <button role="tab" data-v="fail" aria-selected="false">מודל לא עונה</button>
+    <button role="tab" data-v="rules" aria-selected="false">הכללים שלך</button>
+    <button role="tab" data-v="classes" aria-selected="false">מחלקות מודלים</button>
+  </div>
+
+  <div class="note" id="note"></div>
+  <div class="term" id="term" tabindex="0">
+    <div class="bar"><i></i><i></i><i></i><span id="title">ccx build</span></div>
+    <div class="screen" id="screen"></div>
+  </div>
+  <p class="hint" id="hint"></p>
+</div>
+
+<script>
+const EFF=['low','medium','high','xhigh','max'], METER=['▁','▃','▅','▆','█'];
+const MODELS=[
+  {n:'Claude Fable 5.1',p:'claude',pi:10,po:50},
+  {n:'GPT 6 Astra',p:'gpt',pi:10,po:50},
+  {n:'Claude Opus 5',p:'claude',pi:5,po:25},
+  {n:'GPT Sol',p:'gpt',pi:4,po:20},
+  {n:'Grok 4.6',p:'grok',pi:2,po:6},
+  {n:'Gemini Pro',p:'gemini',pi:2,po:12},
+  {n:'Claude Sonnet 5',p:'claude',pi:2,po:10},
+  {n:'GPT Terra',p:'gpt',pi:2,po:12},
+  {n:'GPT Luna',p:'gpt',pi:0.2,po:1.2},
+  {n:'Gemini Flash',p:'gemini',pi:0.75,po:3.75},
+  {n:'Gemini 4 Pro',p:'gemini',pi:null,po:null},
+];
+const PC={claude:'ma',gpt:'gr',gemini:'cy',grok:'ye'};
+const mi=n=>MODELS.findIndex(m=>m.n===n);
+
+/* ---------- model classes: order inside a class = backup order ---------- */
+const TIER_NAMES=['frontier','mid','small','new — not in a class yet'], TIER_TAG=['F','M','S','?'];
+const TIERS=[
+  ['Claude Fable 5.1','GPT 6 Astra'].map(mi),
+  ['Claude Opus 5','GPT Sol','Grok 4.6','Gemini Pro'].map(mi),
+  ['Claude Sonnet 5','Gemini Flash','GPT Terra','GPT Luna'].map(mi),
+  ['Gemini 4 Pro'].map(mi),
+];
+const tierOf=m=>TIERS.findIndex(t=>t.includes(m));
+function backup(m){  // next in the same class, another provider first
+  if(tierOf(m)===3)return null;
+  const t=TIERS[tierOf(m)], k=t.indexOf(m), rest=t.slice(k+1).concat(t.slice(0,k));
+  return rest.find(x=>MODELS[x].p!==MODELS[m].p)??rest[0]??null;
+}
+const tierTag=m=>`<span class="dim">${TIER_TAG[tierOf(m)]}</span>`;
+
+/* ---------- your rules: role -> default model ---------- */
+const RULES=[
+  {role:'Architecture', m:mi('Claude Opus 5'), e:3},
+  {role:'Backend',      m:mi('Claude Opus 5'), e:2},
+  {role:'Security',     m:mi('Claude Opus 5'), e:3},
+  {role:'Data',         m:mi('Claude Sonnet 5'),e:2},
+  {role:'Frontend',     m:mi('Gemini Pro'),    e:2},
+  {role:'Small tasks',  m:mi('Gemini Flash'),  e:0},
+  {role:'Research',     m:mi('GPT 6 Astra'),   e:2},
+  {role:'Second opinion',m:mi('Grok 4.6'),     e:2},
+];
+
+/* ---------- two example tasks ---------- */
+const SCEN={
+  medium:{
+    q:'תזכורת וואטסאפ לאורח יום לפני ההגעה', slug:'whatsapp-reminder',
+    size:'medium', sizeWhy:'a daily job + one settings switch + message text; one real decision (send time)',
+    plan:'5 chapters + 1 critic', build:'4 agents, at most 2 at once', grill:'until settled',
+    folded:['Data → folded into Architecture (one field, same file)','Small tasks → none this time'],
+    proposal:{
+      Architecture:{on:true, what:'איפה נשמר "נשלחה תזכורת" ומה מפעיל את השליחה כל בוקר'},
+      Backend:{on:true, what:'משימה מתוזמנת שמוצאת הגעות של מחר ושולחת דרך Guesty'},
+      Security:{on:true, what:'רק אורחים שאפשר לשלוח אליהם; בלי מספרי טלפון בלוגים'},
+      Data:{on:false, what:'לא צריך — שדה אחד, מכוסה בארכיטקטורה'},
+      Frontend:{on:true, what:'מתג "תזכורות" בהגדרות + סימון על ההזמנה', m:mi('Claude Sonnet 5'),
+        why:'the switch changes who gets messaged — not a pure-UI draft'},
+      'Small tasks':{on:false, what:''},
+      Research:{on:true, what:'מה Guesty מרשה לשלוח בוואטסאפ, ומגבלות תבניות'},
+      'Second opinion':{on:true, what:'לא כותב פרק — רק שואל שאלות קשות על כל הפרקים'},
+    },
+    newRole:{role:'Message copy', m:mi('Gemini Flash'), e:0, on:true, isNew:true, what:'נוסח ההודעה בעברית, אנגלית ותאית'},
+  },
+  small:{
+    q:'לשנות את הכיתוב בכפתור "שמור" ל"שמור הזמנה"', slug:'save-button-label',
+    size:'small', sizeWhy:'one label in one file; nothing to decide',
+    plan:'1 chapter, no critic', build:'1 agent', grill:'skipped (nothing to argue about)',
+    folded:['every other role → not needed for a one-line change'],
+    proposal:{
+      Architecture:{on:false,what:''},Backend:{on:false,what:''},Security:{on:false,what:''},Data:{on:false,what:''},
+      Frontend:{on:false,what:''},Research:{on:false,what:''},'Second opinion':{on:false,what:''},
+      'Small tasks':{on:true, what:'כיתוב אחד בכפתור בדף ההזמנה + בדיקה שהתרגום קיים'},
+    },
+    newRole:null,
+  },
+};
+SCEN.vague={...SCEN.medium, q:'לשפר את התזכורות לאורחים',
+  intakeQs:[['Which reminder? There is none today — the closest thing is the booking confirmation.','a new WhatsApp reminder the day before arrival'],
+            ['To whom: every guest, or only direct bookings?','every guest we can actually reach']]};
+const sc=()=>SCEN[S.v==='small'?'small':S.v==='vague'?'vague':'medium'];
+
+/* ---------- state ---------- */
+let S;
+const AGENTS=['auto','max 1','max 2','max 4','max 6'];
+const GRILL=['auto','off','1 round','until settled'];
+function reset(v){
+  S={v:v||'normal', step:0, cur:0, colE:false, edit:false, seg:0, budget:200, steps:3, agents:0, grill:0, board:null, rcur:0, ccur:0, shift:false};
+  const X=sc();
+  S.roles=RULES.map(r=>{const p=X.proposal[r.role]||{};return {role:r.role, rec:p.m??r.m, rule:r.m, m:p.m??r.m, e:r.e, on:!!p.on, what:p.what||'', why:p.why||''}});
+  if(X.newRole)S.roles.push({...X.newRole, rec:X.newRole.m, rule:null});
+}
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const pad=(s,n)=>s+' '.repeat(Math.max(0,n-s.length));
+const usd=x=>'$'+(x<0.1?x.toFixed(3):x.toFixed(2));
+const money=c=>c?'$'+(c/100).toFixed(2):'unlimited';
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const dot=m=>`<span class="${PC[MODELS[m].p]}">●</span>`;
+const meter=e=>METER.slice(0,e+1).join('')+'<span class="dim">'+METER.slice(e+1).join('')+'</span>';
+const row=(i,html)=>`<span class="row${S.cur===i?' sel':''}" data-i="${i}">${S.cur===i?'<span class="cy">›</span>':' '} ${html}</span>`;
+const phase=p=>p==='plan'
+  ? `<span class="cy b">■ PLAN</span><span class="dim">  ─  □ BUILD   · planning only: models read the project, nothing is changed yet</span>`
+  : `<span class="gr">■ PLAN ✓</span><span class="dim">  ─  </span><span class="ye b">■ BUILD</span><span class="dim">   · models now write code, each in its own copy</span>`;
+const header=(p='plan')=>`<span class="b">ccx build</span>  <span class="he">${esc(sc().q)}</span>\n${phase(p)}\n\n`;
+const steps=i=>['1 intake','2 roles','3 settings'].map((s,j)=>j===i?`<span class="cy b">${s}</span>`:j<i?`<span class="gr">${s} ✓</span>`:`<span class="dim">${s}</span>`).join('<span class="dim">  ─  </span>');
+const on=()=>S.roles.filter(r=>r.on);
+const EFFX=[0.6,1,1.6,2.4,3.5];
+const cost=(r,out)=>{const M=MODELS[r.m],pi=M.pi??10,po=M.po??50;return (6000*pi+out*EFFX[r.e]*po)/1e6};
+const estimate=()=>on().reduce((c,r)=>c+cost(r,2500),0)*(S.grill===1?1:1.6)+cost({m:2,e:3},3000);
+
+/* ---------- step 1: the planner sizes the task and picks how many agents ---------- */
+function splitScreen(){
+  const X=sc(), picked=on().filter(r=>!r.isNew).length;
+  let o=header()+'  '+steps(0)+'\n\n';
+  o+=`  <span class="ma">●</span> Claude Opus 5 <span class="dim">(intake — the first model to get your request) reads the project…</span>\n`;
+  if(X.intakeQs&&!S.answered){
+    o+=`<span class="dim">    look-up 1  grep "reminder|תזכורת"\n    look-up 2  read convex/guesty.ts</span>\n\n`;
+    o+=`  <span class="ye b">✋ not clear enough to plan yet</span> <span class="dim">— ${X.intakeQs.length} questions first (facts it looked up itself)</span>\n\n`;
+    X.intakeQs.forEach((q,i)=>o+=`  ❓ <span class="b">Q${i+1}</span> ${q[0]}\n     <span class="dim">➡️ recommended:</span> ${q[1]}\n\n`);
+    return o+`  <span class="cy">Enter</span> <span class="dim">accept the recommended answers  ·  (in the real tool: type your own)</span>`;
+  }
+  o+=`<span class="dim">    ${X.size==='small'?'look-up 1  grep "שמור"\n    look-up 2  read src/components/BookingForm.tsx':'look-up 1  list_dir  convex/\n    look-up 2  grep      "whatsapp|reminder"\n    look-up 3  read      convex/guesty.ts\n    look-up 4  read      src/app/settings/page.tsx'}</span>\n\n`;
+  o+=`  <span class="b">size</span>       <span class="${X.size==='small'?'gr':'ye'} b">${X.size}</span>  <span class="dim">— ${X.sizeWhy}</span>\n`;
+  o+=`  <span class="b">planning</span>   ${X.plan}  <span class="dim">(${picked} of ${RULES.length} roles in your list${X.newRole?' + 1 new':''})</span>\n`;
+  o+=`  <span class="b">grilling</span>   ${X.grill}\n`;
+  o+=`  <span class="b">building</span>   ${X.build}\n`;
+  if(X.size!=='small')o+=`  <span class="b">guard</span>      <span class="dim">grilling stops at 2 rounds · 3 questions per model per round · budget $2.00 suggested</span>\n`;
+  o+=`  <span class="dim">left out:</span>\n`+X.folded.map(f=>`    <span class="dim">· ${f}</span>`).join('\n')+'\n';
+  o+=`\n  <span class="dim">$0.041 list price</span>\n\n  <span class="cy">Enter</span> <span class="dim">see the roles — you can add or remove any</span>`;
+  return o;
+}
+
+/* ---------- step 2: roles table ---------- */
+function rolesScreen(){
+  let o=header()+'  '+steps(1)+'\n\n';
+  o+=`<span class="b">  Which roles work on this, and who plays each?</span>  <span class="dim">(planner's pick is on; add more with space)</span>\n`;
+  o+=`<span class="dim">      role              model                 effort</span>\n`;
+  S.roles.forEach((r,i)=>{
+    const sel=S.cur===i, box=r.on?'<span class="cy">[x]</span>':'<span class="dim">[ ]</span>';
+    const tagNew=r.isNew?' <span class="ye">new</span>':'    ';
+    const mcell=`${dot(r.m)} ${pad(MODELS[r.m].n,16)} ${tierTag(r.m)}`, ecell=`${pad(EFF[r.e],6)} ${meter(r.e)}`;
+    const mS=sel&&!S.colE?`<span class="col">${mcell}</span>`:mcell, eS=sel&&S.colE?`<span class="col">${ecell}</span>`:ecell;
+    let mark='';
+    if(r.m!==r.rec)mark=`<span class="ye">✎ you changed it · recommended ${MODELS[r.rec].n}</span>`;
+    else if(r.rule!==null&&r.rec!==r.rule)mark=`<span class="ma">◆ planner: not your rule (${MODELS[r.rule].n})</span>`;
+    else if(r.on)mark='<span class="dim">★ your rule</span>';
+    o+=row(i,r.on?`${box} ${pad(r.role,14)}${tagNew} ${mS}  ${eS}  ${mark}`
+                 :`${box} <span class="dim">${pad(r.role,14)}${r.isNew?' new':'    '} ${pad(MODELS[r.m].n,20)}  ${pad('—',13)}</span>`)+'\n';
+    if(r.what&&(r.on||sel))o+=`        <span class="dim">└</span> <span class="he ${r.on?'':'dim'}">${esc(r.what)}</span>\n`;
+    if(r.on&&r.why&&r.m===r.rec)o+=`        <span class="ma">  why:</span> <span class="dim">${esc(r.why)}</span>\n`;
+    if(r.on&&sel){const b=backup(r.m);o+=`        <span class="dim">  if it doesn't answer → ${b===null?'no backup (not in a class)':MODELS[b].n+' · same class ('+TIER_NAMES[tierOf(r.m)]+')'}</span>\n`;}
+  });
+  o+=`\n<span class="dim">  ${on().length} roles · worst case ≈ ${usd(estimate())} list price</span>`;
+  return o;
+}
+
+/* ---------- step 3: settings ---------- */
+function budCell(){
+  const c=S.budget, dol=Math.floor(c/100), t=Math.floor(c/10)%10, h=c%10;
+  if(!S.edit)return `<span class="dim">◀</span> ${c?'<span class="ye">'+pad(money(c),9)+'</span>':pad('unlimited',9)} <span class="dim">▶</span>`;
+  const g=(i,v)=>`<span class="dial${S.seg===i?' on':''}">${v}</span>`;
+  return `  $${g(0,String(dol).padStart(2,' '))}.${g(1,t)}${g(2,h)}${c?'':' <span class="dim">= unlimited</span>'} `;
+}
+function budKey(k){
+  let dol=Math.floor(S.budget/100), t=Math.floor(S.budget/10)%10, h=S.budget%10;
+  const set=()=>{S.budget=dol*100+t*10+h};
+  if(k==='ArrowLeft')S.seg=(S.seg+2)%3;
+  else if(k==='ArrowRight')S.seg=(S.seg+1)%3;
+  else if(k==='ArrowUp'||k==='ArrowDown'){const d=k==='ArrowUp'?1:-1;
+    if(S.seg===0)dol=(dol+d+100)%100;else if(S.seg===1)t=(t+d+10)%10;else h=(h+d+10)%10;set();}
+  else if(/^[0-9]$/.test(k)){const v=+k;if(S.seg===0)dol=(dol%10)*10+v;else if(S.seg===1){t=v;S.seg=2;}else h=v;set();}
+  else if(k==='Enter'||k===' '||k==='Escape')S.edit=false;
+}
+function settingsScreen(){
+  const X=sc(), arrows=(v,st='')=>`<span class="dim">◀</span> <span class="${st}">${v}</span> <span class="dim">▶</span>`;
+  let o=header()+'  '+steps(2)+'\n\n<span class="b">  How the plan gets written</span>\n\n';
+  o+=row(0,`plan budget       ${budCell()}   <span class="dim">${S.edit?'←→ digit · ↑↓ or type 0-9 · Enter done':(S.budget?'split by role, 15% held for the joint plan':'no cap')+' · space: exact amount'}</span>`)+'\n';
+  o+=row(1,`steps per role    ${arrows(String(S.steps).padStart(2))}          <span class="dim">look-ups before writing its chapter</span>`)+'\n';
+  o+=row(2,`agents            ${arrows(pad(AGENTS[S.agents],9),S.agents?'ye':'')}   <span class="dim">${S.agents?'planner may use fewer, never more':'planner decides: now '+X.plan+' · build '+X.build}</span>`)+'\n';
+  o+=row(3,`grilling          ${arrows(pad(GRILL[S.grill],13),S.grill?'ye':'')}<span class="dim">${['intake decides: now '+X.grill+(X.size==='small'?'':' · referee stops early when settled'),'chapters go straight to the joint plan','every model questions the others once','rounds until no model has an open question (max 4)'][S.grill]}</span>`)+'\n\n';
+  o+=`<span class="dim">  ─────────────────────────────────────────────</span>\n`;
+  on().forEach(r=>o+=`    ${pad(r.role,15)} ${dot(r.m)} ${pad(MODELS[r.m].n,16)} <span class="dim">${EFF[r.e]}</span>\n`);
+  o+=`\n<span class="dim">  worst case ≈ ${usd(estimate())} list price</span>\n\n  <span class="cy">Enter</span> <span class="dim">write the plan</span>`;
+  return o;
+}
+
+/* ---------- PLAN board ---------- */
+const CH={
+  Architecture:'1. New field on the booking: "reminder sent at".  2. One daily job at 09:00 Thailand time.',
+  Backend:'1. Find tomorrow\'s arrivals (one query by date).  2. Send via Guesty\'s conversation API.  3. Mark sent.',
+  Security:'1. Skip guests with no reachable thread.  2. Never log the phone number.  3. Switch off = nothing sends.',
+  Frontend:'1. Switch "תזכורות לאורחים" in settings.  2. Small ✓ on the booking when sent.',
+  Research:'1. Guesty sends WhatsApp only on an open thread.  2. Airbnb guests: platform chat, not WhatsApp.',
+  'Message copy':'Hebrew / English / Thai text, 2 lines each, with the check-in time.',
+  'Small tasks':'1. Change the label in the booking form.  2. Same change in the English and Thai texts.',
+};
+const R=n=>S.roles.find(x=>x.role===n);
+const who=n=>{const r=R(n);return r&&r.on?`${dot(r.m)} ${n}`:n};
+function plan(fail){
+  const X=sc(), small=X.size==='small', writers=on().filter(r=>r.role!=='Second opinion');
+  const dead=fail?writers.find(r=>r.role==='Research'):null, bk=dead?backup(dead.m):null;
+  const grillMode=S.grill===0?(small?1:3):S.grill; // 1 off · 2 one round · 3 until settled
+  let total=0.041; const L=[], P=x=>L.push(x);
+  const tag=(r,c,st)=>{total+=c;return ` <span class="dim">· ${st?st+' steps · ':''}${usd(c)}</span>`};
+  P(`<span class="b"># Build — plan</span>  <span class="he">${esc(X.q)}</span>\n${phase('plan')}\n<span class="dim">planner Claude Opus 5 · ${on().length} role${on().length>1?'s':''} · agents ${AGENTS[S.agents]} · grilling ${GRILL[S.grill]} · budget ${money(S.budget)}</span>\n`);
+  P(`<span class="cy b">## Chapters</span>  <span class="dim">(written in parallel; each role sees the task and its own line)</span>`);
+  writers.forEach(r=>{
+    if(r===dead){P(`<span class="b">### ${r.role}</span> · ${dot(r.m)} <s>${MODELS[r.m].n}</s> <span class="re">did not answer (503, tried twice)</span> → ${dot(bk)} ${MODELS[bk].n} <span class="ye">backup · same class</span>${tag(r,cost({m:bk,e:r.e},1500),2)}\n<span class="dim">${CH[r.role]}</span>`);return;}
+    P(`<span class="b">### ${r.role}</span> · ${dot(r.m)} ${MODELS[r.m].n}${tag(r,cost(r,1500),2)}\n<span class="dim">${CH[r.role]||'…'}</span>`);
+  });
+  const Qs=[];
+  if(grillMode===1){
+    P(`\n<span class="cy b">## Grilling</span> <span class="dim">— ${small&&S.grill===0?'skipped by the planner: one chapter, nothing to argue about':'off (your setting)'}</span>`);
+  }else{
+    const q=(n,from,to,text,rec,ans,st)=>`❓ <span class="b">Q${n}</span> ${who(from)} → ${who(to)}: ${text}\n   <span class="dim">➡️ recommends:</span> ${rec}\n   ${st==='ok'?'<span class="gr">✓</span>':st==='you'?'<span class="ye">↑ to you</span>':'<span class="cy">↻</span>'} <span class="dim">${to}:</span> ${ans}${tag({m:2,e:2},cost({m:2,e:2},250))}`;
+    P(`\n<span class="cy b">## Grilling · round 1</span>  <span class="dim">(every model questions the others. Facts they look up themselves; decisions go to you)</span>`);
+    P(q(1,'Security','Backend','If the 09:00 job runs twice, what stops a second message?','mark "sent" in the same step as sending','revised step 3 — send and mark together','fix'));
+    P(q(2,'Research','Backend','Your chapter assumes every guest has WhatsApp. Airbnb guests don\'t.','branch by channel','accepted — Airbnb goes through platform chat','ok'));
+    P(q(3,'Second opinion','Architecture','09:00 on arrival day — a guest landing at 10:00 gets it an hour before. Why not 18:00 the day before?','18:00 the day before','held: this is a business choice, not a fact','you'));
+    P(q(4,'Frontend','Message copy','Who checks the Thai text?','mark it "unreviewed" in the app until a person checks it','accepted','ok'));
+    P(`<span class="dim">✂ dropped by the referee:</span> <span class="dim"><s>Research → Frontend: "have you thought about accessibility?"</s> — points to no line in the chapter</span>`);
+    P(`<span class="ma">⚖ referee</span> <span class="dim">(Claude Opus 5, doesn't take sides) · round 1: 4 questions · 3 closed · 1 → you · 1 still open between models → </span>${grillMode===3?'<span class="gr">one more round</span>':'<span class="ye">stop (1 round, your setting)</span>'}`);
+    if(grillMode===3){
+      P(`\n<span class="cy b">## Grilling · round 2</span>`);
+      P(q(5,'Backend','Security','Is the booking id OK in the log?','yes — it identifies no one outside the app','accepted','ok'));
+      P(q(6,'Second opinion','Backend','A guest who books tonight for tomorrow — send at once or skip?','skip; the booking confirmation already covers it','held: business choice','you'));
+      P(`<span class="ma">⚖ referee</span> <span class="dim">· round 2: 2 questions · 1 closed · 1 → you · 0 open between models → </span><span class="gr">stop: settled</span> <span class="dim">(cap was 2 rounds)</span>`);
+      Qs.push(['When does the reminder go out?','18:00 the day before'],['Same-day bookings: send at once or skip?','skip']);
+    }else{
+      P(`<span class="dim">one round (your setting) — anything still open goes into the plan as disputed</span>`);
+      Qs.push(['When does the reminder go out?','18:00 the day before']);
+    }
+  }
+  const j=cost({m:2,e:3},1500); total+=j;
+  if(small){
+    const r=R('Small tasks');
+    P(`\n<span class="cy b">## Joint plan</span> <span class="dim">· ${usd(j)}</span>\n1. ${dot(r.m)} <span class="dim">[Small tasks · ${MODELS[r.m].n}]</span> change the label + the English and Thai texts`);
+  }else{
+    const T=(role,txt,dep)=>{const r=R(role),m=r===dead?bk:r.m;
+      return `${dot(m)} <span class="dim">[${role} · ${MODELS[m].n}${r===dead?'</span> <span class="ye">backup</span><span class="dim">':''}]</span> ${txt}${dep?' <span class="dim">· after '+dep+'</span>':''}`};
+    P(`\n<span class="cy b">## Joint plan</span> <span class="dim">· ${usd(j)} from the reserve</span>\n`+
+      `1. ${T('Architecture','add "reminder sent at" to the booking')}\n2. ${T('Research','confirm per channel: WhatsApp / platform chat','1')}\n`+
+      `3. ${T('Backend','daily job, branch by channel, send + mark together','1, 2')}\n4. ${T('Security','review 3: reachable guests only, no phones in logs','3')}\n`+
+      `5. ${T('Message copy','three languages; Thai marked unreviewed')}\n6. ${T('Frontend','settings switch + ✓ on the booking','3')}`+
+      (dead?`\n<span class="b">### Backups used</span>\n- Research: ${MODELS[dead.m].n} did not answer → ${MODELS[bk].n} wrote the chapter`:''));
+  }
+  if(Qs.length)P(`\n<span class="ye b">## Questions for you</span> <span class="dim">(decisions the models would not make for you)</span>\n`+Qs.map((q,i)=>`${i+1}. ${q[0]}  <span class="dim">➡️ recommended:</span> ${q[1]}`).join('\n'));
+  P(`\n<span class="b">## Spend</span> <span class="dim">(list price — runs on your subscriptions)</span>  <span class="b">total ${usd(total)}</span>${S.budget?' <span class="dim">of '+money(S.budget)+'</span>':''}`);
+  P(`\n<span class="dim">plan saved · build/2026-09-18-1710-${X.slug}.md</span>\n\n<span class="gr b">✓ PLAN done — no code was changed.</span>\n  <span class="ye">Enter</span> <span class="dim">${Qs.length?'answer the '+Qs.length+' question'+(Qs.length>1?'s':'')+' (recommended answers pre-filled), then BUILD':'approve and BUILD it'}  ·  Esc back to settings</span>`);
+  S.board={steps:L,shown:0,kind:'plan',fail,qs:Qs}; tick();
+}
+
+/* ---------- BUILD board ---------- */
+function build(fail,qs){
+  const X=sc(), L=[], P=x=>L.push(x);
+  const ag=(name,m,roles,tasks,body)=>`<span class="b">${name}</span> · ${dot(m)} ${MODELS[m].n} <span class="dim">[${roles}] · ${tasks}</span>\n${body}`;
+  const copy=b=>`   <span class="dim">copy: ../PMS-${X.slug}-${b}</span>`;
+  const ok=s=>`   <span class="gr">✓ done</span> <span class="dim">· tests pass · ${s}</span>`;
+  P(header('build')+(qs&&qs.length?`<span class="dim">your answers: ${qs.map(q=>q[1]).join(' · ')}</span>\n`:''));
+  if(X.size==='small'){
+    const r=R('Small tasks');
+    P(`<span class="b">agents: 1</span> <span class="dim">— planner's choice (${AGENTS[S.agents]}). One change in one place: a second agent would only add a merge.</span>\n`);
+    P(ag('Agent A',r.m,'Small tasks','task 1',copy('a')+'\n'+ok('3 files')));
+    P(`\n<span class="cy b">## Review & merge</span> · <span class="ma">●</span> Claude Opus 5\n<span class="gr">✓ merged into your branch</span> <span class="dim">· 3 files · tests 412/412</span>`);
+    P(`\n<span class="b">## Spend</span> <span class="dim">(list price)</span>  <span class="b">plan $0.05 + build $0.09</span>`);
+    P(`\n<span class="gr b">✓ BUILD done.</span> <span class="dim">look at it: localhost:3002 → open any booking → the button says "שמור הזמנה"  ·  Esc back</span>`);
+  }else{
+    const a=R('Backend'), bA=backup(a.m);
+    P(`<span class="b">agents: 4</span> <span class="dim">— planner's choice (${AGENTS[S.agents]}), at most 2 at once. 6 tasks, but tasks 1+3 touch the same files → one agent, in order.\n          Security gets its own agent on purpose: fresh eyes on code it didn't write.</span>\n`);
+    P(`<span class="cy b">## Wave 1</span>  <span class="dim">(no shared files, nothing to wait for → in parallel)</span>`);
+    P(ag('Agent A',a.m,'Architecture + Backend','tasks 1 → 3',copy('a')+'\n'+(fail?`   <span class="re">✗ ${MODELS[a.m].n} did not answer (tried twice)</span> → ${dot(bA)} ${MODELS[bA].n} <span class="ye">backup · same class</span> <span class="dim">picks up from the last saved step</span>\n`:'')+ok('7 files')));
+    P(ag('Agent B',R('Message copy').m,'Message copy','task 5',copy('b')+'\n'+ok('1 file')));
+    P(`<span class="cy b">## Wave 2</span>  <span class="dim">(waits for Agent A)</span>`);
+    P(ag('Agent C',R('Security').m,'Security','task 4 · review only',copy('c')+`\n   <span class="ye">! found 1</span> <span class="dim">— phone number in an error message → back to Agent A → fixed ✓</span>`));
+    P(ag('Agent D',R('Frontend').m,'Frontend','task 6',copy('d')+'\n'+ok('2 files')));
+    P(`\n<span class="cy b">## Review & merge</span> · <span class="ma">●</span> Claude Opus 5\n<span class="dim">reads every copy's changes, runs all tests + typecheck on the merged result</span>\n<span class="gr">✓ merged into your branch</span> <span class="dim">· 10 files · tests 412/412</span>`);
+    P(`\n<span class="b">## Spend</span> <span class="dim">(list price)</span>  <span class="b">plan $0.71 + build $3.10</span>${fail?' <span class="dim">· 1 backup used</span>':''}`);
+    P(`\n<span class="gr b">✓ BUILD done.</span> <span class="dim">look at it: localhost:3002/settings → "תזכורות לאורחים"  ·  Esc back</span>`);
+  }
+  S.board={steps:L,shown:0,kind:'build'}; tick();
+}
+function tick(){ if(!S.board)return; S.board.shown++; draw(); if(S.board.shown<S.board.steps.length)S.board.t=setTimeout(tick,420); }
+
+/* ---------- rules + classes tabs ---------- */
+function rulesTab(){
+  let o=`<span class="b">addons › build › your rules</span>\n<span class="dim">the planner starts every recommendation from this table · saved once per machine</span>\n\n<span class="dim">    role              default model         effort</span>\n`;
+  RULES.forEach((r,i)=>{const sel=S.rcur===i;
+    o+=`<span class="row${sel?' sel':''}" data-i="${i}">${sel?'<span class="cy">›</span>':' '}   ${pad(r.role,16)}  <span class="dim">◀</span> ${dot(r.m)} ${pad(MODELS[r.m].n,16)} ${tierTag(r.m)} <span class="dim">▶</span>  ${pad(EFF[r.e],6)} ${meter(r.e)}</span>\n`;});
+  return o+`\n<span class="dim">  a role the planner invents (like "Message copy") gets the model it suggests —\n  it shows as </span><span class="ye">new</span><span class="dim"> in the roles step and you can change it there.</span>`;
+}
+const flat=()=>TIERS.flatMap((t,ti)=>t.map(m=>({m,ti})));
+function classesTab(){
+  const F=flat(); S.ccur=clamp(S.ccur,0,F.length-1); let k=0;
+  let o=`<span class="b">addons › build › model classes</span>\n<span class="dim">order inside a class = backup order · a model the proxy offers that you haven't sorted waits at the bottom</span>\n`;
+  TIERS.forEach((t,ti)=>{
+    o+=`\n<span class="${ti===3?'ye':'cy'} b">  ${TIER_NAMES[ti].toUpperCase()}</span>\n`;
+    if(!t.length)o+=`<span class="dim">      (empty)</span>\n`;
+    t.forEach((m,j)=>{const sel=S.ccur===k, M=MODELS[m];
+      o+=`<span class="row${sel?' sel':''}" data-i="${k}">${sel?'<span class="cy">›</span>':' '}   ${ti<3?'<span class="dim">'+(j+1)+'.</span>':'  '} ${dot(m)} ${pad(M.n,18)} <span class="dim">${M.pi==null?'price ?':'$'+M.pi+' / $'+M.po}</span>${ti===3?'  <span class="ye">← place it in a class</span>':''}</span>\n`;k++;});
+  });
+  return o;
+}
+
+/* ---------- keys ---------- */
+function key(k){
+  if(S.v==='classes'){
+    const F=flat(), it=F[S.ccur], t=TIERS[it.ti], j=t.indexOf(it.m), at=m=>{S.ccur=flat().findIndex(x=>x.m===m)};
+    if((k==='ArrowUp'||k==='ArrowDown')&&S.shift){const d=k==='ArrowUp'?-1:1;if(t[j+d]!==undefined){[t[j],t[j+d]]=[t[j+d],t[j]];at(it.m);}}
+    else if(k==='ArrowUp')S.ccur=(S.ccur+F.length-1)%F.length;
+    else if(k==='ArrowDown')S.ccur=(S.ccur+1)%F.length;
+    else if(k==='ArrowLeft'||k==='ArrowRight'){const nt=clamp(it.ti+(k==='ArrowLeft'?-1:1),0,2);if(nt!==it.ti){t.splice(j,1);TIERS[nt].push(it.m);at(it.m);}}
+    return;
+  }
+  if(S.v==='rules'){
+    const r=RULES[S.rcur];
+    if(k==='ArrowUp')S.rcur=(S.rcur+RULES.length-1)%RULES.length;
+    else if(k==='ArrowDown')S.rcur=(S.rcur+1)%RULES.length;
+    else if(k==='ArrowLeft'||k==='ArrowRight')r.m=(r.m+(k==='ArrowRight'?1:MODELS.length-1))%MODELS.length;
+    else if(k==='-'||k==='=')r.e=clamp(r.e+(k==='='?1:-1),0,4);
+    return;
+  }
+  if(S.step===2&&S.edit)return budKey(k);
+  if(k==='Escape'){if(S.step>0){S.step--;S.cur=0;}return;}
+  if(S.step===0){if(k==='Enter'){if(sc().intakeQs&&!S.answered)S.answered=true;else S.step=1;}return;}
+  const d=k==='ArrowRight'?1:k==='ArrowLeft'?-1:0;
+  if(S.step===1){
+    const n=S.roles.length, r=S.roles[S.cur];
+    if(k==='ArrowUp')S.cur=(S.cur+n-1)%n;
+    else if(k==='ArrowDown')S.cur=(S.cur+1)%n;
+    else if(k===' ')r.on=!r.on;
+    else if(k==='Tab')S.colE=!S.colE;
+    else if(d&&r.on){if(S.colE)r.e=clamp(r.e+d,0,4);else r.m=(r.m+d+MODELS.length)%MODELS.length;}
+    else if(k==='Enter'&&on().length){S.step=2;S.cur=0;}
+    return;
+  }
+  if(S.cur===0&&(k===' '||/^[0-9]$/.test(k))){S.edit=true;S.seg=0;if(k!==' ')budKey(k);return;}
+  if(k==='ArrowUp')S.cur=(S.cur+3)%4; else if(k==='ArrowDown')S.cur=(S.cur+1)%4;
+  else if(d){
+    if(S.cur===0){const P=[0,50,100,200,500,1000];S.budget=d>0?(P.find(x=>x>S.budget)??S.budget):([...P].reverse().find(x=>x<S.budget)??0);}
+    else if(S.cur===1)S.steps=clamp(S.steps+d,1,6);
+    else if(S.cur===2)S.agents=clamp(S.agents+d,0,AGENTS.length-1);
+    else S.grill=clamp(S.grill+d,0,GRILL.length-1);
+  }
+  else if(k==='Enter')plan(S.v==='fail');
+}
+
+/* ---------- wiring ---------- */
+const NOTES={
+  vague:'<b>בקשה עמומה.</b> המודל הראשון שמקבל את הבקשה (intake) לא מתחיל לתכנן כשהיא לא ברורה: הוא בודק עובדות בעצמו ושואל אותך רק מה שהוא לא יכול לבדוק — עם תשובה מומלצת. Enter מקבל את ההמלצות. אחר כך אותו מהלך כמו משימה בינונית.',
+  normal:'<b>משימה בינונית.</b> שלב 1: המתכנן קורא את הפרויקט, <b>קובע את גודל המשימה ומחליט כמה סוכנים</b> — לתכנון ולביצוע בנפרד — ומה השאיר בחוץ ולמה. שלב 2: התפקידים (אפשר להוסיף או להוריד). שלב 3: תקציב, <b>מספר סוכנים</b> (אוטומטי או תקרה) ו<b>חקירה הדדית</b>. על הלוח כל מודל שואל את האחרים שאלות קשות עם תשובה מומלצת. עובדות הם בודקים לבד; החלטות עסקיות עולות אליך ב-"Questions for you" לפני הביצוע.',
+  small:'<b>משימה קטנה.</b> אותו כלי, אבל המתכנן קובע "small": תפקיד אחד, בלי חקירה הדדית (אין על מה להתווכח), וסוכן אחד בביצוע. זה ההבדל מ"תמיד הכי הרבה סוכנים".',
+  fail:'<b>מודל לא עונה.</b> בתכנון GPT 6 Astra (מחקר) נופל → Claude Fable מאותה מחלקה כותב. בביצוע Claude Opus של סוכן A נופל → GPT Sol מאותה מחלקה ממשיך מהצעד האחרון שנשמר. תעבור עד הסוף עם Enter.',
+  rules:'<b>הכללים שלך.</b> טבלה אחת שנשמרת פעם אחת: איזה מודל ואיזו עוצמה לכל תפקיד. ההמלצה של המתכנן תמיד מתחילה מכאן.',
+  classes:'<b>מחלקות מודלים.</b> פרונטיר, בינוני, קטן. הסדר בתוך מחלקה הוא סדר הגיבוי. מודל חדש (כאן Gemini 4 Pro) מחכה למטה עד שתשבץ אותו.',
+};
+const HINTS={
+  0:'<kbd>Enter</kbd> הלאה',
+  1:'<kbd>↑↓</kbd> תפקיד · <kbd>רווח</kbd> מדליק / מכבה · <kbd>←→</kbd> מחליף מודל · <kbd>Tab</kbd> עובר לעוצמה · <kbd>Enter</kbd> הלאה · <kbd>Esc</kbd> אחורה',
+  2:'שורת grilling: <b>auto</b> = התקרה שהמודל הראשון קבע (כאן 2 סבבים). השופט עוצר מוקדם כשאין שאלות פתוחות. · <kbd>↑↓</kbd> זז · <kbd>←→</kbd> משנה · בתקציב: <kbd>רווח</kbd> סכום מדויק, <kbd>←→</kbd> ספרה, <kbd>↑↓</kbd> או מקלדת משנה · <kbd>Enter</kbd> כותב את התוכנית · <kbd>Esc</kbd> אחורה',
+  rules:'<kbd>↑↓</kbd> תפקיד · <kbd>←→</kbd> מודל · <kbd>-</kbd> <kbd>=</kbd> עוצמה',
+  classes:'<kbd>↑↓</kbd> מודל · <kbd>←</kbd> מחלקה גבוהה יותר · <kbd>→</kbd> נמוכה יותר · <kbd>Shift</kbd>+<kbd>↑↓</kbd> סדר גיבוי',
+};
+const scr=document.getElementById('screen');
+function draw(){
+  const tool=S.v==='rules'||S.v==='classes';
+  document.getElementById('note').innerHTML=NOTES[S.v];
+  document.getElementById('hint').innerHTML=S.board?(S.board.kind==='plan'?'תכנון — הלוח מתמלא כמו בעורך. בסוף: <kbd>Enter</kbd> עובר לביצוע · <kbd>Esc</kbd> חזרה':'ביצוע (ייבנה אחרי התכנון) · <kbd>Esc</kbd> חזרה'):tool?HINTS[S.v]:HINTS[S.step];
+  document.getElementById('title').textContent=S.board?`build/2026-09-18-1710-${sc().slug}.md`:tool?'addons':'ccx build';
+  scr.innerHTML=S.board?S.board.steps.slice(0,S.board.shown).join('\n'):S.v==='rules'?rulesTab():S.v==='classes'?classesTab():[splitScreen,rolesScreen,settingsScreen][S.step]();
+}
+function stopBoard(){clearTimeout(S.board&&S.board.t);S.board=null}
+document.getElementById('term').addEventListener('keydown',e=>{
+  const k=e.key; S.shift=e.shiftKey;
+  if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','Enter','Escape','Tab','-','='].includes(k)&&!/^[0-9]$/.test(k))return;
+  e.preventDefault();
+  if(S.board){
+    if(k==='Escape'){stopBoard();draw();}
+    else if(k==='Enter'&&S.board.kind==='plan'&&S.board.shown>=S.board.steps.length){const f=S.board.fail,q=S.board.qs;stopBoard();build(f,q);}
+    return;
+  }
+  key(k); draw();
+});
+scr.addEventListener('click',e=>{
+  const r=e.target.closest('.row'); if(!r||S.board)return;
+  const i=+r.dataset.i;
+  if(S.v==='rules')S.rcur=i; else if(S.v==='classes')S.ccur=i; else if(S.cur===i&&S.step===1)key(' '); else S.cur=i;
+  draw(); document.getElementById('term').focus();
+});
+document.querySelectorAll('[role=tab]').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('[role=tab]').forEach(x=>x.setAttribute('aria-selected',x===b));
+  stopBoard(); reset(b.dataset.v); draw(); document.getElementById('term').focus();
+});
+reset('normal'); draw(); document.getElementById('term').focus();
+</script>
+</body>
+</html>

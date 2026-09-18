@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>המודל מועצה</title>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--mute:#6b6b70;--line:#e2e0da;
+  --blue:#2f5bd3;--blue-bg:#e9eefc;--green:#1f8a4c;--green-bg:#e5f4ea;--amber:#a86400;--amber-bg:#fdf1dc;
+  --violet:#6b3fc4;--violet-bg:#efe8fb;--r:12px}
+@media (prefers-color-scheme: dark){:root{--bg:#141416;--card:#1e1e22;--ink:#ececef;--mute:#9a9aa2;--line:#2e2e34;
+  --blue:#8aa8ff;--blue-bg:#1f2640;--green:#6fd39a;--green-bg:#17301f;--amber:#f0b35a;--amber-bg:#35270f;--violet:#b99bff;--violet-bg:#2a2140}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Heebo,system-ui,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:26px;margin:0 0 6px}h2{font-size:19px;margin:30px 0 12px}
+.lead{color:var(--mute);margin:0 0 20px}
+.menu{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:10px;max-width:460px;direction:ltr;font-family:ui-monospace,Menlo,monospace;font-size:14px}
+.menu div{padding:6px 10px;border-radius:8px;color:var(--mute)}
+.menu .on{background:var(--violet-bg);color:var(--violet);font-weight:700}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:720px){.cols{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card h3{margin:0 0 4px;font-size:17px}.card .sub{color:var(--mute);font-size:14px;margin:0 0 12px}
+.tag{display:inline-block;font-size:12px;font-weight:500;padding:2px 9px;border-radius:999px;margin-bottom:8px}
+.t-plan{background:var(--blue-bg);color:var(--blue)}.t-build{background:var(--green-bg);color:var(--green)}
+ol{margin:0;padding-inline-start:20px}li{margin:4px 0}
+.team{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.seat{border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center;font-size:14px}
+.seat b{display:block;font-size:15px}.seat.lead{border-color:var(--violet);background:var(--violet-bg)}
+.seat small{color:var(--mute)}
+.arrow{text-align:center;color:var(--mute);font-size:13px;margin:6px 0}
+.term{background:#111;color:#d8d8d8;border-radius:10px;padding:12px 14px;font:13px/1.5 ui-monospace,Menlo,monospace;direction:ltr;text-align:left;white-space:pre;overflow:auto}
+.term .y{color:#f0c060}.term .c{color:#7fc8ff}.term .g{color:#7fe0a0}.term .d{color:#777}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:720px){.split{grid-template-columns:1fr}}
+.pane-t{font-size:12px;color:var(--mute);margin:0 0 4px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+td,th{border-bottom:1px solid var(--line);padding:8px 6px;text-align:start;vertical-align:top}
+th{color:var(--mute);font-weight:500;font-size:13px}
+.q{background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--r);padding:12px 16px}
+.q b{color:var(--amber)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>"מועצה" כמודל בתפריט</h1>
+  <p class="lead">במקום פקודה נפרדת בוחרים מודל, כמו אצל פייבל שמתכנן וסונט שמבצע. במצב תכנון המועצה מתכננת, ואחרי האישור המועצה בונה. בתוך החלק הזה של התפריט יש רק שורה אחת.</p>
+
+  <h2>1 · בוחרים מודל</h2>
+  <div class="menu">
+    <div>Fable 5.1 Plan → Opus 5</div>
+    <div>Fable 5.1 Plan → Sonnet 5</div>
+    <div class="on">Council · plans and builds together</div>
+    <div>Claude Opus 5</div>
+    <div>Claude Sonnet 5</div>
+  </div>
+
+  <h2>2 · נפתחת חלונית מועצה ליד השיחה</h2>
+  <div class="split">
+    <div><p class="pane-t">השיחה עם קלוד (ממשיכה כרגיל)</p>
+<div class="term"><span class="d">❯</span> תכנן מסך תשלומים חדש
+
+<span class="c">● המועצה עובדת בחלונית ליד</span>
+<span class="d">  A כתב תוכנית · B כתב תוכנית · C כתב תוכנית</span>
+<span class="d">  סבב 1 · בדיקה אחרונה: 1 בעיה, תוקנה</span>
+
+<span class="g">● תוכנית מוכנה ← חלון אישור</span></div></div>
+    <div><p class="pane-t">חלונית המועצה (כל השליטה כאן)</p>
+<div class="term"><span class="y">ccx council</span>  1 table ✓ ─ 2 rules ✓ ─ <span class="c">live</span>
+
+ ★ A  Claude Opus 5      high   <span class="d">ראש</span>
+   B  Gemini 3.8 Flash   low    ×1
+   C  Grok 4.6           medium ×1
+
+ <span class="c">plan</span>  A ✓  B ✓  C ✓   round 1   final check
+ <span class="d">board: council/…/board.md</span></div></div>
+  </div>
+
+  <h2>3 · מה קורה בכל שלב</h2>
+  <div class="cols">
+    <div class="card">
+      <span class="tag t-plan">מצב תכנון</span>
+      <h3>המועצה מתכננת</h3>
+      <p class="sub">בדיוק המועצה שכבר קיימת</p>
+      <ol>
+        <li>בפעם הראשונה בשיחה החלונית נפתחת עם מסך ההגדרות: מי יושב, כמה מכל מודל, מי הראש.</li>
+        <li>כל מושב כותב תוכנית לבד ← דיון עם מקורות ← בדיקה אחרונה.</li>
+        <li>התוכנית הסופית נכנסת ישר לחלון האישור הרגיל של מצב תכנון.</li>
+        <li><b>"תשנה את X"</b> ← הראש מתקן לבד, מהר. <b>"מועצה"</b> ← כל המועצה רצה שוב על התוכנית המתוקנת.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <span class="tag t-build">אחרי אישור</span>
+      <h3>המועצה בונה</h3>
+      <p class="sub">ראש אחד עם תת־סוכנים</p>
+      <ol>
+        <li>הראש (A) מחלק את התוכנית: מה הוא עושה בעצמו ומה הוא מעביר לכל מושב, לפי מה שכל מודל טוב בו.</li>
+        <li>כל מושב בונה את החלק שלו כתת־סוכן.</li>
+        <li>הראש בודק כל חלק שחוזר. בעיה חוזרת עם מקור (קובץ ושורה), ואם צריך, לאותו מושב לתיקון.</li>
+        <li>בסוף: מה נבנה, מי בנה מה, מה נבדק.</li>
+      </ol>
+      <div class="team">
+        <div class="seat lead"><b>A · Opus</b><small>ראש · backend<br>בודק את כולם</small></div>
+        <div class="seat"><b>B · Gemini Flash</b><small>frontend</small></div>
+        <div class="seat"><b>C · Grok</b><small>בדיקות</small></div>
+      </div>
+      <div class="arrow">מושב אחד בלבד = סשן רגיל, בלי תת־סוכנים</div>
+    </div>
+  </div>
+
+  <h2>4 · מה נשאר כמו היום</h2>
+  <table>
+    <tr><th>מה</th><th>היום</th><th>עם המודל</th></tr>
+    <tr><td>הפקודה <code>/council</code></td><td>עובדת</td><td>ממשיכה לעבוד, לשאלה חד־פעמית</td></tr>
+    <tr><td>לוח, תוכניות, תוכנית סופית</td><td>בתיקייה של הישיבה</td><td>אותו דבר, ובנוסף בחלון האישור</td></tr>
+    <tr><td>קלוד רגיל (לא ccx)</td><td>—</td><td>השורה מופיעה רק ב־ccx, כמו שאר מודלי המנויים</td></tr>
+  </table>
+
+  <h2>לאשר לפני שבונים</h2>
+  <div class="q">
+    <b>ההנחות שלי, תגיד אם משהו לא נכון:</b>
+    <ol>
+      <li>הראש בבנייה הוא היושב ראש שבחרת בשולחן. אם יש יושב ראש עצמאי, הוא הראש.</li>
+      <li>הראש מחליט לבד מי בונה מה. לא אתה בוחר לכל שלב.</li>
+      <li>כל המושבים בונים באותו עותק של הפרויקט, אחד אחרי השני ולא במקביל, כדי שלא יתנגשו.</li>
+      <li>כשמושב נכשל בבנייה, הוא מסומן כנכשל והראש בונה את החלק שלו בעצמו. <b>זה שונה מהתכנון</b>, שבו אף אחד לא מחליף מושב שנכשל. בבנייה חייבים להשלים את העבודה.</li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>
