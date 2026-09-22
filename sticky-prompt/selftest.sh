@@ -108,6 +108,14 @@ split_fix = sticky.SlashFix()
 check("Hebrew split mid-letter across reads",
       split_fix.feed(b"/\xd7") + split_fix.feed(b"\x91") == b"/c")
 
+# Ctrl/Alt shortcuts on the Hebrew layout, in both detailed key formats
+es = sticky.english_shortcuts
+check("Ctrl-ב becomes Ctrl-C", es(b"\x1b[1489;5u") == b"\x1b[99;5u")
+check("Ctrl-ב (other format) becomes Ctrl-C", es(b"\x1b[27;5;1489~") == b"\x1b[27;5;99~")
+check("Ctrl-ב with event type kept", es(b"\x1b[1489;5:1u") == b"\x1b[99;5:1u")
+check("Shift-only Hebrew letter untouched", es(b"\x1b[1489;2u") == b"\x1b[1489;2u")
+check("plain text untouched", es("שלום".encode()) == "שלום".encode())
+
 if fail:
     for f in fail:
         print("FAIL:", f)

@@ -207,6 +207,36 @@ def convert(text):
     return "".join(HEB_TO_KEY.get(c, c) for c in text)
 
 
+# A key with Ctrl, Alt or Cmd held, as the terminal reports it once Claude turns
+# on detailed key reporting: `ESC [ code ; mods u` or `ESC [ 27 ; mods ; code ~`.
+# On the Hebrew layout the code is the Hebrew letter, so Ctrl-C arrives as
+# Ctrl-ב and Claude ignores it. Swap in the English key on the same spot.
+CSI_U = re.compile(rb"\x1b\[(\d+)((?::\d*)*);(\d+)((?::\d+)?(?:;[\d:]*)?)u")
+CSI_27 = re.compile(rb"\x1b\[27;(\d+);(\d+)~")
+HEB_CODE = {ord(h): ord(e) for h, e in HEB_TO_KEY.items() if "א" <= h <= "ת"}
+
+
+def english_code(code, mods):
+    """The English key's code when a modifier other than Shift is held."""
+    code = int(code)
+    if code in HEB_CODE and (int(mods) - 1) & 0b1110:
+        return b"%d" % HEB_CODE[code]
+    return None
+
+
+def english_shortcuts(data):
+    # ponytail: a sequence split across two reads passes through unchanged
+    def u(m):
+        new = english_code(m[1], m[3])
+        return m[0] if new is None else b"\x1b[" + new + m[2] + b";" + m[3] + m[4] + b"u"
+
+    def k27(m):
+        new = english_code(m[2], m[1])
+        return m[0] if new is None else b"\x1b[27;" + m[1] + b";" + new + b"~"
+
+    return CSI_27.sub(k27, CSI_U.sub(u, data))
+
+
 def write_all(fd, data):
     while data:
         try:
@@ -255,6 +285,7 @@ def main():
             if stdin_fd in readable:
                 data = os.read(stdin_fd, 65536)
                 if data:
+                    data = english_shortcuts(data)
                     write_all(fd, slash.feed(data) if slash else data)
             if fd in readable:
                 try:
