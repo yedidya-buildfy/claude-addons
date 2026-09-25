@@ -21,8 +21,8 @@ function agent(id, meta, lines, ageMs = 0) {
   const t = (Date.now() - ageMs) / 1000;
   fs.utimesSync(file, t, t);
 }
-const reply = (model, effort, tokens, stop) => ({
-  type: 'assistant', effort,
+const reply = (model, effort, tokens, stop, timestamp = new Date().toISOString()) => ({
+  type: 'assistant', effort, timestamp,
   message: { model, stop_reason: stop, usage: { input_tokens: 2, cache_creation_input_tokens: 0, cache_read_input_tokens: tokens - 2 } },
 });
 
@@ -31,8 +31,17 @@ agent('running', { description: 'Build the form' }, [
   { type: 'user', message: { content: [{ type: 'tool_result' }] } },
 ]);
 agent('haiku', { description: 'Quick lookup' }, [reply('claude-haiku-4-5-20251001', undefined, 50_000, 'tool_use')]);
+// The user's last prompt was a minute ago; a notification after it is not a prompt.
+const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+fs.writeFileSync(transcript, [
+  { type: 'user', origin: { kind: 'human' }, timestamp: new Date(Date.now() - 10 * 60_000).toISOString(), message: { content: 'old' } },
+  { type: 'user', origin: { kind: 'human' }, timestamp: minuteAgo, message: { content: 'go' } },
+  { type: 'user', origin: { kind: 'task-notification' }, timestamp: new Date().toISOString(), message: { content: '<task-notification>' } },
+].map(l => JSON.stringify(l)).join('\n') + '\n');
+assert.strictEqual(s.readLastHumanPromptAt(transcript), Date.parse(minuteAgo));
+
 agent('done', { description: 'Finished one' }, [reply('claude-sonnet-5', 'high', 10_000, 'end_turn')]);
-agent('olddone', { description: 'Long gone' }, [reply('claude-sonnet-5', 'high', 10_000, 'end_turn')], 10 * 60 * 1000);
+agent('olddone', { description: 'Long gone' }, [reply('claude-sonnet-5', 'high', 10_000, 'end_turn', new Date(Date.now() - 2 * 60_000).toISOString())]);
 agent('killed', { description: 'Killed' }, [reply('claude-sonnet-5', 'high', 10_000, 'tool_use')], 60 * 60 * 1000);
 
 const agents = s.readSubagents(transcript);
@@ -53,6 +62,7 @@ assert.ok(out.includes('↳ Quick lookup · Haiku 4.5 │'), out);
 assert.ok(out.includes('✓ Finished one · Sonnet 5 · high'), out);
 
 assert.deepStrictEqual(s.readSubagents(path.join(dir, 'nosession.jsonl')), []);
+assert.strictEqual(s.readLastHumanPromptAt(path.join(dir, 'nosession.jsonl')), 0);
 assert.strictEqual(s.formatSubagentRows([]), '');
 
 fs.rmSync(dir, { recursive: true, force: true });

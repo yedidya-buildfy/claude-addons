@@ -1360,9 +1360,9 @@ function formatModelLabel(data = {}) {
 // subagent's conversation is open (verified 2.1.282: the input never changes
 // when you switch views). So instead of "the one you're looking at", every
 // running subagent of this session gets its own row: name · model · effort ·
-// context. The subagent's own transcript records all three per reply.
+// context. The subagent's own transcript records all three per reply. A
+// finished one stays (dimmed, ✓) until the user's next prompt.
 
-const SUBAGENT_DONE_LINGER_MS = 5 * 60 * 1000;  // keep a finished one visible
 const SUBAGENT_STALE_MS = 30 * 60 * 1000;       // silent this long = gone (killed)
 const SUBAGENT_MAX_ROWS = 5;
 const SUBAGENT_TAIL_BYTES = 1024 * 1024;
@@ -1375,7 +1375,7 @@ function subagentWindow(model, used) {
   return used > base ? 1_000_000 : base;
 }
 
-function readSubagentTail(file) {
+function readTailLines(file) {
   let fd;
   try {
     const size = fs.statSync(file).size;
@@ -1385,6 +1385,33 @@ function readSubagentTail(file) {
     fs.readSync(fd, buf, 0, span, size - span);
     const lines = buf.toString('utf8').split('\n');
     if (span < size) lines.shift(); // first line is cut mid-record
+    return lines;
+  } catch (e) {
+    return [];
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch (e) {} }
+  }
+}
+
+// When the user last typed a prompt in the main conversation. Task
+// notifications are recorded as prompts too, so only origin "human" counts.
+// ponytail: only the last 1MB is searched; a longer stretch with no prompt
+// returns 0 and finished rows then live until SUBAGENT_STALE_MS.
+function readLastHumanPromptAt(transcriptPath) {
+  const lines = readTailLines(transcriptPath);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"kind":"human"')) continue;
+    try {
+      const d = JSON.parse(lines[i]);
+      if (d.type === 'user' && d.origin?.kind === 'human') return Date.parse(d.timestamp) || 0;
+    } catch (e) {}
+  }
+  return 0;
+}
+
+function readSubagentTail(file) {
+  try {
+    const lines = readTailLines(file);
     let last = null, reply = null;
     for (let i = lines.length - 1; i >= 0 && !reply; i--) {
       if (!lines[i].trim()) continue;
@@ -1397,8 +1424,6 @@ function readSubagentTail(file) {
     return { last, reply };
   } catch (e) {
     return { last: null, reply: null };
-  } finally {
-    if (fd !== undefined) { try { fs.closeSync(fd); } catch (e) {} }
   }
 }
 
@@ -1408,6 +1433,7 @@ function readSubagents(transcriptPath, now = Date.now()) {
   let names;
   try { names = fs.readdirSync(dir); } catch (e) { return []; }
   const out = [];
+  let promptAt;
   for (const name of names) {
     if (!/^agent-.*\.jsonl$/.test(name)) continue;
     const file = path.join(dir, name);
@@ -1417,7 +1443,11 @@ function readSubagents(transcriptPath, now = Date.now()) {
     const { last, reply } = readSubagentTail(file);
     if (!reply) continue;
     const done = last?.type === 'assistant' && last.message.stop_reason === 'end_turn';
-    if (done && now - mtime > SUBAGENT_DONE_LINGER_MS) continue;
+    // A finished one stays until the user sends the next prompt.
+    if (done) {
+      if (promptAt === undefined) promptAt = readLastHumanPromptAt(transcriptPath);
+      if (promptAt >= (Date.parse(last.timestamp) || mtime)) continue;
+    }
     let meta = {};
     try { meta = JSON.parse(fs.readFileSync(file.replace(/\.jsonl$/, '.meta.json'), 'utf8')) || {}; } catch (e) {}
     const u = reply.message.usage;
@@ -1463,7 +1493,7 @@ module.exports = {
   latencyBar, latencyColor, formatLatency, formatNetSegment, readTokensPerSecond, readNetCache,
   readTranscriptRequests, charsPerToken, finishedRate, readLiveCharRate, streamLogPath,
   countLatin, tokenModel, estimateTokens,
-  readSubagents, formatSubagentRows, subagentWindow,
+  readSubagents, formatSubagentRows, subagentWindow, readLastHumanPromptAt,
 };
 
 /**
