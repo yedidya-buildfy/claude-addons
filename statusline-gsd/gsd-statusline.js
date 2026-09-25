@@ -674,7 +674,12 @@ function runStatusline() {
     const head = middle
       ? `\x1b[2m${modelLabel}\x1b[0m │ ${middle}`
       : `\x1b[2m${modelLabel}\x1b[0m`;
-    process.stdout.write(`${gsdUpdate}${head}${ctx ? ` │${ctx}` : ''}${speed}${usage}${lastCmdSuffix}`);
+    let subagents = '';
+    try {
+      subagents = formatSubagentRows(readSubagents(data.transcript_path));
+    } catch (e) {}
+
+    process.stdout.write(`${gsdUpdate}${head}${ctx ? ` │${ctx}` : ''}${speed}${usage}${lastCmdSuffix}${subagents}`);
   } catch (e) {
     // Silent fail - don't break statusline on parse errors
   }
@@ -1350,6 +1355,102 @@ function formatModelLabel(data = {}) {
   return parts.join(' · ');
 }
 
+// --- Subagent rows -----------------------------------------------------------
+// Claude Code hands the statusline the MAIN conversation's data even while a
+// subagent's conversation is open (verified 2.1.282: the input never changes
+// when you switch views). So instead of "the one you're looking at", every
+// running subagent of this session gets its own row: name · model · effort ·
+// context. The subagent's own transcript records all three per reply.
+
+const SUBAGENT_DONE_LINGER_MS = 5 * 60 * 1000;  // keep a finished one visible
+const SUBAGENT_STALE_MS = 30 * 60 * 1000;       // silent this long = gone (killed)
+const SUBAGENT_MAX_ROWS = 5;
+const SUBAGENT_TAIL_BYTES = 1024 * 1024;
+
+// ponytail: Claude Code never reports a subagent's window size. Opus/Sonnet/
+// Fable subagents are seen past 200K on this account, so they run on 1M;
+// everything else is assumed 200K and bumped to 1M once usage proves otherwise.
+function subagentWindow(model, used) {
+  const base = /opus|sonnet|fable/i.test(model || '') ? 1_000_000 : 200_000;
+  return used > base ? 1_000_000 : base;
+}
+
+function readSubagentTail(file) {
+  let fd;
+  try {
+    const size = fs.statSync(file).size;
+    const span = Math.min(size, SUBAGENT_TAIL_BYTES);
+    const buf = Buffer.alloc(span);
+    fd = fs.openSync(file, 'r');
+    fs.readSync(fd, buf, 0, span, size - span);
+    const lines = buf.toString('utf8').split('\n');
+    if (span < size) lines.shift(); // first line is cut mid-record
+    let last = null, reply = null;
+    for (let i = lines.length - 1; i >= 0 && !reply; i--) {
+      if (!lines[i].trim()) continue;
+      let d;
+      try { d = JSON.parse(lines[i]); } catch (e) { continue; }
+      if (!d.message) continue;
+      if (!last) last = d;
+      if (d.type === 'assistant' && d.message.usage && d.message.model !== '<synthetic>') reply = d;
+    }
+    return { last, reply };
+  } catch (e) {
+    return { last: null, reply: null };
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch (e) {} }
+  }
+}
+
+function readSubagents(transcriptPath, now = Date.now()) {
+  if (!transcriptPath || !transcriptPath.endsWith('.jsonl')) return [];
+  const dir = path.join(transcriptPath.slice(0, -'.jsonl'.length), 'subagents');
+  let names;
+  try { names = fs.readdirSync(dir); } catch (e) { return []; }
+  const out = [];
+  for (const name of names) {
+    if (!/^agent-.*\.jsonl$/.test(name)) continue;
+    const file = path.join(dir, name);
+    let mtime;
+    try { mtime = fs.statSync(file).mtimeMs; } catch (e) { continue; }
+    if (now - mtime > SUBAGENT_STALE_MS) continue;
+    const { last, reply } = readSubagentTail(file);
+    if (!reply) continue;
+    const done = last?.type === 'assistant' && last.message.stop_reason === 'end_turn';
+    if (done && now - mtime > SUBAGENT_DONE_LINGER_MS) continue;
+    let meta = {};
+    try { meta = JSON.parse(fs.readFileSync(file.replace(/\.jsonl$/, '.meta.json'), 'utf8')) || {}; } catch (e) {}
+    const u = reply.message.usage;
+    const used = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+    out.push({
+      name: meta.description || meta.agentType || name.replace(/^agent-|\.jsonl$/g, ''),
+      model: reply.message.model,
+      effort: reply.effort || '',
+      used,
+      window: subagentWindow(reply.message.model, used),
+      done,
+      mtime,
+    });
+  }
+  // Running first, then newest.
+  return out.sort((a, b) => (a.done - b.done) || (b.mtime - a.mtime));
+}
+
+function formatSubagentRows(agents, settings = readClaudeSettings()) {
+  if (!agents.length) return '';
+  const rows = agents.slice(0, SUBAGENT_MAX_ROWS).map(a => {
+    const pct = Math.min(100, Math.round((a.used / a.window) * 100));
+    const label = [a.name, prettyModelName(String(a.model).replace(/-\d{8}$/, ''), settings) || a.model, a.effort].filter(Boolean).join(' · ');
+    const ctx = `\x1b[${usageColor(pct)}m${buildBar(pct)} ${pct}%\x1b[0m \x1b[2m${formatContextSize(a.used)}/${formatContextSize(a.window)}\x1b[0m`;
+    return a.done
+      ? `\x1b[2m  ✓ ${label} │ ${buildBar(pct)} ${pct}% ${formatContextSize(a.used)}/${formatContextSize(a.window)}\x1b[0m`
+      : `  ↳ ${label} │ ${ctx}`;
+  });
+  const more = agents.length - SUBAGENT_MAX_ROWS;
+  if (more > 0) rows.push(`\x1b[2m  +${more} more\x1b[0m`);
+  return '\n' + rows.join('\n');
+}
+
 // Export helpers for unit tests. Harmless when run as a script.
 module.exports = {
   readGsdState, parseStateMd, formatGsdState,
@@ -1362,6 +1463,7 @@ module.exports = {
   latencyBar, latencyColor, formatLatency, formatNetSegment, readTokensPerSecond, readNetCache,
   readTranscriptRequests, charsPerToken, finishedRate, readLiveCharRate, streamLogPath,
   countLatin, tokenModel, estimateTokens,
+  readSubagents, formatSubagentRows, subagentWindow,
 };
 
 /**
