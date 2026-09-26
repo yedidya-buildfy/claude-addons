@@ -1,7 +1,7 @@
 // A stand-in for the ntfy mailbox: publish, and poll since an id or a duration.
 import http from "node:http";
 
-export async function fakeNtfy() {
+export async function fakeNtfy({ pollDelayMs = 0 } = {}) {
   const msgs = [];
   let n = 0, requests = 0;
   const srv = http.createServer((req, res) => {
@@ -21,7 +21,8 @@ export async function fakeNtfy() {
     }
     if (kind === "json" && u.searchParams.get("poll") === "1") {
       const i = msgs.findIndex((m) => m.id === u.searchParams.get("since"));
-      res.end(msgs.slice(i + 1).filter((m) => m.topic === topic).map((m) => JSON.stringify(m) + "\n").join(""));
+      const out = msgs.slice(i + 1).filter((m) => m.topic === topic).map((m) => JSON.stringify(m) + "\n").join("");
+      setTimeout(() => res.end(out), pollDelayMs);
       return;
     }
     res.writeHead(404); res.end("{}");

@@ -70,3 +70,23 @@ test("replies older than 32 days and synthetic entries are ignored", () => {
   const x = dev();
   assert.equal(collect({ projectsDir: d, offsets: {}, dev: x, now: NOW.getTime() }), false);
 });
+
+test("only Claude models count — other providers' agents are not plan usage", () => {
+  const d = tmp();
+  fs.writeFileSync(path.join(d, "p1/a.jsonl"),
+    line("g1", "gpt-6-astra", NOW.toISOString(), U(1e6)) + line("g2", "claude-gpt-sol", NOW.toISOString(), U(1e6))
+    + line("g3", "claude-gemini-flash", NOW.toISOString(), U(1e6)) + line("c1", "claude-sonnet-5", NOW.toISOString(), U(1e6)));
+  const x = dev();
+  collect({ projectsDir: d, offsets: {}, dev: x, now: NOW.getTime() });
+  assert.equal(x.days[dayKey(NOW)].w, 2);
+});
+
+test("a reply logged again with a larger output count adds only the difference", () => {
+  const d = tmp(), f = path.join(d, "p1/a.jsonl"), offsets = {}, x = dev();
+  fs.writeFileSync(f, line("m1", "claude-sonnet-5", NOW.toISOString(), U(0, 2e5)));
+  collect({ projectsDir: d, offsets, dev: x, now: NOW.getTime() });
+  fs.appendFileSync(f, line("m1", "claude-sonnet-5", NOW.toISOString(), U(0, 1e6)) + line("m1", "claude-sonnet-5", NOW.toISOString(), U(0, 5e5)));
+  collect({ projectsDir: d, offsets, dev: x, now: NOW.getTime() });
+  assert.equal(x.days[dayKey(NOW)].w, 10); // $10/MTok output, the largest count wins
+  assert.equal(x.hours["2026-09-26T12"], 10);
+});

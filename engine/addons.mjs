@@ -95,6 +95,10 @@ function serve() {
   const page = fs.readFileSync(path.join(repo, "engine", "page.html"), "utf8");
   let idle;
   const bump = () => { clearTimeout(idle); idle = setTimeout(() => { console.log("closed after 30 minutes idle"); process.exit(0); }, 30 * 60 * 1000); };
+  // live panels run a helper per open tab; whenever this server stops, they stop with it
+  const helpers = new Set();
+  process.on("exit", () => { for (const h of helpers) h.kill(); });
+  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => process.exit(0));
 
   const state = () => {
     const cfg = config();
@@ -231,6 +235,9 @@ function serve() {
         if (req.method === "GET" && url.pathname === "/api/panel/stream") {
           res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
           const child = spawn(process.execPath, [script, "watch"], { stdio: ["ignore", "pipe", "ignore"] });
+          helpers.add(child);
+          child.on("exit", () => { helpers.delete(child); res.end(); });
+          child.stdout.setEncoding("utf8"); // a Hebrew name split across two reads must not break
           let buf = "";
           child.stdout.on("data", (c) => {
             buf += c;

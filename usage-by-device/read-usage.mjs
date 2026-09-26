@@ -21,6 +21,9 @@ export function weight(model, u) {
     + (u.cache_creation_input_tokens || 0) * p[3] + (u.cache_read_input_tokens || 0) * p[4]) / 1e6;
 }
 
+// Only Claude replies use the plan; ccx provider agents (gpt-*, claude-gemini-*, …) do not.
+const CLAUDE = /^claude-(opus|sonnet|haiku|fable|mythos)/;
+
 export const family = (model) => (/fable|mythos/.test(model) ? "f" : /opus/.test(model) ? "o" : /haiku/.test(model) ? "h" : "s");
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -68,21 +71,26 @@ export function collect({ projectsDir, offsets, dev, now = Date.now() }) {
   const files = logFiles(projectsDir, since);
   let added = false;
   for (const file of files) {
-    const st = offsets[file] ?? { offset: 0, recent: [] };
+    const st = offsets[file] ?? { offset: 0, recent: {} };
+    if (Array.isArray(st.recent)) st.recent = {}; // state written by the first version
     const { lines, offset } = readNew(file, st.offset);
     for (const text of lines) {
       if (!text.includes('"usage"')) continue;
       let d;
       try { d = JSON.parse(text); } catch { continue; }
       const m = d.message;
-      if (!m?.usage || typeof m.model !== "string" || m.model.startsWith("<") || !d.timestamp) continue;
-      const key = `${m.id}:${d.requestId}`;
-      if (st.recent.includes(key)) continue; // the same reply is logged once per content block
-      st.recent.push(key);
-      if (st.recent.length > 200) st.recent.shift();
+      if (!m?.usage || !CLAUDE.test(m.model) || !d.timestamp) continue;
       const t = new Date(d.timestamp);
       if (!(t.getTime() >= since)) continue;
-      const w = weight(m.model, m.usage);
+      // The same reply is logged once per content block, and the output count
+      // grows between those lines — count the largest, never twice.
+      const key = `${m.id}:${d.requestId}`, full = weight(m.model, m.usage), seen = st.recent[key] ?? 0;
+      if (full <= seen) continue;
+      delete st.recent[key];
+      st.recent[key] = full;
+      const keys = Object.keys(st.recent);
+      if (keys.length > 200) delete st.recent[keys[0]];
+      const w = full - seen;
       const day = (dev.days[dayKey(t)] ??= { w: 0, f: 0, o: 0, s: 0, h: 0 });
       day.w += w;
       day[family(m.model)] += w;

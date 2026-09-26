@@ -14,7 +14,7 @@ export function view(ledger, myId, plan, now = new Date()) {
   const windows = {};
   for (const [name, field, span] of [["five", "five_hour", 5 * 3600e3], ["week", "seven_day", 7 * 86400e3]]) {
     const w = plan?.[field];
-    if (typeof w?.utilization === "number" && w.resets_at) windows[name] = { utilization: w.utilization, resetsAt: w.resets_at, from: Date.parse(w.resets_at) - span };
+    if (typeof w?.utilization === "number" && w.resets_at && Date.parse(w.resets_at) > now.getTime()) windows[name] = { utilization: w.utilization, resetsAt: w.resets_at, from: Date.parse(w.resets_at) - span };
   }
 
   const devs = Object.entries(ledger.devices);

@@ -50,3 +50,11 @@ test("daily: the last 30 local days, oldest first, each device's amount per day"
   assert.equal(v.daily[0].total, 100);
   assert.deepEqual(v.daily[1].by, {});
 });
+
+test("a plan window whose reset time has passed is not shown", () => {
+  const old = { five_hour: { utilization: 90, resets_at: new Date(now.getTime() - 60e3).toISOString() }, seven_day: plan.seven_day };
+  const v = view(L, "aaaaaaaaaaaaaaaa", old, now);
+  assert.equal(v.plan.five, undefined);
+  assert.equal(v.devices[0].windows.five, undefined);
+  assert.ok(v.plan.week);
+});

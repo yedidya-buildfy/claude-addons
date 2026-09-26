@@ -107,3 +107,70 @@ test("no Claude login → nothing happens, exit 0; syncs are throttled to one a 
   assert.equal(box.requests(), after);
   box.close();
 });
+
+test("the mailbox can rename this machine but never overwrite its own usage", async () => {
+  const box = await fakeNtfy();
+  const a = machine(box.url, A, "Mine");
+  a.use("m1", "claude-sonnet-5", 2);
+  await a.run("sync", "--force");
+  const { derive, sealDevice } = await import("../wire.mjs");
+  const { key, topic } = derive(ACCT);
+  const forged = { name: "Renamed", nameSetAt: "2099-01-01T00:00:00.000Z", updatedAt: "2099-01-01T00:00:00.000Z", days: {}, hours: {} };
+  await fetch(`${box.url}/${topic}`, { method: "POST", body: sealDevice(key, A, forged) });
+  await a.run("sync", "--force");
+  assert.equal(a.ledger().devices[A].name, "Renamed");
+  assert.equal(Object.values(a.ledger().devices[A].days)[0].w, 2);
+  box.close();
+});
+
+test("ledger deleted but read positions kept → this machine's usage is recounted, not published empty", async () => {
+  const a = machine("http://127.0.0.1:9", A, "Mine");
+  a.use("m1", "claude-sonnet-5", 2);
+  await a.run("sync", "--force");
+  fs.rmSync(path.join(a.home, ".claude/usage-by-device/ledger.json"));
+  await a.run("sync", "--force");
+  assert.equal(Object.values(a.ledger().devices[A].days)[0].w, 2);
+});
+
+test("a lock left by a dead process does not block the next sync", async () => {
+  const a = machine("http://127.0.0.1:9", A, "Mine");
+  fs.writeFileSync(path.join(a.home, ".claude/usage-by-device/sync.lock"), "999999");
+  a.use("m1", "claude-sonnet-5", 2);
+  await a.run("sync", "--force");
+  assert.equal(Object.values(a.ledger().devices[A].days)[0].w, 2);
+});
+
+test("a rename is not blocked by a slow mailbox, and the slow sync keeps it", async () => {
+  const box = await fakeNtfy({ pollDelayMs: 3000 });
+  const a = machine(box.url, A, "Mine");
+  a.use("m1", "claude-sonnet-5", 2);
+  await a.run("sync", "--force");
+  a.use("m2", "claude-sonnet-5", 1);
+  const slow = a.run("sync", "--force");
+  await new Promise((ok) => setTimeout(ok, 500));
+  const t0 = Date.now();
+  // rename's own sync also waits on the slow mailbox; the rename itself must land before that
+  const renaming = a.run("rename", A, "Quick");
+  await new Promise((ok) => setTimeout(ok, 1500));
+  assert.equal(a.ledger().devices[A].name, "Quick", `rename not written after ${Date.now() - t0}ms`);
+  await slow; await renaming;
+  assert.equal(a.ledger().devices[A].name, "Quick");
+  assert.equal(Object.values(a.ledger().devices[A].days)[0].w, 3);
+  box.close();
+});
+
+test("watch exits when the page server that started it is gone", async () => {
+  const a = machine("http://127.0.0.1:9", A, "Mine"); // mailbox down: the loop retries and prints nothing more
+  const { spawn } = await import("node:child_process");
+  const env = { ...process.env, HOME: a.home, UBD_DEVICE_ID: A, UBD_DEVICE_NAME: "Mine" };
+  const wrapper = spawn(process.execPath, ["-e", `const c = require("child_process").spawn(process.execPath, [${JSON.stringify(UBD)}, "watch"], { stdio: ["ignore", "inherit", "ignore"] }); console.error(c.pid); setInterval(() => {}, 1e6);`], { env, stdio: ["ignore", "pipe", "pipe"] });
+  const pid = Number(await new Promise((ok) => wrapper.stderr.once("data", (d) => ok(String(d).trim()))));
+  let lines = 0;
+  await new Promise((ok) => wrapper.stdout.on("data", (c) => { lines += String(c).split("\n").length - 1; if (lines >= 2) ok(); }));
+  wrapper.kill("SIGKILL"); // like the page server dying without cleaning up
+  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  for (let i = 0; i < 40 && alive(); i++) await new Promise((ok) => setTimeout(ok, 200));
+  const still = alive();
+  if (still) process.kill(pid);
+  assert.equal(still, false);
+});

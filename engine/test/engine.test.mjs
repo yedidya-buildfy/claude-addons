@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import { paths, loadManifests, migrateConfig, apply, SHELL_BEGIN, stripLegacyShell } from "../lib.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -290,4 +290,28 @@ test("panel routes: only declared calls run, arguments are checked", async () =>
   assert.equal(state.find((a) => a.id === "usage-by-device").panel, true);
   assert.equal(state.find((a) => a.id === "phone-alerts").panel, false);
   } finally { child.kill(); } // a failed assertion must not leave the page server running
+});
+
+test("stopping the page server stops the live panel's helper too", async () => {
+  const { home, P } = sandbox();
+  go(P, { ...all(false), enabled: { ...all(false).enabled, "usage-by-device": true } });
+  fs.writeFileSync(path.join(home, ".claude/usage-by-device/server"), "http://127.0.0.1:9");
+  fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ oauthAccount: { accountUuid: "a", organizationUuid: "o" } })); // logged in → the helper keeps running
+  const child = spawn(process.execPath, [path.join(repo, "engine/addons.mjs")], { env: { ...process.env, HOME: home, ADDONS_NO_OPEN: "1" } });
+  const url = await new Promise((ok, bad) => {
+    child.stdout.on("data", (d) => { const m = String(d).match(/http:\/\/127\.0\.0\.1:\d+\/\?t=\w+/); if (m) ok(m[0]); });
+    child.on("exit", () => bad(new Error("server exited")));
+  });
+  const u = new URL(url);
+  const ctl = new AbortController();
+  const r = await fetch(`${u.origin}/api/panel/stream?t=${u.searchParams.get("t")}&addon=usage-by-device`, { signal: ctl.signal });
+  const reader = r.body.getReader();
+  for (let seen = ""; (seen.match(/data:/g) || []).length < 2;) { const { value, done } = await reader.read(); if (done) throw new Error("stream ended early"); seen += new TextDecoder().decode(value); } // printed, synced, now idle in its retry loop
+  const helpers = () => { try { return execSync(`pgrep -f "${home}/.claude/usage-by-device/ubd.mjs watch"`, { encoding: "utf8" }).trim(); } catch { return ""; } };
+  assert.notEqual(helpers(), "");
+  child.kill("SIGTERM");
+  await new Promise((ok) => child.on("exit", ok));
+  await new Promise((ok) => setTimeout(ok, 300)); // the page server stops its helper itself, not via the helper's own watchdog
+  ctl.abort();
+  assert.equal(helpers(), "");
 });
