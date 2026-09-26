@@ -46,7 +46,7 @@ export async function publish(server, topic, body, f = fetch) {
 }
 
 export async function poll(server, topic, since, f = fetch) {
-  const r = await f(`${server}/${topic}/json?poll=1&since=${encodeURIComponent(since)}`, { signal: AbortSignal.timeout(15000) });
+  const r = await f(`${server}/${topic}/json?poll=1&since=${encodeURIComponent(since)}`, { signal: AbortSignal.timeout(30000) });
   if (!r.ok) throw new Error(`poll ${r.status}`);
   const out = [];
   for (const l of (await r.text()).split("\n")) {

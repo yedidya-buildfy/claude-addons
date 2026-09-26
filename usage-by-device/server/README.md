@@ -14,8 +14,9 @@ Recreate:
       -e NTFY_BASE_URL=http://172.233.209.162:8095 -e NTFY_CACHE_FILE=/var/cache/ntfy/cache.db -e NTFY_CACHE_DURATION=168h \
       -e NTFY_ATTACHMENT_CACHE_DIR= -e NTFY_MESSAGE_SIZE_LIMIT=4096 -e NTFY_WEB_ROOT=disable \
       -e NTFY_ENABLE_SIGNUP=false -e NTFY_ENABLE_LOGIN=false \
-      -e NTFY_VISITOR_REQUEST_LIMIT_BURST=60 -e NTFY_VISITOR_REQUEST_LIMIT_REPLENISH=5s -e NTFY_VISITOR_MESSAGE_DAILY_LIMIT=5000 \
+      -e NTFY_VISITOR_REQUEST_LIMIT_BURST=60 -e NTFY_VISITOR_REQUEST_LIMIT_REPLENISH=5s -e NTFY_VISITOR_MESSAGE_DAILY_LIMIT=500 \
       binwiederhier/ntfy serve
 
 Check: publish, `docker restart ubd-mailbox`, poll with since=72h — the message is still there.
 Oversized bodies (>4096 bytes) are refused with 400.
+One IP may post 500 messages a day: plenty for a few machines, and caps how much junk a stranger who learns the channel can pile up for a fresh machine to download.

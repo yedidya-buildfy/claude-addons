@@ -26,8 +26,14 @@ const CLAUDE = /^claude-(opus|sonnet|haiku|fable|mythos)/;
 
 export const family = (model) => (/fable|mythos/.test(model) ? "f" : /opus/.test(model) ? "o" : /haiku/.test(model) ? "h" : "s");
 
-const pad = (n) => String(n).padStart(2, "0");
-export const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; // local calendar day
+// Calendar day in the plan's time zone (every machine on a plan counts days by one clock); no zone = this machine's.
+const fmt = new Map();
+export const dayKey = (d, tz) => {
+  if (!fmt.has(tz)) fmt.set(tz, new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }));
+  return fmt.get(tz).format(d);
+};
+// the day `n` days before a YYYY-MM-DD key — pure calendar arithmetic, no clocks or DST involved
+export const daysBefore = (key, n) => { const [y, m, d] = key.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d - n)).toISOString().slice(0, 10); };
 export const hourKey = (d) => d.toISOString().slice(0, 13); // UTC — compared against the plan's UTC reset times
 
 // Every .jsonl under the folder, once per real file (the ccx profile symlinks the same folder).
@@ -66,7 +72,7 @@ function readNew(file, from) {
   }
 }
 
-export function collect({ projectsDir, offsets, dev, now = Date.now() }) {
+export function collect({ projectsDir, offsets, dev, now = Date.now(), tz }) {
   const since = now - 32 * 86400e3;
   const files = logFiles(projectsDir, since);
   let added = false;
@@ -91,12 +97,13 @@ export function collect({ projectsDir, offsets, dev, now = Date.now() }) {
       const keys = Object.keys(st.recent);
       if (keys.length > 200) delete st.recent[keys[0]];
       const w = full - seen;
-      const day = (dev.days[dayKey(t)] ??= { w: 0, f: 0, o: 0, s: 0, h: 0 });
+      const day = (dev.days[dayKey(t, tz)] ??= { w: 0, f: 0, o: 0, s: 0, h: 0 });
       day.w += w;
       day[family(m.model)] += w;
       dev.hours[hourKey(t)] = (dev.hours[hourKey(t)] ?? 0) + w;
       added = true;
     }
+    if (offset !== st.offset) st.at = now;
     st.offset = offset;
     offsets[file] = st;
   }

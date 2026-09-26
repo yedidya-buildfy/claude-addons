@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { dayKey, hourKey } from "./read-usage.mjs";
+import { dayKey, daysBefore, hourKey } from "./read-usage.mjs";
 
 export const DAYS_KEPT = 31;
 export const HOURS_KEPT = 7 * 24;
@@ -29,15 +29,26 @@ export function mergeDevice(a, b) {
   if (!a) return structuredClone(b);
   const usage = b.updatedAt > a.updatedAt ? b : a;
   const naming = b.nameSetAt > a.nameSetAt ? b : a;
-  return { name: naming.name, nameSetAt: naming.nameSetAt, updatedAt: usage.updatedAt, days: usage.days, hours: usage.hours };
+  // an entry too big for one message travels without its hours — keep the ones already known
+  const hours = Object.keys(usage.hours).length || usage === a ? usage.hours : a.hours;
+  return { name: naming.name, nameSetAt: naming.nameSetAt, updatedAt: usage.updatedAt, days: usage.days, hours };
 }
 
-export const mergeSettings = (a, b) => (b.setAt > a.setAt ? { retentionHours: b.retentionHours, setAt: b.setAt } : a);
+// Retention: newest change wins. Time zone: the first one set wins, so the plan's clock never flips back and forth.
+export function mergeSettings(a, b) {
+  const r = b.setAt > a.setAt ? b : a;
+  const z = !a.timeZone ? b : !b.timeZone ? a : b.tzSetAt < a.tzSetAt ? b : a;
+  const out = { retentionHours: r.retentionHours, setAt: r.setAt };
+  if (z.timeZone) Object.assign(out, { timeZone: z.timeZone, tzSetAt: z.tzSetAt });
+  return out;
+}
+
+export const validTimeZone = (tz) => { try { new Intl.DateTimeFormat("en", { timeZone: tz }); return typeof tz === "string"; } catch { return false; } };
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
 
-export function prune(dev, now = new Date()) {
-  const oldestDay = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (DAYS_KEPT - 1)));
+export function prune(dev, now = new Date(), tz) {
+  const oldestDay = daysBefore(dayKey(now, tz), DAYS_KEPT - 1);
   const oldestHour = hourKey(new Date(now.getTime() - HOURS_KEPT * 3600e3));
   for (const k of Object.keys(dev.days)) if (k < oldestDay) delete dev.days[k];
   for (const k of Object.keys(dev.hours)) if (k < oldestHour) delete dev.hours[k];

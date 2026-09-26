@@ -217,7 +217,7 @@ function serve() {
       if (url.pathname.startsWith("/api/panel")) {
         const b = req.method === "POST" ? await body(req) : {};
         const m = manifests.find((x) => x.id === (b.addon ?? url.searchParams.get("addon")));
-        if (!m?.panel) return send(404, { error: "no such panel" });
+        if (!m?.panel || !status(manifests, config(), P).find((x) => x.id === m.id)?.on) return send(404, { error: "no such panel" });
         const script = m.panel.script.replace("~", P.home);
         const runScript = (args) => new Promise((ok) => execFile(process.execPath, [script, ...args], { timeout: 30000 }, (err, out, errOut) => ok({ err, out, errOut })));
         if (req.method === "GET" && url.pathname === "/api/panel") {

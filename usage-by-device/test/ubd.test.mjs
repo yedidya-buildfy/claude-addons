@@ -11,16 +11,16 @@ import { fakeNtfy } from "./fake-ntfy.mjs";
 const UBD = path.join(path.dirname(fileURLToPath(import.meta.url)), "../ubd.mjs");
 const ACCT = { accountUuid: "acct-1", organizationUuid: "org-1" };
 
-function machine(server, id, name, acct = ACCT) {
+function machine(server, id, name, acct = ACCT, tz) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "ubd-e2e-"));
   fs.mkdirSync(path.join(home, ".claude/projects/p"), { recursive: true });
   fs.mkdirSync(path.join(home, ".claude/usage-by-device"), { recursive: true });
   if (acct) fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ oauthAccount: acct }));
   fs.writeFileSync(path.join(home, ".claude/usage-by-device/server"), server);
-  const use = (msgId, model, dollars) => fs.appendFileSync(path.join(home, ".claude/projects/p/s.jsonl"),
-    JSON.stringify({ timestamp: new Date().toISOString(), requestId: `r${msgId}`, message: { id: msgId, model, usage: { input_tokens: dollars * 5e5 } } }) + "\n"); // Sonnet 5: $2/MTok
+  const use = (msgId, model, dollars, at = new Date()) => fs.appendFileSync(path.join(home, ".claude/projects/p/s.jsonl"),
+    JSON.stringify({ timestamp: at.toISOString(), requestId: `r${msgId}`, message: { id: msgId, model, usage: { input_tokens: dollars * 5e5 } } }) + "\n"); // Sonnet 5: $2/MTok
   const run = (...args) => new Promise((ok) => execFile(process.execPath, [UBD, ...args],
-    { env: { ...process.env, HOME: home, UBD_DEVICE_ID: id, UBD_DEVICE_NAME: name } }, (err, stdout, stderr) => ok({ code: err?.code ?? 0, stdout, stderr })));
+    { env: { ...process.env, HOME: home, UBD_DEVICE_ID: id, UBD_DEVICE_NAME: name, ...(tz ? { TZ: tz } : {}) } }, (err, stdout, stderr) => ok({ code: err?.code ?? 0, stdout, stderr })));
   const ledger = () => JSON.parse(fs.readFileSync(path.join(home, ".claude/usage-by-device/ledger.json"), "utf8"));
   const log = () => { try { return fs.readFileSync(path.join(home, ".claude/cache/usage-by-device.log"), "utf8"); } catch { return ""; } };
   return { home, use, run, ledger, log };
@@ -173,4 +173,41 @@ test("watch exits when the page server that started it is gone", async () => {
   const still = alive();
   if (still) process.kill(pid);
   assert.equal(still, false);
+});
+
+test("friends in other time zones count days by the plan's one clock", async () => {
+  const box = await fakeNtfy();
+  const a = machine(box.url, A, "Israel", ACCT, "Asia/Jerusalem"), b = machine(box.url, B, "Thailand", ACCT, "Asia/Bangkok");
+  const y = new Date(Date.now() - 86400e3), at = new Date(Date.UTC(y.getUTCFullYear(), y.getUTCMonth(), y.getUTCDate(), 19, 30)); // 22:30 in Israel, 02:30 next day in Thailand
+  const israelDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(at);
+  await a.run("sync", "--force");            // the first machine sets the plan's clock
+  b.use("m1", "claude-sonnet-5", 2, at);
+  await b.run("sync", "--force");            // learns the plan's clock
+  await b.run("sync", "--force");            // recounts by it
+  assert.deepEqual(Object.keys(b.ledger().devices[B].days), [israelDay]);
+  box.close();
+});
+
+test("the page is told whether the mailbox answered", async () => {
+  const dead = machine("http://127.0.0.1:9", A, "Mine");
+  await dead.run("sync", "--force");
+  assert.equal(JSON.parse((await dead.run("json")).stdout).mailbox.ok, false);
+  const box = await fakeNtfy();
+  const live = machine(box.url, B, "Mine");
+  await live.run("sync", "--force");
+  assert.equal(JSON.parse((await live.run("json")).stdout).mailbox.ok, true);
+  box.close();
+});
+
+test("watch picks up where it left off after the live connection drops", async () => {
+  const box = await fakeNtfy({ streamOnce: true });
+  const a = machine(box.url, A, "Mine");
+  await a.run("sync", "--force"); // leaves a message in the mailbox
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, [UBD, "watch"], { env: { ...process.env, HOME: a.home, UBD_DEVICE_ID: A, UBD_DEVICE_NAME: "Mine", UBD_WATCH_RETRY_MS: "200" }, stdio: ["ignore", "ignore", "ignore"] });
+  for (let i = 0; i < 40 && box.streams.length < 2; i++) await new Promise((ok) => setTimeout(ok, 200));
+  child.kill();
+  assert.ok(box.streams.length >= 2, `reconnects: ${box.streams.length}`);
+  assert.match(box.streams[1], /since=m\d+/);
+  box.close();
 });

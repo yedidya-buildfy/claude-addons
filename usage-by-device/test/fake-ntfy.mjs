@@ -1,8 +1,8 @@
 // A stand-in for the ntfy mailbox: publish, and poll since an id or a duration.
 import http from "node:http";
 
-export async function fakeNtfy({ pollDelayMs = 0 } = {}) {
-  const msgs = [];
+export async function fakeNtfy({ pollDelayMs = 0, streamOnce = false } = {}) {
+  const msgs = [], streams = [];
   let n = 0, requests = 0;
   const srv = http.createServer((req, res) => {
     requests++;
@@ -25,9 +25,15 @@ export async function fakeNtfy({ pollDelayMs = 0 } = {}) {
       setTimeout(() => res.end(out), pollDelayMs);
       return;
     }
+    if (kind === "json" && streamOnce) { // a live stream that sends what it has, then drops
+      streams.push(req.url);
+      const i = msgs.findIndex((m) => m.id === u.searchParams.get("since"));
+      res.end(msgs.slice(i + 1).filter((m) => m.topic === topic).map((m) => JSON.stringify(m) + "\n").join(""));
+      return;
+    }
     res.writeHead(404); res.end("{}");
   });
   await new Promise((ok) => srv.listen(0, "127.0.0.1", ok));
   srv.unref(); // a failed test must not keep the run alive
-  return { url: `http://127.0.0.1:${srv.address().port}`, msgs, requests: () => requests, close: () => { srv.close(); srv.closeAllConnections(); } };
+  return { url: `http://127.0.0.1:${srv.address().port}`, msgs, streams, requests: () => requests, close: () => { srv.close(); srv.closeAllConnections(); } };
 }

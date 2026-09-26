@@ -10,7 +10,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { collect } from "./read-usage.mjs";
-import { readJson, writeJson, emptyLedger, mergeDevice, mergeSettings, prune, deviceId, defaultName, validName, validDevice, validRetention } from "./ledger.mjs";
+import { readJson, writeJson, emptyLedger, mergeDevice, mergeSettings, prune, deviceId, defaultName, validName, validDevice, validRetention, validTimeZone } from "./ledger.mjs";
 import { derive, seal, unseal, sealDevice, publish, poll, DEFAULT_SERVER } from "./wire.mjs";
 import { view } from "./view.mjs";
 
@@ -18,13 +18,20 @@ const HOME = process.env.HOME;
 const DIR = path.join(HOME, ".claude", "usage-by-device");
 const F = {
   ledger: path.join(DIR, "ledger.json"), state: path.join(DIR, "state.json"), lock: path.join(DIR, "sync.lock"),
-  server: path.join(DIR, "server"), log: path.join(HOME, ".claude", "cache", "usage-by-device.log"),
+  server: path.join(DIR, "server"), lastSync: path.join(DIR, "last-sync"), id: path.join(DIR, "device-id"), log: path.join(HOME, ".claude", "cache", "usage-by-device.log"),
   plan: path.join(HOME, ".claude", "cache", "claude-usage.json"), planFetch: path.join(HOME, ".claude", "scripts", "usage-fetch.sh"),
 };
 const EPOCH = "1970-01-01T00:00:00.000Z";
 const log = (msg) => { try { fs.mkdirSync(path.dirname(F.log), { recursive: true }); fs.appendFileSync(F.log, `${new Date().toISOString()} ${msg}\n`); } catch {} };
 const server = () => (fs.existsSync(F.server) ? fs.readFileSync(F.server, "utf8").trim() : DEFAULT_SERVER).replace(/\/$/, "");
-const myId = () => process.env.UBD_DEVICE_ID || deviceId();
+// the hardware lookup is slow-ish; do it once per machine
+const myId = () => {
+  if (process.env.UBD_DEVICE_ID) return process.env.UBD_DEVICE_ID;
+  try { const v = fs.readFileSync(F.id, "utf8").trim(); if (/^[0-9a-f]{16}$/.test(v)) return v; } catch {}
+  const v = deviceId();
+  try { fs.mkdirSync(DIR, { recursive: true }); fs.writeFileSync(F.id, v); } catch {}
+  return v;
+};
 const identity = () => derive(readJson(path.join(HOME, ".claude.json"), {}).oauthAccount);
 const hash = (o) => crypto.createHash("sha1").update(JSON.stringify(o)).digest("hex");
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -65,7 +72,8 @@ function absorb(ledger, key, event) {
     ledger.devices[p.id] = p.id === myId() && cur ? mergeDevice(cur, { ...cur, name: p.dev.name, nameSetAt: p.dev.nameSetAt }) : mergeDevice(cur, p.dev);
     return p.id;
   }
-  if (p?.kind === "settings" && validRetention(p.settings?.retentionHours) && typeof p.settings.setAt === "string") {
+  if (p?.kind === "settings" && validRetention(p.settings?.retentionHours) && typeof p.settings.setAt === "string"
+      && (p.settings.timeZone === undefined || (validTimeZone(p.settings.timeZone) && typeof p.settings.tzSetAt === "string"))) {
     ledger.settings = mergeSettings(ledger.settings, p.settings);
     return "settings";
   }
@@ -88,7 +96,9 @@ function saveMerged(ledger, stateUpdate) {
 async function sync({ force = false } = {}) {
   const id = identity();
   if (!id) return log("no Claude login found — skipped");
-  if (!force && Date.now() - (readJson(F.state, {}).lastSyncAt ?? 0) < 60e3) return;
+  let last = 0;
+  try { last = Number(fs.readFileSync(F.lastSync, "utf8")); } catch {}
+  if (!force && Date.now() - last < 60e3) return; // checked on every Claude reply — reads a few bytes, not the whole state
   const now = new Date(), t = now.getTime();
   let ledger, state;
   // 1. this machine's own usage — local only, under the lock, before any network call
@@ -96,14 +106,20 @@ async function sync({ force = false } = {}) {
   try {
     state = readJson(F.state, {});
     ledger = readJson(F.ledger, emptyLedger());
+    if (!ledger.settings.timeZone) Object.assign(ledger.settings, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, tzSetAt: now.toISOString() });
+    const tz = ledger.settings.timeZone;
     let me = ledger.devices[myId()];
-    if (!me || !state.offsets) { // nothing to add onto → recount from the logs
+    if (!me || !state.offsets || state.bucketTz !== tz) { // nothing to add onto, or days were cut by another clock → recount from the logs
       me = ledger.devices[myId()] = { name: me?.name ?? (process.env.UBD_DEVICE_NAME || defaultName()), nameSetAt: me?.nameSetAt ?? EPOCH, updatedAt: EPOCH, days: {}, hours: {} };
       state.offsets = {};
+      state.bucketTz = tz;
     }
-    if (collect({ projectsDir: path.join(HOME, ".claude", "projects"), offsets: state.offsets, dev: me, now: t }) || me.updatedAt === EPOCH) me.updatedAt = now.toISOString();
-    for (const d of Object.values(ledger.devices)) prune(d, now);
+    if (collect({ projectsDir: path.join(HOME, ".claude", "projects"), offsets: state.offsets, dev: me, now: t, tz }) || me.updatedAt === EPOCH) me.updatedAt = now.toISOString();
+    for (const d of Object.values(ledger.devices)) prune(d, now, tz);
+    // read positions of files quiet for a day need no memory of recent replies (keeps the state small)
+    for (const st of Object.values(state.offsets)) if (st.at && t - st.at > 86400e3) st.recent = {};
     state.lastSyncAt = t;
+    fs.writeFileSync(F.lastSync, String(t));
     writeJson(F.ledger, ledger);
     writeJson(F.state, state);
   } catch (e) {
@@ -125,7 +141,7 @@ async function sync({ force = false } = {}) {
       if (got && hash(cur) === hash(unseal(id.key, e.message)[got === "settings" ? "settings" : "dev"])) published[got] = { hash: hash(cur), at: e.time * 1000 };
     }
     const lastId = events.length ? events.at(-1).id : state.lastId;
-    saveMerged(ledger, () => ({ lastId, lastPollAt: t, published })); // what was received is kept even if a publish fails
+    saveMerged(ledger, () => ({ lastId, lastPollAt: t, published, mailbox: { ok: true, at: t } })); // what was received is kept even if a publish fails
 
     const due = (k, obj) => { const h = hash(obj), p = published[k]; return !p || p.hash !== h || t - p.at > retentionMs / 2 ? h : null; };
     for (const [devId, dev] of Object.entries(ledger.devices)) {
@@ -135,13 +151,14 @@ async function sync({ force = false } = {}) {
       published[devId] = { hash: h, at: t };
     }
     const hs = due("settings", ledger.settings);
-    if (hs && ledger.settings.setAt !== EPOCH) {
+    if (hs && (ledger.settings.setAt !== EPOCH || ledger.settings.timeZone)) {
       await publish(srv, id.topic, seal(id.key, { kind: "settings", settings: ledger.settings }));
       published.settings = { hash: hs, at: t };
     }
     saveMerged(ledger, () => ({ published }));
   } catch (e) {
     log(`sync: ${e.message}`);
+    try { withLock(() => writeJson(F.state, { ...readJson(F.state, {}), mailbox: { ok: false, at: t, error: e.message } })); } catch {}
   }
 }
 
@@ -172,7 +189,7 @@ function currentView() {
     const age = Date.now() - fs.statSync(F.plan).mtimeMs;
     if (age > 10 * 60e3 && fs.existsSync(F.planFetch)) spawn(F.planFetch, [], { stdio: "ignore", detached: true }).unref();
   } catch {}
-  return view(readJson(F.ledger, emptyLedger()), myId(), plan);
+  return view(readJson(F.ledger, emptyLedger()), myId(), plan, new Date(), readJson(F.state, {}).mailbox ?? null);
 }
 
 async function watch() {
@@ -185,27 +202,41 @@ async function watch() {
   await sync({ force: true });
   print();
   const id = identity();
-  if (!id) return;
+  if (!id) { setInterval(() => {}, 3600e3); return; } // not logged in: nothing live to follow, but stay up so the page doesn't keep restarting us
+  // live: resume from the last message seen, give up on a silent connection (ntfy sends a keepalive every 45s),
+  // and back off while the mailbox is down so reconnects don't eat the rate limit syncs need
+  const base = Number(process.env.UBD_WATCH_RETRY_MS) || 5000;
+  let since = readJson(F.state, {}).lastId, wait = base;
   for (;;) {
+    const ctl = new AbortController();
+    let idle = setTimeout(() => ctl.abort(), 120e3);
     try {
-      const r = await fetch(`${server()}/${id.topic}/json`);
+      const r = await fetch(`${server()}/${id.topic}/json${since ? `?since=${encodeURIComponent(since)}` : ""}`, { signal: ctl.signal });
+      if (!r.ok) throw new Error(`stream ${r.status}`);
       let buf = "";
+      const dec = new TextDecoder();
       for await (const chunk of r.body) {
-        buf += Buffer.from(chunk).toString("utf8");
+        clearTimeout(idle); idle = setTimeout(() => ctl.abort(), 120e3);
+        wait = base;
+        buf += dec.decode(chunk, { stream: true });
         for (let i; (i = buf.indexOf("\n")) >= 0;) {
           const line = buf.slice(0, i);
           buf = buf.slice(i + 1);
           let e;
           try { e = JSON.parse(line); } catch { continue; }
           if (e.event !== "message") continue;
+          since = e.id;
           withLock(() => { const l = readJson(F.ledger, emptyLedger()); if (absorb(l, id.key, e)) writeJson(F.ledger, l); });
           print();
         }
       }
     } catch (e) {
       log(`watch: ${e.message}`);
+      wait = Math.min(wait * 2, 5 * 60e3);
+    } finally {
+      clearTimeout(idle);
     }
-    await new Promise((ok) => setTimeout(ok, 5000));
+    await new Promise((ok) => setTimeout(ok, wait));
   }
 }
 

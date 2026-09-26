@@ -56,3 +56,20 @@ test("identity and validation", () => {
   assert.ok(!validDevice({ ...dev(), name: 5 }));
   assert.ok(validRetention(72) && !validRetention(11) && !validRetention(169) && !validRetention(72.5));
 });
+
+test("an entry that arrives without hours (too big for one message) keeps the hours already known", () => {
+  const mine = dev({ updatedAt: T("25T10:00:00.000"), hours: { "2026-09-25T10": 3 } });
+  const slim = dev({ updatedAt: T("26T10:00:00.000"), days: { "2026-09-26": { w: 5, f: 0, o: 5, s: 0, h: 0 } }, hours: {} });
+  const m = mergeDevice(mine, slim);
+  assert.equal(m.days["2026-09-26"].w, 5);
+  assert.deepEqual(m.hours, { "2026-09-25T10": 3 });
+});
+
+test("the plan's shared time zone: the first one set wins", () => {
+  const a = { retentionHours: 72, setAt: T("01T00:00:00.000"), timeZone: "Asia/Jerusalem", tzSetAt: T("01T00:00:00.000") };
+  const b = { retentionHours: 96, setAt: T("26T00:00:00.000"), timeZone: "Asia/Bangkok", tzSetAt: T("26T00:00:00.000") };
+  const m = mergeSettings(b, a);
+  assert.equal(m.timeZone, "Asia/Jerusalem");
+  assert.equal(m.retentionHours, 96);
+  assert.equal(mergeSettings({ retentionHours: 72, setAt: T("01T00:00:00.000") }, b).timeZone, "Asia/Bangkok");
+});

@@ -1,14 +1,14 @@
 // What the page shows: each device's share of the plan per period and per plan window.
-import { dayKey } from "./read-usage.mjs";
+import { dayKey, daysBefore } from "./read-usage.mjs";
 
 const sumDays = (dev, keys) => keys.reduce((a, k) => a + (dev.days[k]?.w ?? 0), 0);
 // an hour bucket counts if any of it falls inside the window
 const sumHours = (dev, fromMs) => Object.entries(dev.hours).reduce((a, [k, w]) => (Date.parse(`${k}:00:00Z`) + 3600e3 > fromMs ? a + w : a), 0);
 
-export function view(ledger, myId, plan, now = new Date()) {
-  const day = (i) => dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i));
-  const last = (n) => Array.from({ length: n }, (_, i) => day(i));
-  const month = dayKey(now).slice(0, 7);
+export function view(ledger, myId, plan, now = new Date(), mailbox = null) {
+  const today = dayKey(now, ledger.settings.timeZone);
+  const last = (n) => Array.from({ length: n }, (_, i) => daysBefore(today, i));
+  const month = today.slice(0, 7);
   const periods = { today: last(1), d7: last(7), d30: last(30), month: last(31).filter((k) => k.startsWith(month)) };
 
   const windows = {};
@@ -31,6 +31,7 @@ export function view(ledger, myId, plan, now = new Date()) {
 
   return {
     me: myId,
+    mailbox,
     daily,
     retentionHours: ledger.settings.retentionHours,
     plan: Object.fromEntries(Object.entries(windows).map(([n, w]) => [n, { utilization: w.utilization, resetsAt: w.resetsAt }])),

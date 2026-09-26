@@ -315,3 +315,20 @@ test("stopping the page server stops the live panel's helper too", async () => {
   ctl.abort();
   assert.equal(helpers(), "");
 });
+
+test("panel routes answer only while the add-on is on", async () => {
+  const { home, P } = sandbox();
+  go(P, { ...all(false), enabled: { ...all(false).enabled, "usage-by-device": true } });
+  go(P, all(false)); // switched off again; its script may still be on disk
+  fs.mkdirSync(path.join(home, ".claude/usage-by-device"), { recursive: true });
+  fs.copyFileSync(path.join(repo, "usage-by-device/ubd.mjs"), path.join(home, ".claude/usage-by-device/ubd.mjs"));
+  const child = spawn(process.execPath, [path.join(repo, "engine/addons.mjs")], { env: { ...process.env, HOME: home, ADDONS_NO_OPEN: "1" } });
+  const url = await new Promise((ok, bad) => {
+    child.stdout.on("data", (d) => { const m = String(d).match(/http:\/\/127\.0\.0\.1:\d+\/\?t=\w+/); if (m) ok(m[0]); });
+    child.on("exit", () => bad(new Error("server exited")));
+  });
+  try {
+    const u = new URL(url);
+    assert.equal((await fetch(`${u.origin}/api/panel?t=${u.searchParams.get("t")}&addon=usage-by-device`)).status, 404);
+  } finally { child.kill(); }
+});

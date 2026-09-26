@@ -224,13 +224,14 @@ const ago = (iso) => {
   return m < 2 ? "עכשיו" : m < 60 ? `לפני ${m} דק׳` : m < 48 * 60 ? `לפני ${Math.round(m / 60)} שע׳` : `לפני ${Math.round(m / 1440)} ימים`;
 };
 const pct = (x) => `${Math.round(x * 100)}%`;
-const uColor = (id) => `var(--u${([...usage.devices].map((d) => d.id).sort().indexOf(id) % 5) + 1})`;
+// five hand-picked colours, then evenly spread hues so a sixth machine never repeats the first
+const uColor = (id) => { const i = [...usage.devices].map((d) => d.id).sort().indexOf(id); return i < 5 ? `var(--u${i + 1})` : `hsl(${(i * 137.5) % 360} 60% 50%)`; };
 const uMoney = (x) => `<bdi dir="ltr">$${x < 10 ? x.toFixed(2) : Math.round(x)}</bdi>`;
 function usagePanel(a) {
   if (!usageStream) {
     usageStream = new EventSource(`/api/panel/stream?${new URLSearchParams({ t: T, addon: a.id })}`);
     usageStream.onmessage = (e) => { usage = JSON.parse(e.data); usageErr = ""; paintUsage(a.id); };
-    usageStream.onerror = () => { usageErr = "אין חיבור לתיבת הדואר — מוצג המידע האחרון שנשמר"; paintUsage(a.id); };
+    usageStream.onerror = () => { usageErr = "העדכון החי של הדף נעצר — פתח את הדף מחדש (addons)"; paintUsage(a.id); };
   }
   return `<div class="usage" id="usage-${a.id}">${usageBody(a.id)}</div>`;
 }
@@ -245,7 +246,8 @@ function usageBody(id) {
   if (!tabs.some(([k]) => k === usageTab)) usageTab = tabs[0][0];
   const plan = usage.plan[usageTab];
   const stale = (d) => Date.now() - Date.parse(d.updatedAt) > usage.retentionHours * 3600e3;
-  return `${usageErr ? `<div class="drift">${esc(usageErr)}</div>` : ""}
+  const mb = usage.mailbox, mbDown = mb && !mb.ok ? `אין חיבור לתיבת הדואר מאז ${ago(new Date(mb.at).toISOString())} — מוצג המידע האחרון שנשמר; מחשבים אחרים יתעדכנו כשהחיבור יחזור` : "";
+  return `${[mbDown, usageErr].filter(Boolean).map((m) => `<div class="drift">${esc(m)}</div>`).join("")}
     <div class="u-top"><div class="u-seg">${tabs.map(([k, l]) => `<button data-utab="${id}:${k}" class="${k === usageTab ? "on" : ""}">${l}</button>`).join("")}</div>
       ${plan ? `<div class="u-plan">נוצל במנוי: <b>${plan.utilization}%</b></div>` : ""}</div>
     <div class="u-devs">${usage.devices.map((d) => {
@@ -260,7 +262,7 @@ function usageBody(id) {
         <div class="u-meter">${meter}</div></div>`;
     }).join("")}</div>
     ${usageDaily()}
-    <div class="u-foot"><label>שמור עדכונים בתיבת הדואר ל־<input type="number" dir="ltr" min="12" max="168" step="1" data-retention="${id}" value="${usage.retentionHours}"> שעות</label><span>לחץ על שם כדי לשנות אותו</span></div>`;
+    <div class="u-foot"><label>מחשב שחוזר אחרי הפסקה משלים עדכונים של עד <input type="number" dir="ltr" min="12" max="168" step="1" data-retention="${id}" value="${usage.retentionHours}"> שעות אחורה</label><span>לחץ על שם כדי לשנות אותו</span></div>`;
 }
 // every day, who used how much: one stacked column per day, 30 days
 function usageDaily() {
