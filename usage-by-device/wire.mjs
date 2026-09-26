@@ -3,7 +3,7 @@
 import crypto from "node:crypto";
 import zlib from "node:zlib";
 
-export const DEFAULT_SERVER = "https://usage.zencocovillas.com";
+export const DEFAULT_SERVER = "http://172.233.209.162:8095"; // own ntfy on the Akamai box, no domain on purpose
 export const MAX_BODY = 4000; // ntfy turns bodies over 4096 bytes into attachments
 
 export function derive(oauth) {
