@@ -90,6 +90,28 @@
   .docbar { display: flex; gap: 10px; align-items: center; color: var(--faint); font-size: 13px; flex-wrap: wrap; }
   .files li { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 4px 0; }
   button.link { border: 0; background: none; color: var(--accent); padding: 0 4px; font-size: 13px; }
+  /* usage-by-device: one card per machine */
+  .usage { border-top: 1px solid var(--line); padding: 14px 18px 16px; }
+  .u-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .u-seg { display: inline-flex; background: var(--bg); border-radius: 9px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+  .u-seg button { font-size: 13px; border: 0; background: transparent; color: var(--muted); padding: 3px 12px; border-radius: 7px; }
+  .u-seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px #0002; font-weight: 600; }
+  .u-plan { font-size: 13px; color: var(--muted); } .u-plan b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .u-devs { display: grid; gap: 8px; margin-top: 12px; }
+  .u-dev { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: center; }
+  .u-dev.me { border-color: var(--accent); background: var(--accent-soft); }
+  .u-big { font-size: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; text-align: end; }
+  .u-big small { font-size: 13px; font-weight: 500; color: var(--muted); margin-inline-start: 4px; letter-spacing: 0; }
+  .u-sub { font-size: 13px; color: var(--muted); } .u-sub b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .u-end { text-align: end; } .u-end .u-sub { white-space: nowrap; }
+  .u-meter { grid-column: 1 / -1; position: relative; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  .u-meter i { position: absolute; inset-block: 0; inset-inline-start: 0; background: var(--accent); border-radius: 4px; }
+  .u-meter i.all { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .u-name { border: 1px solid transparent; background: transparent; color: var(--ink); font: inherit; font-weight: 600; padding: 1px 4px; margin: -1px -4px; border-radius: 6px; width: 17ch; max-width: 100%; }
+  .u-name:hover, .u-name:focus { border-color: var(--line); background: var(--bg); outline: none; }
+  .u-stale { color: var(--warn); }
+  .u-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; color: var(--muted); }
+  .u-foot input { width: 5ch; font: inherit; text-align: center; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); padding: 1px 2px; }
 </style>
 </head>
 <body>
@@ -147,6 +169,7 @@ function card(a, byId, changed) {
       ${a.required ? "" : `<span class="switch"><input type="checkbox" aria-label="${esc(a.title)}" data-on="${a.id}" ${d.on ? "checked" : ""}><span></span></span>`}
     </div>
     ${settings}
+    ${a.panel && d.on ? usagePanel(a) : ""}
     <details data-id="${a.id}" ${open.has(a.id) ? "open" : ""}>
       <summary>פרטים</summary>
       <div class="more">${panel(a)}</div>
@@ -174,6 +197,64 @@ function panel(a) {
   }
   return `<div class="tabs">${tabs.map(([id, l]) => `<button data-tab="${a.id}" data-t="${esc(id)}" class="${id === cur ? "on" : ""}">${esc(l)}</button>`).join("")}</div><div class="pane">${body}</div>`;
 }
+
+// usage-by-device: one card per machine, fed live by the add-on's own script
+let usage = null, usageErr = "", usageStream = null, usageTab = "week";
+const ago = (iso) => {
+  const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  return m < 2 ? "עכשיו" : m < 60 ? `לפני ${m} דק׳` : m < 48 * 60 ? `לפני ${Math.round(m / 60)} שע׳` : `לפני ${Math.round(m / 1440)} ימים`;
+};
+const pct = (x) => `${Math.round(x * 100)}%`;
+function usagePanel(a) {
+  if (!usageStream) {
+    usageStream = new EventSource(`/api/panel/stream?${new URLSearchParams({ t: T, addon: a.id })}`);
+    usageStream.onmessage = (e) => { usage = JSON.parse(e.data); usageErr = ""; paintUsage(a.id); };
+    usageStream.onerror = () => { usageErr = "אין חיבור לתיבת הדואר — מוצג המידע האחרון שנשמר"; paintUsage(a.id); };
+  }
+  return `<div class="usage" id="usage-${a.id}">${usageBody(a.id)}</div>`;
+}
+function paintUsage(id) {
+  const el = document.getElementById(`usage-${id}`);
+  if (el && !el.contains(document.activeElement)) el.innerHTML = usageBody(id); // never repaint under someone typing a name
+}
+function usageBody(id) {
+  if (!usage) return `<div class="u-sub">טוען…</div>`;
+  const tabs = [["five", "5 שעות"], ["week", "שבוע"], ["today", "היום"], ["d7", "7 ימים"], ["d30", "30 ימים"], ["month", "החודש"]]
+    .filter(([k]) => usage.plan[k] || !["five", "week"].includes(k));
+  if (!tabs.some(([k]) => k === usageTab)) usageTab = tabs[0][0];
+  const plan = usage.plan[usageTab];
+  const stale = (d) => Date.now() - Date.parse(d.updatedAt) > usage.retentionHours * 3600e3;
+  return `${usageErr ? `<div class="drift">${esc(usageErr)}</div>` : ""}
+    <div class="u-top"><div class="u-seg">${tabs.map(([k, l]) => `<button data-utab="${id}:${k}" class="${k === usageTab ? "on" : ""}">${l}</button>`).join("")}</div>
+      ${plan ? `<div class="u-plan">נוצל במנוי: <b>${plan.utilization}%</b></div>` : ""}</div>
+    <div class="u-devs">${usage.devices.map((d) => {
+      const w = plan ? d.windows[usageTab] : null, p = plan ? null : d.periods[usageTab];
+      const big = plan ? `${Math.round(w.pct)}%<small>מהמנוי</small>` : `${pct(p.share)}<small>מהשימוש</small>`;
+      const second = plan ? `<b>${pct(w.share)}</b> מהשימוש בפועל` : `≈ $${p.w.toFixed(2)}`;
+      const meter = plan ? `<i class="all" style="width:${plan.utilization}%"></i><i style="width:${w.pct}%"></i>` : `<i style="width:${p.share * 100}%"></i>`;
+      return `<div class="u-dev ${d.me ? "me" : ""}">
+        <div><input class="u-name" data-dev="${id}:${d.id}" value="${esc(d.name)}" maxlength="40" aria-label="שם המכשיר"> ${d.me ? '<span class="tag pending">המחשב הזה</span>' : ""}
+          <div class="u-sub ${stale(d) ? "u-stale" : ""}">עודכן ${ago(d.updatedAt)}</div></div>
+        <div class="u-end"><div class="u-big">${big}</div><div class="u-sub">${second}</div></div>
+        <div class="u-meter">${meter}</div></div>`;
+    }).join("")}</div>
+    <div class="u-foot"><label>שמור עדכונים בתיבת הדואר ל־<input type="number" dir="ltr" min="12" max="168" step="1" data-retention="${id}" value="${usage.retentionHours}"> שעות</label><span>לחץ על שם כדי לשנות אותו</span></div>`;
+}
+document.addEventListener("click", (e) => {
+  const t = e.target.dataset?.utab;
+  if (t) { const [id, k] = t.split(":"); usageTab = k; paintUsage(id); }
+});
+document.addEventListener("change", async (e) => {
+  const n = e.target.dataset?.dev, r = e.target.dataset?.retention;
+  if (!n && !r) return;
+  const id = n ? n.split(":")[0] : r;
+  try {
+    if (n) await api("/api/panel/call", { addon: id, cmd: "rename", args: [n.split(":")[1], e.target.value] });
+    else await api("/api/panel/call", { addon: id, cmd: "retention", args: [String(e.target.value)] });
+    usage = await api("/api/panel", null, { addon: id }); usageErr = "";
+  } catch (err) { usageErr = err.message; }
+  e.target.blur(); paintUsage(id);
+});
 
 // just enough markdown for the add-on docs: headings, lists, tables, code, quotes, emphasis
 function md(src) {

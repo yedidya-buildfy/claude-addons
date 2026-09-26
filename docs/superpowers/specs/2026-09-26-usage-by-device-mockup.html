@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>שימוש לפי מכשיר — עיצובים</title>
+<style>
+  :root {
+    --bg: #f5f4f1; --card: #fff; --ink: #1c1b19; --muted: #6a665f; --faint: #8f8a82; --line: #e3dfd8;
+    --accent: #c2410c; --accent-soft: #fdf1ea; --accent-ink: #fff; --ok: #15803d; --bad: #b91c1c; --warn: #a16207;
+    --d1: #c2410c; --d2: #0e7490; --d3: #7c3aed;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151412; --card: #1f1d1a; --ink: #eeeae4; --muted: #a39e96; --faint: #7d786f; --line: #332f2a;
+            --accent: #fb923c; --accent-soft: #2b1d12; --accent-ink: #1a0d04; --ok: #4ade80; --bad: #f87171; --warn: #facc15;
+            --d1: #fb923c; --d2: #22d3ee; --d3: #a78bfa; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Arial Hebrew", sans-serif; }
+  main { max-width: 780px; margin: 0 auto; padding: 28px 16px 80px; }
+  .variants { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+  .variants button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px; padding: 4px 14px; cursor: pointer; }
+  .variants button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .idea { color: var(--muted); font-size: 13px; margin: 0 4px 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .head { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; }
+  .head .text { flex: 1; }
+  .title { font-weight: 600; font-size: 16px; }
+  .summary { color: var(--muted); }
+  .switch { width: 44px; height: 26px; border-radius: 999px; background: var(--accent); position: relative; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; }
+  .panel { border-top: 1px solid var(--line); padding: 14px 18px 16px; }
+  .tag { font-size: 11px; font-weight: 500; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+  .muted { color: var(--muted); } .faint { color: var(--faint); }
+  .num { font-variant-numeric: tabular-nums; }
+  .name { border: 1px solid transparent; background: transparent; color: var(--ink); font: inherit; font-weight: 600; padding: 1px 4px; margin: -1px -4px; border-radius: 6px; width: 17ch; }
+  .name:hover, .name:focus { border-color: var(--line); background: var(--bg); outline: none; }
+  .stale { color: var(--warn); }
+  .foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; color: var(--muted); }
+  .foot input { width: 5ch; font: inherit; text-align: center; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); padding: 1px 2px; }
+  .seg { display: inline-flex; background: var(--bg); border-radius: 9px; padding: 3px; gap: 2px; }
+  .seg button { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--muted); padding: 3px 12px; border-radius: 7px; cursor: pointer; }
+  .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px #0002; font-weight: 600; }
+  .plan { display: flex; gap: 18px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .plan b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* A — table */
+  .ta { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .ta th { text-align: start; font-weight: 600; color: var(--faint); font-size: 12px; padding: 4px 8px 6px; white-space: nowrap; }
+  .ta th small { display: block; font-weight: 400; }
+  .ta td { padding: 9px 8px; border-top: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ta tr.me td { background: var(--accent-soft); }
+  .ta tr.me td:first-child { border-start-start-radius: 8px; border-end-start-radius: 8px; }
+  .ta tr.me td:last-child { border-start-end-radius: 8px; border-end-end-radius: 8px; }
+  .bar { display: inline-block; width: 34px; height: 6px; border-radius: 3px; margin-inline-end: 7px; vertical-align: middle;
+         background: linear-gradient(to left, var(--accent) calc(var(--v) * 100%), var(--line) 0); }
+  .scroll { overflow-x: auto; margin: 0 -8px; }
+
+  /* B — device cards */
+  .devs { display: grid; gap: 8px; margin-top: 12px; }
+  .dev { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: center; }
+  .dev.me { border-color: var(--accent); background: var(--accent-soft); }
+  .dev .big { font-size: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .dev .sub { font-size: 13px; color: var(--muted); }
+  .dev .meter { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .dev .meter i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .dev .meter.plan-m { position: relative; height: 8px; }
+  .dev .meter.plan-m i { position: absolute; inset-block: 0; inset-inline-start: 0; }
+  .dev .meter.plan-m i.all { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .bigbox { text-align: end; }
+  .dev .big small { font-size: 13px; font-weight: 500; color: var(--muted); margin-inline-start: 4px; letter-spacing: 0; }
+  .dev .sub b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* C — stacked bars */
+  .rows { display: grid; gap: 12px; margin-top: 4px; }
+  .row { display: grid; grid-template-columns: 70px 1fr; gap: 12px; align-items: center; }
+  .row .lbl { font-size: 13px; color: var(--muted); }
+  .stack { display: flex; height: 26px; border-radius: 7px; overflow: hidden; background: var(--line); gap: 2px; }
+  .stack span { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; }
+  .row.plan-row .stack { background: var(--bg); border: 1px dashed var(--line); }
+  .legend { display: grid; gap: 6px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .legend .it { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .legend .it .when { margin-inline-start: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="variants" id="tabs"></div>
+  <p class="idea" id="idea"></p>
+  <section class="card">
+    <div class="head"><div class="text">
+      <div class="title">שימוש לפי מכשיר</div>
+      <div class="summary">כמה כל מחשב על אותו מנוי קלוד ניצל: היום, 7 ימים, 30 ימים, החודש, 5 השעות והשבוע.</div>
+    </div><span class="switch"></span></div>
+    <div class="panel" id="panel"></div>
+  </section>
+</main>
+<script>
+const PLAN = { five: 57, week: 80, today: null, d7: null, d30: null, month: null };
+const DEVICES = [
+  { id: "a", name: "MacBook Pro של ידידיה", me: true, ago: "עכשיו", stale: false, p: { today: [.81, 42.1], d7: [.66, 188.4], d30: [.61, 610.2], month: [.63, 540.8] }, w: { five: 46.2, week: 40 } },
+  { id: "b", name: "המחשב של דנה", ago: "לפני 12 דק׳", stale: false, p: { today: [.19, 9.9], d7: [.27, 77.1], d30: [.29, 290.0], month: [.28, 240.3] }, w: { five: 10.8, week: 36 } },
+  { id: "c", name: "Mac mini במשרד", ago: "לפני יומיים", stale: true, p: { today: [0, 0], d7: [.07, 20.0], d30: [.10, 100.0], month: [.09, 77.2] }, w: { five: 0, week: 4 } },
+];
+const COLORS = ["var(--d1)", "var(--d2)", "var(--d3)"];
+const PERIODS = [["today", "היום"], ["d7", "7 ימים"], ["d30", "30 ימים"], ["month", "החודש"]];
+const pct = (x) => `${Math.round(x * 100)}%`;
+const name = (d) => `<input class="name" value="${d.name}" maxlength="40" aria-label="שם המכשיר">`;
+const foot = () => `<div class="foot"><span>שמור עדכונים בתיבת הדואר ל־<input type="number" dir="ltr" min="12" max="168" value="72"> שעות</span><span class="faint">לחץ על שם כדי לשנות אותו</span></div>`;
+let period = "week";
+
+const TABS = [["five", "5 שעות"], ["week", "שבוע"], ...PERIODS];
+const V = {
+  B: { label: "כרטיס לכל מכשיר", idea: "5 שעות / שבוע: המספר הגדול = כמה מהמנוי המכשיר ניצל, ולידו החלק שלו מתוך השימוש בפועל (מנורמל ל-100%). הפס = כל המנוי; החלק הצבוע בכהה = המכשיר.",
+    html: () => {
+      const plan = PLAN[period];
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="seg">${TABS.map(([k, l]) => `<button data-p="${k}" class="${k === period ? "on" : ""}">${l}</button>`).join("")}</div>
+      ${plan != null ? `<div class="plan"><span>נוצל במנוי: <b>${plan}%</b></span></div>` : ""}</div>
+      <div class="devs">${DEVICES.map((d) => {
+        const share = plan != null ? (plan ? d.w[period] / plan : 0) : d.p[period][0];
+        const big = plan != null ? `${Math.round(d.w[period])}%` : pct(share);
+        const bigSub = plan != null ? "מהמנוי" : "מהשימוש";
+        const second = plan != null ? `<b>${pct(share)}</b> מהשימוש בפועל` : `≈ $${d.p[period][1]}`;
+        const meter = plan != null
+          ? `<div class="meter plan-m"><i class="all" style="width:${plan}%"></i><i style="width:${d.w[period]}%"></i></div>`
+          : `<div class="meter"><i style="width:${share * 100}%"></i></div>`;
+        return `<div class="dev ${d.me ? "me" : ""}">
+          <div>${name(d)} ${d.me ? '<span class="tag">המחשב הזה</span>' : ""}<div class="sub"><span class="${d.stale ? "stale" : ""}">עודכן ${d.ago}</span></div></div>
+          <div class="bigbox"><div class="big">${big}<small>${bigSub}</small></div><div class="sub">${second}</div></div>
+          ${meter}</div>`;
+      }).join("")}</div>${foot()}`;
+    } },
+};
+let cur = "B";
+function draw() {
+  document.getElementById("tabs").innerHTML = Object.entries(V).map(([k, v]) => `<button data-v="${k}" class="${k === cur ? "on" : ""}">${k} · ${v.label}</button>`).join("");
+  document.getElementById("idea").textContent = V[cur].idea;
+  document.getElementById("panel").innerHTML = V[cur].html();
+}
+document.addEventListener("click", (e) => {
+  if (e.target.dataset.v) { cur = e.target.dataset.v; draw(); }
+  if (e.target.dataset.p) { period = e.target.dataset.p; draw(); }
+});
+draw();
+</script>
+</body>
+</html>
