@@ -104,7 +104,41 @@
   .sq.l4 { background: var(--accent); }
   .sq.pad { visibility: hidden; }
   .sq:hover { outline: 2px solid var(--ink); outline-offset: 1px; }
-  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; padding: 5px 9px; border-radius: 7px; white-space: nowrap; display: none; z-index: 10; }
+  #tip { line-height: 1.6; position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; padding: 5px 9px; border-radius: 7px; white-space: nowrap; display: none; z-index: 10; }
+  /* daily views */
+  .dv { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .dv-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .dv-head h3 { margin: 0; font-size: 14px; }
+  .lg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .lg span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; flex: none; }
+  /* bars */
+  .bars { direction: ltr; display: grid; grid-template-columns: auto 1fr; gap: 6px; }
+  .yax { display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: var(--faint); text-align: right; height: 160px; }
+  .plot { position: relative; height: 160px; display: flex; align-items: flex-end; gap: 3px; border-bottom: 1px solid var(--line);
+          background: repeating-linear-gradient(to top, transparent 0 39px, var(--line) 39px 40px); }
+  .col { flex: 1; display: flex; flex-direction: column-reverse; min-width: 0; border-radius: 3px 3px 0 0; overflow: hidden; cursor: default; }
+  .col:hover { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .col i { display: block; }
+  .xax { grid-column: 2; display: flex; gap: 3px; font-size: 10px; color: var(--faint); }
+  .xax span { flex: 1; text-align: center; min-width: 0; white-space: nowrap; }
+  /* calendar */
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal .wd { font-size: 11px; color: var(--faint); text-align: center; padding-bottom: 2px; }
+  .cell { border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; min-height: 58px; display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+  .cell.out { visibility: hidden; }
+  .cell.today { border-color: var(--accent); }
+  .cell .d { color: var(--faint); }
+  .cell .amt { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 12px; }
+  .split { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--line); margin-top: auto; }
+  .cal-nav { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  .cal-nav button { border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 6px; padding: 0 8px; font: inherit; cursor: pointer; }
+  /* day table */
+  .dt { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .dt th { font-size: 12px; color: var(--faint); font-weight: 600; text-align: start; padding: 4px 6px; white-space: nowrap; }
+  .dt td { padding: 6px; border-top: 1px solid var(--line); white-space: nowrap; }
+  .dt .cellbar { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; margin-inline-end: 6px; }
+  .dt tr.wkend td { color: var(--faint); }
 </style>
 </head>
 <body>
@@ -151,10 +185,10 @@ const V = {
           ? `<div class="meter plan-m"><i class="all" style="width:${plan}%"></i><i style="width:${d.w[period]}%"></i></div>`
           : `<div class="meter"><i style="width:${share * 100}%"></i></div>`;
         return `<div class="dev ${d.me ? "me" : ""}">
-          <div>${name(d)} ${d.me ? '<span class="tag">המחשב הזה</span>' : ""}<div class="sub"><span class="${d.stale ? "stale" : ""}">עודכן ${d.ago}</span></div></div>
+          <div><i class="dot" style="background:${COLORS[DEVICES.indexOf(d)]}"></i> ${name(d)} ${d.me ? '<span class="tag">המחשב הזה</span>' : ""}<div class="sub"><span class="${d.stale ? "stale" : ""}">עודכן ${d.ago}</span></div></div>
           <div class="bigbox"><div class="big">${big}<small>${bigSub}</small></div><div class="sub">${second}</div></div>
           ${meter}</div>`;
-      }).join("")}</div>${heatmap()}${foot()}`;
+      }).join("")}</div>${daily()}${foot()}`;
     } },
 };
 
@@ -189,8 +223,54 @@ function heatmap() {
         <div class="hm-grid">${dayList.map((d, j) => `<span class="sq ${level(HM[i][j])}" data-i="${i}" data-j="${j}"></span>`).join("")}</div></div></div>`;
     }).join("")}</div></div>`;
 }
+
+// ---- daily views: last 30 days, each device in its own color (same colors as the dots on the cards)
+const LAST = 30, days30 = dayList.slice(-LAST), D30 = HM.map((row) => row.slice(-LAST));
+const dayTot = (j) => D30.reduce((a, r) => a + r[j], 0);
+const money = (x) => `<bdi dir="ltr">≈ $${Math.round(x)}</bdi>`;
+const legend = () => `<div class="lg">${DEVICES.map((d, i) => `<span><i class="dot" style="background:${COLORS[i]}"></i>${d.name}</span>`).join("")}</div>`;
+let dview = "bars";
+const DV = {
+  bars: ["עמודות", () => {
+    const max = Math.max(...days30.map((_, j) => dayTot(j))), top = Math.ceil(max / 20) * 20;
+    return `<div class="bars"><div class="yax">${[4, 3, 2, 1, 0].map((k) => `<span>$${(top / 4) * k}</span>`).join("")}</div>
+      <div class="plot">${days30.map((d, j) => `<div class="col" data-day="${j}" style="height:${(dayTot(j) / top) * 100}%">${DEVICES.map((_, i) => D30[i][j] ? `<i style="flex:${D30[i][j]};background:${COLORS[i]}"></i>` : "").join("")}</div>`).join("")}</div>
+      <div class="xax">${days30.map((d, j) => `<span>${j === LAST - 1 ? "היום" : (LAST - 1 - j) % 7 === 0 ? `${d.getDate()}.${d.getMonth() + 1}` : ""}</span>`).join("")}</div></div>`;
+  }],
+  cal: ["לוח שנה", () => {
+    const first = new Date(today.getFullYear(), today.getMonth(), 1), n = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const cells = [];
+    for (let k = 0; k < first.getDay(); k++) cells.push(`<div class="cell out"></div>`);
+    for (let dd = 1; dd <= n; dd++) {
+      const j = days30.findIndex((x) => x.getMonth() === today.getMonth() && x.getDate() === dd);
+      const tot = j >= 0 ? dayTot(j) : 0, future = dd > today.getDate();
+      cells.push(`<div class="cell ${dd === today.getDate() ? "today" : ""}" ${j >= 0 ? `data-day="${j}"` : ""}><span class="d">${dd}</span>
+        ${future ? "" : tot ? `<span class="amt">${money(tot)}</span><span class="split">${DEVICES.map((_, i) => D30[i][j] ? `<i style="flex:${D30[i][j]};background:${COLORS[i]}"></i>` : "").join("")}</span>` : `<span class="faint">—</span>`}</div>`);
+    }
+    return `<div class="cal-nav"><button>›</button>ספטמבר 2026<button>‹</button></div><div class="cal" style="margin-top:8px">${["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"].map((w) => `<div class="wd">${w}</div>`).join("")}${cells.join("")}</div>`;
+  }],
+  table: ["טבלה", () => {
+    const max = Math.max(...D30.flat());
+    return `<div class="scroll"><table class="dt"><thead><tr><th>יום</th>${DEVICES.map((d, i) => `<th><i class="dot" style="background:${COLORS[i]}"></i> ${d.name}</th>`).join("")}<th>סה״כ</th></tr></thead><tbody>
+      ${days30.slice(-14).map((d, k) => { const j = LAST - 14 + k; return { d, j }; }).reverse().map(({ d, j }) => `<tr class="${d.getDay() >= 5 ? "wkend" : ""}" data-day="${j}"><td>${d.toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" })}</td>
+        ${DEVICES.map((_, i) => `<td>${D30[i][j] ? `<span class="cellbar" style="width:${(D30[i][j] / max) * 60}px;background:${COLORS[i]}"></span>${money(D30[i][j])}` : '<span class="faint">—</span>'}</td>`).join("")}
+        <td><b>${money(dayTot(j))}</b></td></tr>`).join("")}</tbody></table></div>`;
+  }],
+};
+function daily() {
+  return `<div class="dv"><div class="dv-head"><h3>כל יום, מי השתמש כמה</h3><div class="seg">${Object.entries(DV).map(([k, [l]]) => `<button data-dv="${k}" class="${k === dview ? "on" : ""}">${l}</button>`).join("")}</div></div>
+    ${legend()}<div style="margin-top:12px">${DV[dview][1]()}</div></div>`;
+}
 const tip = document.getElementById("tip");
 document.addEventListener("mouseover", (e) => {
+  const dayEl = e.target.closest?.("[data-day]");
+  if (dayEl) {
+    const j = +dayEl.dataset.day, tot = dayTot(j);
+    tip.innerHTML = `<b>${days30[j].toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric" })}</b> · ${money(tot)}<br>${DEVICES.map((d, i) => D30[i][j] ? `<i class="dot" style="background:${COLORS[i]}"></i> ${d.name}: ${Math.round((D30[i][j] / tot) * 100)}%` : "").filter(Boolean).join("<br>") || "אף אחד לא השתמש"}`;
+    const r = dayEl.getBoundingClientRect();
+    tip.style.display = "block"; tip.style.left = `${Math.min(innerWidth - tip.offsetWidth - 8, Math.max(8, r.left + r.width / 2 - tip.offsetWidth / 2))}px`; tip.style.top = `${r.top - tip.offsetHeight - 8}px`;
+    return;
+  }
   const { i, j } = e.target.dataset || {};
   if (i === undefined || j === undefined) { tip.style.display = "none"; return; }
   const w = HM[i][j], dayTotal = HM.reduce((a, row) => a + row[j], 0), d = dayList[j];
@@ -207,6 +287,7 @@ function draw() {
 document.addEventListener("click", (e) => {
   if (e.target.dataset.v) { cur = e.target.dataset.v; draw(); }
   if (e.target.dataset.p) { period = e.target.dataset.p; draw(); }
+  if (e.target.dataset.dv) { dview = e.target.dataset.dv; draw(); }
 });
 draw();
 </script>
