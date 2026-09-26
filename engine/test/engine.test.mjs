@@ -270,3 +270,24 @@ test("shared defaults are adopted once, then the machine's own choices rule", as
   assert.equal(adoptDefaults(manifests, cfg, P), false);
   assert.equal(cfg.enabled["auto-claude"], false);           // and it stays off
 });
+
+test("panel routes: only declared calls run, arguments are checked", async () => {
+  const { home, P } = sandbox();
+  go(P, { ...all(false), enabled: { ...all(false).enabled, "usage-by-device": true } });
+  const child = spawn(process.execPath, [path.join(repo, "engine/addons.mjs")], { env: { ...process.env, HOME: home, ADDONS_NO_OPEN: "1" } });
+  const url = await new Promise((ok, bad) => {
+    child.stdout.on("data", (d) => { const m = String(d).match(/http:\/\/127\.0\.0\.1:\d+\/\?t=\w+/); if (m) ok(m[0]); });
+    child.on("exit", () => bad(new Error("server exited")));
+  });
+  try {
+  const u = new URL(url), t = u.searchParams.get("t"), base = u.origin;
+  const post = (b) => fetch(`${base}/api/panel/call?t=${t}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+  assert.equal((await post({ addon: "usage-by-device", cmd: "sync", args: [] })).status, 404);
+  assert.equal((await post({ addon: "phone-alerts", cmd: "rename", args: [] })).status, 404);
+  assert.equal((await post({ addon: "usage-by-device", cmd: "retention", args: [{}] })).status, 400);
+  assert.equal((await post({ addon: "usage-by-device", cmd: "retention", args: ["500"] })).status, 400);
+  const state = await (await fetch(`${base}/api/state?t=${t}`)).json();
+  assert.equal(state.find((a) => a.id === "usage-by-device").panel, true);
+  assert.equal(state.find((a) => a.id === "phone-alerts").panel, false);
+  } finally { child.kill(); } // a failed assertion must not leave the page server running
+});

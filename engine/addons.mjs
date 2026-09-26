@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import crypto from "node:crypto";
-import { execSync, spawn } from "node:child_process";
+import { execSync, execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { paths, loadManifests, loadConfig, migrateConfig, adoptDefaults, apply, status, withLock } from "./lib.mjs";
 
@@ -110,6 +110,7 @@ function serve() {
         value: s.file ? (fs.existsSync(s.file.replace("~", P.home)) ? fs.readFileSync(s.file.replace("~", P.home), "utf8").trim() : "") : (cfg.settings?.[m.id]?.[s.key] ?? s.default),
       })),
       actions: (m.actions || []).map((a) => ({ id: a.id, label: a.label })),
+      panel: !!m.panel && st[m.id].on,
     }));
   };
 
@@ -207,6 +208,39 @@ function serve() {
         if (!a) return send(404, { error: "no such action" });
         execSync(a.cmd.replace(/~\//g, P.home + "/"), { shell: "/bin/bash", stdio: "pipe", timeout: 20000 });
         return send(200, { ok: true });
+      }
+      // an add-on's own live table (usage-by-device): its script prints JSON; only declared calls run
+      if (url.pathname.startsWith("/api/panel")) {
+        const b = req.method === "POST" ? await body(req) : {};
+        const m = manifests.find((x) => x.id === (b.addon ?? url.searchParams.get("addon")));
+        if (!m?.panel) return send(404, { error: "no such panel" });
+        const script = m.panel.script.replace("~", P.home);
+        const runScript = (args) => new Promise((ok) => execFile(process.execPath, [script, ...args], { timeout: 30000 }, (err, out, errOut) => ok({ err, out, errOut })));
+        if (req.method === "GET" && url.pathname === "/api/panel") {
+          const r = await runScript(["json"]);
+          if (r.err) return send(400, { error: (r.errOut || r.err.message).trim() });
+          return send(200, JSON.parse(r.out));
+        }
+        if (req.method === "POST" && url.pathname === "/api/panel/call") {
+          if (!m.panel.calls.includes(b.cmd)) return send(404, { error: "no such call" });
+          if (!Array.isArray(b.args) || b.args.length > 3 || b.args.some((a) => typeof a !== "string" || a.length > 60)) throw new Error("bad arguments");
+          const r = await runScript([b.cmd, ...b.args]);
+          if (r.err) return send(400, { error: (r.errOut || r.err.message).trim() });
+          return send(200, { ok: true });
+        }
+        if (req.method === "GET" && url.pathname === "/api/panel/stream") {
+          res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+          const child = spawn(process.execPath, [script, "watch"], { stdio: ["ignore", "pipe", "ignore"] });
+          let buf = "";
+          child.stdout.on("data", (c) => {
+            buf += c;
+            for (let i; (i = buf.indexOf("\n")) >= 0; buf = buf.slice(i + 1)) res.write(`data: ${buf.slice(0, i)}\n\n`);
+            bump();
+          });
+          req.on("close", () => child.kill());
+          return;
+        }
+        return send(404, { error: "not found" });
       }
       return send(404, { error: "not found" });
     } catch (e) {

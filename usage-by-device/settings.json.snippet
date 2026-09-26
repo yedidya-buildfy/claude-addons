@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node $HOME/.claude/usage-by-device/ubd.mjs sync", "async": true }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "node $HOME/.claude/usage-by-device/ubd.mjs sync", "async": true }] }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "usage-by-device",
+  "order": 55,
+  "default": false,
+  "title": "שימוש לפי מכשיר",
+  "summary": "כמה כל מחשב על אותו מנוי קלוד ניצל: היום, 7 ימים, 30 ימים, החודש, 5 השעות והשבוע.",
+  "detect": { "file": "~/.claude/usage-by-device/ubd.mjs" },
+  "files": [
+    { "from": "ubd.mjs", "to": "~/.claude/usage-by-device/ubd.mjs", "mode": "755" },
+    { "from": "read-usage.mjs", "to": "~/.claude/usage-by-device/read-usage.mjs" },
+    { "from": "ledger.mjs", "to": "~/.claude/usage-by-device/ledger.mjs" },
+    { "from": "wire.mjs", "to": "~/.claude/usage-by-device/wire.mjs" },
+    { "from": "view.mjs", "to": "~/.claude/usage-by-device/view.mjs" }
+  ],
+  "claudeSettings": [{ "file": "settings.json.snippet" }],
+  "ownsCommands": "usage-by-device/ubd\\.mjs",
+  "panel": { "script": "~/.claude/usage-by-device/ubd.mjs", "calls": ["rename", "retention"] },
+  "group": "קלוד",
+  "details": [
+    "כל מחשב שמפעיל את התוסף נרשם בשם של המחשב, ואפשר לשנות לו שם מכאן.",
+    "המחשבים על אותו מנוי מוצאים זה את זה לבד ומחליפים ביניהם רק מספרים, מוצפנים. תוכן השיחות לא יוצא מהמחשב.",
+    "כל מחשב שומר עותק מלא אצלו; העדכון עובר כשהוא מחובר לאינטרנט, דרך תיבת דואר קטנה על השרת.",
+    "השימוש משוקלל לפי המודל, כי אופוס שורף מהמכסה יותר מסונט.",
+    "למה מכשיר לא מתעדכן: tail ~/.claude/cache/usage-by-device.log"
+  ],
+  "howToCheck": "הפעל בשני מחשבים על אותו מנוי, עבוד עם קלוד באחד, ופתח את הדף הזה בשני: השורה שלו מתעדכנת תוך דקה."
+}
