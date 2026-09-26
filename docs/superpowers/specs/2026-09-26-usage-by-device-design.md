@@ -87,12 +87,32 @@ Days older than 31, hours older than 7 days are dropped.
 - Only this machine writes its own `days/hours`. Anyone may rename any device
   (small trusted group); newest `nameSetAt` wins.
 
-### 3. Sync — a mailbox, not a server
+### 3. Sync — a mailbox on the owner's Akamai box
 
 Machines in different homes can't reach each other directly (NAT), and are
-rarely on at the same moment. So they meet in a public, free mailbox that
-already exists: **ntfy.sh** (plain HTTPS publish/subscribe; messages kept
-12 h). Nothing of ours to run.
+rarely on at the same moment — often not for a whole weekend. So they meet in
+a mailbox: **ntfy** (plain HTTPS publish/subscribe). The free public ntfy.sh
+keeps messages only 12 h, fixed, which loses a weekend. So we run the same
+ready-made ntfy image on the owner's Akamai/Coolify server — no code of ours
+on the server, only config:
+
+- `cache-duration: 168h` (7 days) — the hard ceiling for the setting below;
+- attachments off, message body limit 4 KB, ntfy's per-visitor rate limits
+  on; container memory limit 64 MB, CPU niced (it shares a box with prod);
+- HTTPS on a subdomain through Coolify.
+- No login: the add-on repo is public, so any shared write token would be
+  public too. Protection is instead: unguessable topic + encrypted payloads +
+  the limits above (an abuser gets at most a small, rate-limited relay).
+
+The server address is a default in the add-on, overridable per machine.
+
+**Retention setting (on the page).** "Keep updates for N hours", default 72,
+range 12–168. It is a plan-wide setting carried in the ledger like a device
+name (newest change wins, travels to all machines). The server keeps
+everything for 7 days; the setting controls how far back a returning machine
+looks (`since=<N>h`) and how often machines refresh their entries so they
+stay inside that window (see Gossip). Lower = less chatter; higher = a
+machine closed for longer still catches up.
 
 - **Channel (topic)**: derived from the subscription — HMAC of
   `accountUuid + organizationUuid` (from `~/.claude.json` → `oauthAccount`)
@@ -100,18 +120,17 @@ already exists: **ntfy.sh** (plain HTTPS publish/subscribe; messages kept
   same topic automatically; nobody else can compute it.
 - **Encryption**: AES-256-GCM, key derived the same way with a different
   label. The mailbox only ever sees ciphertext. Payload = gzip(one device's
-  entry) → encrypt → base64. Must stay under ntfy's 4 KB message body (larger
-  bodies silently become short-lived attachments). One device = 31 days +
-  at most 168 hour buckets, stored sparse (only hours with usage) — about
-  1–2 KB after gzip + base64. The self-test asserts the worst case (every
-  hour of the week busy) fits; if it doesn't, hours are dropped first and the
-  5-hour/weekly split falls back to day buckets.
+  entry) → encrypt → base64. Must stay under the 4 KB message body. One
+  device = 31 days + at most 168 hour buckets, stored sparse (only hours with
+  usage) — about 1–2 KB after gzip + base64. The self-test asserts the worst
+  case (every hour of the week busy) fits; if it doesn't, hours are dropped
+  first and the 5-hour/weekly split falls back to day buckets.
 - **Gossip**: each machine publishes **every device it knows**, one message
   per device, only when that entry changed since it last published it — or
-  when the entry's last publish is older than 6 h, to keep it alive in the
-  12-hour mailbox. On receive: merge per device, newest `updatedAt`
-  wins for usage, newest `nameSetAt` wins for the name. So any machine that
-  is on keeps everyone's latest data alive in the mailbox.
+  when its last publish is older than half the retention setting, so every
+  device's latest entry is always inside the window. On receive: merge per
+  device, newest `updatedAt` wins for usage, newest `nameSetAt` wins for the
+  name. So any machine that is on keeps everyone's latest data alive.
 
 When it runs (no always-on daemon):
 
@@ -123,17 +142,18 @@ When it runs (no always-on daemon):
 - **The `addons` page open**: pulls once, then holds a live subscription
   (ntfy's streaming endpoint) so other machines' updates appear within
   seconds.
-- Each sync = read new local usage → merge → pull messages since last seen
-  (`?poll=1&since=<id>`) → merge → publish changed or ageing device entries → save.
+- Each sync = read new local usage → merge → pull (`since=<last id>`, or
+  `since=<N>h` when the last id is older than the window) → merge → publish
+  changed or ageing device entries → save.
 
-Known gap (accepted): if machine A's last report was more than 12 h before
-machine B next comes online, and no machine republished in between, B shows
-A's older data until A (or any peer holding A's data) is online again. The
-"updated N ago" label makes this visible. With daily use this closes itself.
+Known gap (accepted): a machine that stays closed longer than the retention
+setting, while the machine holding the newer data is also closed, sees that
+data only once a machine holding it is on again. The "updated N ago" label
+makes this visible.
 
 ### 4. What the page shows
 
-A new section in the `addons` page, one row per device:
+A new section in the `addons` page, designed properly (owner asked for it to look good): a browser mockup with 2–3 variants is shown and picked before the real page is built. Content, one row per device:
 
 | Device | Today | 7 days | 30 days | This month | 5-hour | Week | Updated |
 |---|---|---|---|---|---|---|---|
@@ -154,7 +174,8 @@ A new section in the `addons` page, one row per device:
 |---|---|
 | `usage-by-device/addon.json` | manifest: files, hooks snippet, page section |
 | `usage-by-device/ubd.mjs` | one Node script, subcommands `sync`, `rename <id> <name>`, `json` (for the page) |
-| engine page + server | a section that renders `ubd.mjs json`, a rename call, and the live subscription |
+| engine page + server | a section that renders `ubd.mjs json`, rename + retention calls, and the live subscription |
+| Coolify app on Akamai | stock `binwiederhier/ntfy` image + a `server.yml` kept in `usage-by-device/server/` |
 
 Node stdlib only (`crypto`, `zlib`, `fetch`). No npm dependencies.
 
@@ -172,6 +193,8 @@ with fake JSONL logs and a local in-process stand-in for the mailbox. Checks:
 dedupe, weighting, day/hour bucketing across midnight, merge rules (usage and
 name), gossip carrying a third device, payload size with 3 devices × 31 days,
 decrypt failure ignored, window share maths.
+
+Server: publish a test message, restart the container, confirm it is still returned with `since=72h`.
 
 Manual: turn the add-on on on two Macs logged into the same plan, use Claude on
 one, open `addons` on the other — its row updates within a minute.
