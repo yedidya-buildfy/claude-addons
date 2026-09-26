@@ -22,8 +22,16 @@ export function view(ledger, myId, plan, now = new Date()) {
   const pTotals = Object.fromEntries(Object.entries(periods).map(([p, keys]) => [p, total((d) => sumDays(d, keys))]));
   const wTotals = Object.fromEntries(Object.entries(windows).map(([n, w]) => [n, total((d) => sumHours(d, w.from))]));
 
+  // one entry per day for the "every day" chart, oldest first; only devices that used something that day
+  const daily = last(30).reverse().map((day) => {
+    const by = {};
+    for (const [id, d] of devs) if (d.days[day]?.w) by[id] = d.days[day].w;
+    return { day, by, total: Object.values(by).reduce((a, b) => a + b, 0) };
+  });
+
   return {
     me: myId,
+    daily,
     retentionHours: ledger.settings.retentionHours,
     plan: Object.fromEntries(Object.entries(windows).map(([n, w]) => [n, { utilization: w.utilization, resetsAt: w.resetsAt }])),
     devices: devs.map(([id, d]) => ({

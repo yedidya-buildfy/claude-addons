@@ -8,10 +8,12 @@
   :root {
     --bg: #f5f4f1; --card: #fff; --ink: #1c1b19; --muted: #6a665f; --faint: #8f8a82; --line: #e3dfd8;
     --accent: #c2410c; --accent-soft: #fdf1ea; --accent-ink: #fff; --ok: #15803d; --bad: #b91c1c; --warn: #a16207;
+    --u1: #c2410c; --u2: #0e7490; --u3: #7c3aed; --u4: #15803d; --u5: #a16207;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #151412; --card: #1f1d1a; --ink: #eeeae4; --muted: #a39e96; --faint: #7d786f; --line: #332f2a;
-            --accent: #fb923c; --accent-soft: #2b1d12; --accent-ink: #1a0d04; --ok: #4ade80; --bad: #f87171; --warn: #facc15; }
+            --accent: #fb923c; --accent-soft: #2b1d12; --accent-ink: #1a0d04; --ok: #4ade80; --bad: #f87171; --warn: #facc15;
+            --u1: #fb923c; --u2: #22d3ee; --u3: #a78bfa; --u4: #4ade80; --u5: #facc15; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
@@ -93,8 +95,8 @@
   /* usage-by-device: one card per machine */
   .usage { border-top: 1px solid var(--line); padding: 14px 18px 16px; }
   .u-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .u-seg { display: inline-flex; background: var(--bg); border-radius: 9px; padding: 3px; gap: 2px; flex-wrap: wrap; }
-  .u-seg button { font-size: 13px; border: 0; background: transparent; color: var(--muted); padding: 3px 12px; border-radius: 7px; }
+  .u-seg { display: inline-flex; background: var(--bg); border-radius: 9px; padding: 3px; gap: 2px; max-width: 100%; overflow-x: auto; }
+  .u-seg button { white-space: nowrap; font-size: 13px; border: 0; background: transparent; color: var(--muted); padding: 3px 12px; border-radius: 7px; }
   .u-seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px #0002; font-weight: 600; }
   .u-plan { font-size: 13px; color: var(--muted); } .u-plan b { color: var(--ink); font-variant-numeric: tabular-nums; }
   .u-devs { display: grid; gap: 8px; margin-top: 12px; }
@@ -112,9 +114,26 @@
   .u-stale { color: var(--warn); }
   .u-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; color: var(--muted); }
   .u-foot input { width: 5ch; font: inherit; text-align: center; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); padding: 1px 2px; }
+  .u-who { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
+  .u-who .u-name { width: 17ch; min-width: 0; flex: 1; }
+  .u-dot { flex: none; width: 9px; height: 9px; border-radius: 3px; display: inline-block; vertical-align: middle; margin-inline-end: 2px; }
+  .u-daily { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .u-daily h3 { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
+  .u-lg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .u-chart { direction: ltr; display: grid; grid-template-columns: auto 1fr; gap: 6px; }
+  .u-y { display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; color: var(--faint); text-align: right; height: 160px; font-variant-numeric: tabular-nums; }
+  .u-plot { height: 160px; display: flex; align-items: flex-end; gap: 3px; border-bottom: 1px solid var(--line);
+            background: repeating-linear-gradient(to top, transparent 0 39px, var(--line) 39px 40px); }
+  .u-col { flex: 1; min-width: 0; display: flex; flex-direction: column-reverse; border-radius: 3px 3px 0 0; overflow: hidden; }
+  .u-col:hover { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .u-col i { display: block; }
+  .u-x { grid-column: 2; display: flex; gap: 3px; font-size: 10px; color: var(--faint); }
+  .u-x span { flex: 1; min-width: 0; text-align: center; white-space: nowrap; }
+  #u-tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; line-height: 1.6; padding: 5px 9px; border-radius: 7px; white-space: nowrap; display: none; z-index: 10; }
 </style>
 </head>
 <body>
+<div id="u-tip"></div>
 <main>
   <header>
     <h1>תוספים לקלוד</h1>
@@ -205,6 +224,8 @@ const ago = (iso) => {
   return m < 2 ? "עכשיו" : m < 60 ? `לפני ${m} דק׳` : m < 48 * 60 ? `לפני ${Math.round(m / 60)} שע׳` : `לפני ${Math.round(m / 1440)} ימים`;
 };
 const pct = (x) => `${Math.round(x * 100)}%`;
+const uColor = (id) => `var(--u${([...usage.devices].map((d) => d.id).sort().indexOf(id) % 5) + 1})`;
+const uMoney = (x) => `<bdi dir="ltr">$${x < 10 ? x.toFixed(2) : Math.round(x)}</bdi>`;
 function usagePanel(a) {
   if (!usageStream) {
     usageStream = new EventSource(`/api/panel/stream?${new URLSearchParams({ t: T, addon: a.id })}`);
@@ -230,16 +251,42 @@ function usageBody(id) {
     <div class="u-devs">${usage.devices.map((d) => {
       const w = plan ? d.windows[usageTab] : null, p = plan ? null : d.periods[usageTab];
       const big = plan ? `${Math.round(w.pct)}%<small>מהמנוי</small>` : `${pct(p.share)}<small>מהשימוש</small>`;
-      const second = plan ? `<b>${pct(w.share)}</b> מהשימוש בפועל` : `≈ $${p.w.toFixed(2)}`;
+      const second = plan ? `<b>${pct(w.share)}</b> מהשימוש בפועל` : `${uMoney(p.w)} בערך`;
       const meter = plan ? `<i class="all" style="width:${plan.utilization}%"></i><i style="width:${w.pct}%"></i>` : `<i style="width:${p.share * 100}%"></i>`;
       return `<div class="u-dev ${d.me ? "me" : ""}">
-        <div><input class="u-name" data-dev="${id}:${d.id}" value="${esc(d.name)}" maxlength="40" aria-label="שם המכשיר"> ${d.me ? '<span class="tag pending">המחשב הזה</span>' : ""}
+        <div><span class="u-who"><i class="u-dot" style="background:${uColor(d.id)}"></i><input class="u-name" data-dev="${id}:${d.id}" value="${esc(d.name)}" maxlength="40" aria-label="שם המכשיר"></span> ${d.me ? '<span class="tag pending">המחשב הזה</span>' : ""}
           <div class="u-sub ${stale(d) ? "u-stale" : ""}">עודכן ${ago(d.updatedAt)}</div></div>
         <div class="u-end"><div class="u-big">${big}</div><div class="u-sub">${second}</div></div>
         <div class="u-meter">${meter}</div></div>`;
     }).join("")}</div>
+    ${usageDaily()}
     <div class="u-foot"><label>שמור עדכונים בתיבת הדואר ל־<input type="number" dir="ltr" min="12" max="168" step="1" data-retention="${id}" value="${usage.retentionHours}"> שעות</label><span>לחץ על שם כדי לשנות אותו</span></div>`;
 }
+// every day, who used how much: one stacked column per day, 30 days
+function usageDaily() {
+  const days = usage.daily, max = Math.max(...days.map((d) => d.total));
+  if (!max) return "";
+  const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500].find((x) => x * 4 >= max) ?? Math.ceil(max / 4), top = step * 4;
+  const ids = [...usage.devices].map((d) => d.id).sort();
+  const label = (day) => { const [, m, d] = day.split("-"); return `${+d}.${+m}`; };
+  return `<div class="u-daily"><h3>כל יום, מי השתמש כמה</h3>
+    <div class="u-lg">${usage.devices.map((d) => `<span><i class="u-dot" style="background:${uColor(d.id)}"></i> ${esc(d.name)}</span>`).join("")}</div>
+    <div class="u-chart"><div class="u-y">${[4, 3, 2, 1, 0].map((k) => `<span>$${step * k}</span>`).join("")}</div>
+      <div class="u-plot">${days.map((d, j) => `<div class="u-col" data-uday="${j}" style="height:${(d.total / top) * 100}%">${ids.filter((id) => d.by[id]).map((id) => `<i style="flex:${d.by[id]};background:${uColor(id)}"></i>`).join("")}</div>`).join("")}</div>
+      <div class="u-x">${days.map((d, j) => `<span>${j === days.length - 1 ? "היום" : (days.length - 1 - j) % 7 === 0 ? label(d.day) : ""}</span>`).join("")}</div></div></div>`;
+}
+document.addEventListener("mouseover", (e) => {
+  const tip = document.getElementById("u-tip"), col = e.target.closest?.("[data-uday]");
+  if (!col || !usage) { tip.style.display = "none"; return; }
+  const d = usage.daily[+col.dataset.uday], names = Object.fromEntries(usage.devices.map((x) => [x.id, x.name]));
+  const [y, m, dd] = d.day.split("-").map(Number);
+  tip.innerHTML = `<b>${new Date(y, m - 1, dd).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric" })}</b> · ${uMoney(d.total)}<br>`
+    + (Object.entries(d.by).sort((a, b) => b[1] - a[1]).map(([id, w]) => `<i class="u-dot" style="background:${uColor(id)}"></i> ${esc(names[id] ?? id)}: ${Math.round((w / d.total) * 100)}%`).join("<br>") || "אף אחד לא השתמש");
+  const r = col.getBoundingClientRect();
+  tip.style.display = "block";
+  tip.style.left = `${Math.min(innerWidth - tip.offsetWidth - 8, Math.max(8, r.left + r.width / 2 - tip.offsetWidth / 2))}px`;
+  tip.style.top = `${Math.max(8, r.top - tip.offsetHeight - 8)}px`;
+});
 document.addEventListener("click", (e) => {
   const t = e.target.dataset?.utab;
   if (t) { const [id, k] = t.split(":"); usageTab = k; paintUsage(id); }

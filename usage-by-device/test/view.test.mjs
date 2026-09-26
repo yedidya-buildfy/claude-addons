@@ -39,3 +39,14 @@ test("no usage anywhere → shares are 0, not NaN", () => {
   const v = view({ settings: L.settings, devices: { cccccccccccccccc: { name: "x", updatedAt: "u", nameSetAt: "n", days: {}, hours: {} } } }, "cccccccccccccccc", null, now);
   assert.equal(v.devices[0].periods.today.share, 0);
 });
+
+test("daily: the last 30 local days, oldest first, each device's amount per day", () => {
+  const v = view(L, "aaaaaaaaaaaaaaaa", plan, now);
+  assert.equal(v.daily.length, 30);
+  assert.equal(v.daily.at(-1).day, "2026-09-26");
+  assert.equal(v.daily[0].day, "2026-08-28");
+  assert.deepEqual(v.daily.at(-1).by, { aaaaaaaaaaaaaaaa: 30, bbbbbbbbbbbbbbbb: 10 });
+  assert.equal(v.daily.at(-1).total, 40);
+  assert.equal(v.daily[0].total, 100);
+  assert.deepEqual(v.daily[1].by, {});
+});
