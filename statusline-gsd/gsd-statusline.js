@@ -1409,6 +1409,31 @@ function readLastHumanPromptAt(transcriptPath) {
   return 0;
 }
 
+// When the subagent started: the timestamp on the first line of its transcript.
+function readSubagentStart(file) {
+  let fd;
+  try {
+    const buf = Buffer.alloc(64 * 1024);
+    fd = fs.openSync(file, 'r');
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    for (const line of buf.subarray(0, n).toString('utf8').split('\n')) {
+      try { const t = Date.parse(JSON.parse(line).timestamp); if (t) return t; } catch (e) {}
+    }
+  } catch (e) {
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch (e) {} }
+  }
+  return 0;
+}
+
+// 59s · 4m 21s · 1h 2m
+function formatDuration(ms) {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+}
+
 function readSubagentTail(file) {
   try {
     const lines = readTailLines(file);
@@ -1452,6 +1477,7 @@ function readSubagents(transcriptPath, now = Date.now()) {
     try { meta = JSON.parse(fs.readFileSync(file.replace(/\.jsonl$/, '.meta.json'), 'utf8')) || {}; } catch (e) {}
     const u = reply.message.usage;
     const used = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
+    const startedAt = readSubagentStart(file);
     out.push({
       name: meta.description || meta.agentType || name.replace(/^agent-|\.jsonl$/g, ''),
       model: reply.message.model,
@@ -1460,6 +1486,8 @@ function readSubagents(transcriptPath, now = Date.now()) {
       window: subagentWindow(reply.message.model, used),
       done,
       mtime,
+      // running time; frozen at the last reply once it has finished
+      elapsed: startedAt ? (done ? (Date.parse(last.timestamp) || mtime) : now) - startedAt : null,
     });
   }
   // Running first, then newest.
@@ -1472,9 +1500,10 @@ function formatSubagentRows(agents, settings = readClaudeSettings()) {
     const pct = Math.min(100, Math.round((a.used / a.window) * 100));
     const label = [a.name, prettyModelName(String(a.model).replace(/-\d{8}$/, ''), settings) || a.model, a.effort].filter(Boolean).join(' · ');
     const ctx = `\x1b[${usageColor(pct)}m${buildBar(pct)} ${pct}%\x1b[0m \x1b[2m${formatContextSize(a.used)}/${formatContextSize(a.window)}\x1b[0m`;
+    const time = a.elapsed == null ? '' : ` · ${formatDuration(a.elapsed)}`;
     return a.done
-      ? `\x1b[2m  ✓ ${label} │ ${buildBar(pct)} ${pct}% ${formatContextSize(a.used)}/${formatContextSize(a.window)}\x1b[0m`
-      : `  ↳ ${label} │ ${ctx}`;
+      ? `\x1b[2m  ✓ ${label} │ ${buildBar(pct)} ${pct}% ${formatContextSize(a.used)}/${formatContextSize(a.window)}${time}\x1b[0m`
+      : `  ↳ ${label} │ ${ctx}\x1b[2m${time}\x1b[0m`;
   });
   const more = agents.length - SUBAGENT_MAX_ROWS;
   if (more > 0) rows.push(`\x1b[2m  +${more} more\x1b[0m`);
@@ -1493,7 +1522,7 @@ module.exports = {
   latencyBar, latencyColor, formatLatency, formatNetSegment, readTokensPerSecond, readNetCache,
   readTranscriptRequests, charsPerToken, finishedRate, readLiveCharRate, streamLogPath,
   countLatin, tokenModel, estimateTokens,
-  readSubagents, formatSubagentRows, subagentWindow, readLastHumanPromptAt,
+  readSubagents, formatSubagentRows, subagentWindow, readLastHumanPromptAt, formatDuration,
 };
 
 /**

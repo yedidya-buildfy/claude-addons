@@ -61,6 +61,22 @@ assert.ok(out.includes('↳ Build the form · Opus 5.5 · medium │ ██░�
 assert.ok(out.includes('↳ Quick lookup · Haiku 4.5 │'), out);
 assert.ok(out.includes('✓ Finished one · Sonnet 5 · high'), out);
 
+// running time: from the subagent's first line; frozen at the last reply once finished
+const t0 = Date.now();
+agent('timed', { description: 'Timed' }, [
+  { type: 'user', timestamp: new Date(t0 - 261_000).toISOString(), message: { content: 'go' } },
+  reply('claude-sonnet-5', 'high', 10_000, 'tool_use', new Date(t0 - 5_000).toISOString()),
+]);
+agent('timeddone', { description: 'Timed done' }, [
+  { type: 'user', timestamp: new Date(t0 - 50_000).toISOString(), message: { content: 'go' } },
+  reply('claude-sonnet-5', 'high', 10_000, 'end_turn', new Date(t0 - 5_000).toISOString()),
+]);
+const timed = s.formatSubagentRows(s.readSubagents(transcript, t0), {}).replace(/\x1b\[[\d;]*m/g, '');
+assert.ok(/↳ Timed · Sonnet 5 · high │ .* · 4m 21s$/m.test(timed), timed);
+assert.ok(/✓ Timed done · Sonnet 5 · high │ .* · 45s$/m.test(timed), timed);
+assert.strictEqual(s.formatDuration(59_000), '59s');
+assert.strictEqual(s.formatDuration(3_725_000), '1h 2m');
+
 assert.deepStrictEqual(s.readSubagents(path.join(dir, 'nosession.jsonl')), []);
 assert.strictEqual(s.readLastHumanPromptAt(path.join(dir, 'nosession.jsonl')), 0);
 assert.strictEqual(s.formatSubagentRows([]), '');
