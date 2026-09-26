@@ -1,7 +1,7 @@
 {
   "id": "usage-by-device",
   "order": 55,
-  "default": false,
+  "default": true,
   "title": "שימוש לפי מכשיר",
   "summary": "כמה כל מחשב על אותו מנוי קלוד ניצל: היום, 7 ימים, 30 ימים, החודש, 5 השעות והשבוע.",
   "detect": { "file": "~/.claude/usage-by-device/ubd.mjs" },

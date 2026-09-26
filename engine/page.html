@@ -237,7 +237,8 @@ function usagePanel(a) {
 }
 function paintUsage(id) {
   const el = document.getElementById(`usage-${id}`);
-  if (el && !el.contains(document.activeElement)) el.innerHTML = usageBody(id); // never repaint under someone typing a name
+  const typing = el?.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+  if (el && !typing) el.innerHTML = usageBody(id); // never repaint under someone typing a name — but a clicked tab must redraw
 }
 function usageBody(id) {
   if (!usage) return `<div class="u-sub">טוען…</div>`;

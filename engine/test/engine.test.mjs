@@ -332,3 +332,9 @@ test("panel routes answer only while the add-on is on", async () => {
     assert.equal((await fetch(`${u.origin}/api/panel?t=${u.searchParams.get("t")}&addon=usage-by-device`)).status, 404);
   } finally { child.kill(); }
 });
+
+test("usage by device is on for a machine that never chose", () => {
+  const { home, P } = sandbox();
+  go(P, { version: 1, enabled: {}, settings: {} });
+  assert.ok(fs.existsSync(path.join(home, ".claude/usage-by-device/ubd.mjs")));
+});
