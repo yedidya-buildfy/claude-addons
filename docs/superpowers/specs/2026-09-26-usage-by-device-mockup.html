@@ -38,8 +38,8 @@
   .stale { color: var(--warn); }
   .foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; font-size: 13px; color: var(--muted); }
   .foot input { width: 5ch; font: inherit; text-align: center; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); padding: 1px 2px; }
-  .seg { display: inline-flex; background: var(--bg); border-radius: 9px; padding: 3px; gap: 2px; }
-  .seg button { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--muted); padding: 3px 12px; border-radius: 7px; cursor: pointer; }
+  .seg { max-width: 100%; overflow-x: auto; display: inline-flex; background: var(--bg); border-radius: 9px; padding: 3px; gap: 2px; }
+  .seg button { white-space: nowrap; font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--muted); padding: 3px 12px; border-radius: 7px; cursor: pointer; }
   .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px #0002; font-weight: 600; }
   .plan { display: flex; gap: 18px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
   .plan b { color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -82,9 +82,33 @@
   .legend .it { display: flex; align-items: center; gap: 8px; font-size: 14px; }
   .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
   .legend .it .when { margin-inline-start: auto; font-size: 12px; }
+  /* heatmap — every day, per device */
+  .hm { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .hm-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .hm-head h3 { margin: 0; font-size: 14px; }
+  .hm-scale { display: flex; align-items: center; gap: 3px; font-size: 12px; color: var(--faint); }
+  .hm-devs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .hm-dev { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; justify-items: center; }
+  .hm-dev.me { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .hm-name { justify-self: stretch; display: flex; justify-content: space-between; gap: 8px; font-size: 13px; flex-wrap: wrap; }
+  .hm-name b { font-weight: 600; }
+  .hm-wrap { direction: ltr; display: grid; grid-template-columns: auto auto; gap: 6px; }
+  .hm-days { display: grid; grid-template-rows: repeat(7, 11px); gap: 3px; font-size: 10px; color: var(--faint); direction: rtl; }
+  .hm-days span { line-height: 11px; }
+  .hm-grid { display: grid; grid-template-rows: repeat(7, 11px); grid-auto-flow: column; grid-auto-columns: 11px; gap: 3px; }
+  .hm-months { direction: ltr; display: grid; grid-auto-flow: column; grid-auto-columns: 14px; font-size: 10px; color: var(--faint); height: 13px; padding-left: 22px; white-space: nowrap; }
+  .sq { width: 11px; height: 11px; border-radius: 3px; background: var(--line); }
+  .sq.l1 { background: color-mix(in srgb, var(--accent) 25%, var(--line)); }
+  .sq.l2 { background: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  .sq.l3 { background: color-mix(in srgb, var(--accent) 75%, var(--line)); }
+  .sq.l4 { background: var(--accent); }
+  .sq.pad { visibility: hidden; }
+  .sq:hover { outline: 2px solid var(--ink); outline-offset: 1px; }
+  #tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; padding: 5px 9px; border-radius: 7px; white-space: nowrap; display: none; z-index: 10; }
 </style>
 </head>
 <body>
+<div id="tip"></div>
 <main>
   <div class="variants" id="tabs"></div>
   <p class="idea" id="idea"></p>
@@ -130,9 +154,50 @@ const V = {
           <div>${name(d)} ${d.me ? '<span class="tag">המחשב הזה</span>' : ""}<div class="sub"><span class="${d.stale ? "stale" : ""}">עודכן ${d.ago}</span></div></div>
           <div class="bigbox"><div class="big">${big}<small>${bigSub}</small></div><div class="sub">${second}</div></div>
           ${meter}</div>`;
-      }).join("")}</div>${foot()}`;
+      }).join("")}</div>${heatmap()}${foot()}`;
     } },
 };
+
+// ---- heatmap demo data: 13 weeks, one number per day per device
+const WEEKS = 13, today = new Date(2026, 8, 26);
+const dayList = []; // oldest → newest, starting on a Sunday
+const start = new Date(today); start.setDate(start.getDate() - start.getDay() - (WEEKS - 1) * 7);
+for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) dayList.push(new Date(d));
+let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const HM = DEVICES.map((dev, i) => dayList.map((d) => {
+  const weekend = d.getDay() === 5 || d.getDay() === 6;
+  const base = [38, 22, 6][i], r = rnd();
+  if (i === 2 && r < .7) return 0;
+  if (weekend && r < .6) return 0;
+  return +(base * (weekend ? .3 : 1) * (.2 + r * 1.4)).toFixed(2);
+}));
+const all = HM.flat().filter((x) => x > 0).sort((a, b) => a - b);
+const q = [.25, .5, .75].map((k) => all[Math.floor(all.length * k)]);
+const level = (w) => (!w ? "" : w <= q[0] ? "l1" : w <= q[1] ? "l2" : w <= q[2] ? "l3" : "l4");
+const HE_DAYS = ["א׳", "", "ג׳", "", "ה׳", "", "ש׳"];
+const MONTHS = ["ינו׳", "פבר׳", "מרץ", "אפר׳", "מאי", "יוני", "יולי", "אוג׳", "ספט׳", "אוק׳", "נוב׳", "דצמ׳"];
+function heatmap() {
+  const months = []; let last = -1;
+  for (let w = 0; w < Math.ceil(dayList.length / 7); w++) { const m = dayList[w * 7].getMonth(); const li = months.map(Boolean).lastIndexOf(true), gap = li < 0 ? 99 : months.length - li; months.push(m !== last && gap > 2 ? MONTHS[m] : ""); if (m !== last && gap > 2) last = m; else if (m !== last) last = m; }
+  return `<div class="hm"><div class="hm-head"><h3>כל יום, 13 שבועות אחרונים</h3>
+    <div class="hm-scale">פחות <span class="sq"></span><span class="sq l1"></span><span class="sq l2"></span><span class="sq l3"></span><span class="sq l4"></span> יותר</div></div>
+    <div class="hm-devs">${DEVICES.map((dev, i) => {
+      const total = HM[i].reduce((a, b) => a + b, 0), active = HM[i].filter(Boolean).length;
+      return `<div class="hm-dev ${dev.me ? "me" : ""}"><div class="hm-name"><b>${dev.name}${dev.me ? ' <span class="tag">המחשב הזה</span>' : ""}</b><span class="faint">${active} ימים פעילים · <bdi dir="ltr">≈ $${Math.round(total)}</bdi></span></div>
+        <div class="hm-months">${months.map((m) => `<span>${m}</span>`).join("")}</div>
+        <div class="hm-wrap"><div class="hm-days">${HE_DAYS.map((d) => `<span>${d}</span>`).join("")}</div>
+        <div class="hm-grid">${dayList.map((d, j) => `<span class="sq ${level(HM[i][j])}" data-i="${i}" data-j="${j}"></span>`).join("")}</div></div></div>`;
+    }).join("")}</div></div>`;
+}
+const tip = document.getElementById("tip");
+document.addEventListener("mouseover", (e) => {
+  const { i, j } = e.target.dataset || {};
+  if (i === undefined || j === undefined) { tip.style.display = "none"; return; }
+  const w = HM[i][j], dayTotal = HM.reduce((a, row) => a + row[j], 0), d = dayList[j];
+  tip.innerHTML = `${d.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric" })} · ${DEVICES[i].name}<br>${w ? `<bdi dir="ltr">≈ $${w}</bdi> · ${Math.round((w / dayTotal) * 100)}% מהשימוש באותו יום` : "לא השתמש"}`;
+  const r = e.target.getBoundingClientRect();
+  tip.style.display = "block"; tip.style.left = `${Math.max(8, r.left + r.width / 2 - tip.offsetWidth / 2)}px`; tip.style.top = `${r.top - tip.offsetHeight - 8}px`;
+});
 let cur = "B";
 function draw() {
   document.getElementById("tabs").innerHTML = Object.entries(V).map(([k, v]) => `<button data-v="${k}" class="${k === cur ? "on" : ""}">${k} · ${v.label}</button>`).join("");
