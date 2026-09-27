@@ -475,6 +475,30 @@ function dirHash(dir) {
   return h.digest("hex");
 }
 
+// VS Code caches every extension's manifest and rescans only when its list of
+// installed extensions changes, so a copied-in package.json (a new menu item, a
+// new command) stays invisible, even after a window reload, until that list
+// moves. Name the new version there; bump the file's time when it already does.
+const VSCODE_MANIFEST = /\/\.vscode\/extensions\/[^/]+\/package\.json$/;
+
+function registerVscodeExtensions(tx, P, manifests) {
+  const listFile = path.join(P.home, ".vscode", "extensions", "extensions.json");
+  const text = readText(listFile);
+  const list = text == null ? null : parseJson(listFile, text);
+  if (!Array.isArray(list)) return; // VS Code has not written its list yet: its first scan reads the files
+  for (const { file, data } of manifests) {
+    const pkg = JSON.parse(data);
+    const dir = path.dirname(file);
+    const entry = list.find((e) => e.location?.path === dir || e.relativeLocation === path.basename(dir));
+    if (entry) entry.version = pkg.version;
+    else list.push({ identifier: { id: `${pkg.publisher}.${pkg.name}` }, version: pkg.version, location: { $mid: 1, path: dir, scheme: "file" }, relativeLocation: path.basename(dir) });
+  }
+  if (!tx.write(listFile, JSON.stringify(list), null, "VS Code extension list") && !tx.dryRun) {
+    const now = new Date();
+    fs.utimesSync(listFile, now, now);
+  }
+}
+
 export function apply({ P, manifests, cfg, dryRun = false, run = !process.env.ADDONS_NO_RUN, removeAll = false }) {
   const record = JSON.parse(readText(P.record) || '{"addons":{}}');
   const { enabled, values } = resolve(manifests, cfg, P);
@@ -501,6 +525,7 @@ export function apply({ P, manifests, cfg, dryRun = false, run = !process.env.AD
     }
 
     // files
+    const extManifests = [];
     const ids = new Set([...Object.keys(record.addons), ...Object.keys(want)]);
     for (const id of ids) {
       const prev = record.addons[id]?.files || {};
@@ -517,12 +542,13 @@ export function apply({ P, manifests, cfg, dryRun = false, run = !process.env.AD
         if (cur && prev[f.to] && cur !== prev[f.to] && cur !== sha(data)) {
           notes.push(`${id}: ${f.to} had local edits — replaced, the old copy is in the backup`);
         }
-        tx.write(f.to, data, f.mode, id);
+        if (tx.write(f.to, data, f.mode, id) && VSCODE_MANIFEST.test(f.to)) extManifests.push({ file: f.to, data });
         files[f.to] = sha(data);
       }
       for (const d of want[id]?.dirs || []) if (!dryRun) fs.mkdirSync(d, { recursive: true });
       if (want[id] || Object.keys(files).length) next.addons[id] = { files };
     }
+    if (extManifests.length) registerVscodeExtensions(tx, P, extManifests);
 
     // JSON targets
     const targets = [];

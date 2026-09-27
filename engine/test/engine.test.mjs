@@ -261,13 +261,15 @@ test("a user's line touching an old add-on paragraph is never removed", () => {
 test("shared defaults are adopted once, then the machine's own choices rule", async () => {
   const { adoptDefaults } = await import("../lib.mjs");
   const { P } = sandbox();
+  // a ccx installed system-wide (/opt/homebrew/bin) is outside any sandbox HOME
+  const local = manifests.map((m) => (m.id === "multi-model" ? { ...m, detect: { file: "~/.claude/scripts/ccx" } } : m));
   const cfg = { version: 1, enabled: { "auto-claude": false, "phone-alerts": true }, settings: {} };
-  assert.equal(adoptDefaults(manifests, cfg, P), true);
+  assert.equal(adoptDefaults(local, cfg, P), true);
   assert.equal(cfg.enabled["auto-claude"], true);
   assert.equal(cfg.enabled["phone-alerts"], false);
   assert.equal(cfg.enabled["multi-model"], false);          // "if-installed": ccx is not on this machine
   cfg.enabled["auto-claude"] = false;                        // the owner switches it off
-  assert.equal(adoptDefaults(manifests, cfg, P), false);
+  assert.equal(adoptDefaults(local, cfg, P), false);
   assert.equal(cfg.enabled["auto-claude"], false);           // and it stays off
 });
 
@@ -337,4 +339,26 @@ test("usage by device is on for a machine that never chose", () => {
   const { home, P } = sandbox();
   go(P, { version: 1, enabled: {}, settings: {} });
   assert.ok(fs.existsSync(path.join(home, ".claude/usage-by-device/ubd.mjs")));
+});
+
+test("an updated VS Code extension is named at its new version in VS Code's list", () => {
+  const { home, P } = sandbox();
+  const listFile = path.join(home, ".vscode/extensions/extensions.json");
+  const dir = path.join(home, ".vscode/extensions/claude-tab-rename");
+  const other = { identifier: { id: "someone.else" }, version: "2.0.0", relativeLocation: "someone.else-2.0.0" };
+  fs.mkdirSync(path.dirname(listFile), { recursive: true });
+  fs.writeFileSync(listFile, JSON.stringify([other, { identifier: { id: "claude-addons.claude-tab-rename" }, version: "1.0.0", location: { $mid: 1, path: dir, scheme: "file" }, relativeLocation: "claude-tab-rename" }]));
+  const version = JSON.parse(fs.readFileSync(path.join(repo, "tab-status/vscode-extension/package.json"), "utf8")).version;
+
+  go(P, all(true));
+  const list = JSON.parse(fs.readFileSync(listFile, "utf8"));
+  assert.deepEqual(list[0], other);                                  // another extension's entry untouched
+  assert.equal(list[1].version, version);
+  assert.deepEqual(go(P, all(true)).changes, []);                    // nothing new: the list is left alone
+
+  // a new copy under the same version still has to move the list, or VS Code keeps its cached manifest
+  fs.appendFileSync(path.join(dir, "package.json"), " ");
+  fs.utimesSync(listFile, new Date(0), new Date(0));
+  go(P, all(true));
+  assert.ok(fs.statSync(listFile).mtimeMs > 0);
 });
