@@ -16,7 +16,8 @@ done
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 REPO_FILE="$CLAUDE_DIR/addons-repo-path"
 CACHE_DIR="$HOME/.claude/cache"
-STAMP_FILE="$CACHE_DIR/addons-update-last"
+STAMP_FILE="$CACHE_DIR/addons-update-last"   # last try
+OK_FILE="$CACHE_DIR/addons-update-ok"         # last check that reached the repo and left this machine up to date
 LOG_FILE="$CACHE_DIR/addons-update.log"
 
 mkdir -p "$CACHE_DIR"
@@ -37,17 +38,22 @@ err() {
   fi
 }
 
-# Rate limit background runs. A fetch is cheap and a push should reach the other
-# machines within minutes, so the gap is short. A skipped run is logged, so the
-# log always explains why an update did not happen yet.
-if [ "$FORCE" = 0 ] && [ -f "$STAMP_FILE" ]; then
-  now=$(date +%s)
-  last=$(stat -f %m "$STAMP_FILE" 2>/dev/null || echo 0)
-  if [ $((now - last)) -lt 180 ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] skipped: checked $((now - last))s ago (every 3 minutes at most)" >> "$LOG_FILE"
+# Background runs (hourly timer, terminal, session start) only go when the schedule
+# says so: once a day at 11:00, one more try for each day without a successful
+# check, up to every hour. A skipped run is logged, so the log always explains
+# why an update did not happen yet. No node or no rule file → go, never block.
+DUE="$HOME/.claude/scripts/claude-addons-due.mjs"
+if [ "$FORCE" = 0 ] && [ -f "$DUE" ] && command -v node >/dev/null 2>&1; then
+  ok_ms=$(( $(stat -f %m "$OK_FILE" 2>/dev/null || echo 0) * 1000 ))
+  try_ms=$(( $(stat -f %m "$STAMP_FILE" 2>/dev/null || echo 0) * 1000 ))
+  if ! why=$(node "$DUE" "$ok_ms" "$try_ms"); then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] skipped: $why" >> "$LOG_FILE"
     exit 0
   fi
+  log "checking ($why)"
 fi
+# Every try counts, found or not, so a failing machine moves to its next slot
+touch "$STAMP_FILE"
 
 # Locate git repository
 REPO=""
@@ -73,9 +79,6 @@ if [ -z "$REPO" ] || [ ! -d "$REPO/.git" ]; then
   err "repository path not found. Run ./install.sh from your clone once."
   exit 0
 fi
-
-# Update rate limit timestamp now so failing network calls don't spin repeatedly
-touch "$STAMP_FILE"
 
 # Ensure we're in the repo
 cd "$REPO"
@@ -108,6 +111,7 @@ REMOTE_REV="$(git rev-parse "origin/$DEFAULT_BRANCH" 2>/dev/null || true)"
 
 if [ "$LOCAL_REV" = "$REMOTE_REV" ]; then
   log "claude-addons is already up to date ($LOCAL_REV)."
+  touch "$OK_FILE"
   exit 0
 fi
 
@@ -121,7 +125,7 @@ fi
 
 # Make this machine match its saved choices with the new version
 log "applying add-ons..."
-"$REPO/install.sh" --update >> "$LOG_FILE" 2>&1 || err "applying add-ons failed — see $LOG_FILE, or run: addons status"
+if "$REPO/install.sh" --update >> "$LOG_FILE" 2>&1; then touch "$OK_FILE"; else err "applying add-ons failed — see $LOG_FILE, or run: addons status"; fi
 
 # If ccx-rewrite was running, restart it to pick up new code
 REWRITE_PID="$HOME/.cli-proxy-api/ccx-rewrite.pid"

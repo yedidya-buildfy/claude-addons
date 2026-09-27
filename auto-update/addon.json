@@ -3,12 +3,16 @@
   "order": 0,
   "required": true,
   "title": "עדכונים אוטומטיים והפקודה addons",
-  "summary": "מושך גרסה חדשה של התוספים ברקע כל רבע שעה, גם כשאף טרמינל לא פתוח, ומתקין את הפקודה addons שפותחת את הדף הזה.",
+  "summary": "בודק פעם ביום ב‑11:00 אם יש גרסה חדשה של התוספים, גם כשאף טרמינל לא פתוח, ומתקין את הפקודה addons שפותחת את הדף הזה.",
   "files": [
     {
       "from": "claude-addons-update.sh",
       "to": "~/.claude/scripts/claude-addons-update.sh",
       "mode": "755"
+    },
+    {
+      "from": "due.mjs",
+      "to": "~/.claude/scripts/claude-addons-due.mjs"
     },
     {
       "from": "addons",
@@ -29,12 +33,12 @@
   "shell": "zshrc.snippet",
   "group": "מערכת",
   "details": [
-    "בודק אם יש גרסה חדשה של התוספים כל רבע שעה ובכל כניסה למחשב, גם כשאף טרמינל או סשן קלוד לא פתוחים. גם פתיחת טרמינל או סשן בודקת (לכל היותר פעם ב‑3 דקות). מושך את הגרסה ומיישם לפי הבחירות שלך כאן.",
+    "בודק פעם ביום ב‑11:00. אם עבר יום בלי בדיקה מוצלחת (המחשב היה כבוי, בלי אינטרנט) — פעמיים ביום, אחרי יומיים שלוש פעמים, וכן הלאה עד פעם בשעה. בדיקה שמצליחה מחזירה לפעם ביום. אם המחשב היה כבוי בשעת הבדיקה, היא רצה כשהוא נדלק. פתיחת טרמינל או סשן קלוד בודקת רק אם הגיע תור.",
     "מוסיף את הפקודה addons, שפותחת את הדף הזה.",
     "אם יש בתיקיית התוספים שינויים שלא נשמרו, העדכון מדלג כדי לא לדרוס אותם.",
     "למה עדכון לא הגיע: tail ~/.claude/cache/addons-update.log מראה כל בדיקה, כל דילוג והסיבה שלו."
   ],
-  "howToCheck": "launchctl print gui/$(id -u)/com.claude-addons.update | grep -E 'state|run interval' — ואז tail ~/.claude/cache/addons-update.log מראה בדיקה כל רבע שעה.",
+  "howToCheck": "tail ~/.claude/cache/addons-update.log — כל שעה שורה: \\\"skipped: already checked today\\\" או \\\"checking (...)\\\". בדיקה מיידית בלי לחכות: ~/.claude/scripts/claude-addons-update.sh --force",
   "run": {
     "cmd": "[ \"$(uname)\" = Darwin ] || exit 0; launchctl bootout gui/$(id -u)/com.claude-addons.update 2>/dev/null; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude-addons.update.plist",
     "when": "changed"

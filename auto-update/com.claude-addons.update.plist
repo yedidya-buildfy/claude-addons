@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- claude-addons: look for add-on updates every 15 minutes and at login, even with no terminal open.
+<!-- claude-addons: wake the updater every hour and at login, even with no terminal open; the updater's
+     own schedule decides whether to look (once a day at 11:00, more often after missed days).
      Installed and removed by the add-ons engine; a login shell so node/git are found like in a terminal. -->
 <plist version="1.0">
 <dict>
@@ -10,7 +11,7 @@
     <string>/bin/zsh</string><string>-lc</string>
     <string>export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"; exec "$HOME/.claude/scripts/claude-addons-update.sh" --quiet</string>
   </array>
-  <key>StartInterval</key><integer>900</integer>
+  <key>StartCalendarInterval</key><dict><key>Minute</key><integer>0</integer></dict>
   <key>RunAtLoad</key><true/>
   <key>ProcessType</key><string>Background</string>
   <key>LowPriorityIO</key><true/>

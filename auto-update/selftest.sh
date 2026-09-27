@@ -17,6 +17,8 @@ HOME="$SANDBOX" ADDONS_NO_RUN=1 "$ROOT/install.sh" --update > "$SANDBOX/log" 2>&
 [ -x "$SANDBOX/.claude/scripts/claude-addons-update.sh" ] || { echo "FAIL: updater not installed"; exit 1; }
 grep -q "claude-addons (managed" "$SANDBOX/.zshrc" || { echo "FAIL: shell block missing"; exit 1; }
 HOME="$SANDBOX" ADDONS_NO_RUN=1 "$ROOT/install.sh" --update | grep -q "nothing changed" || { echo "FAIL: second run changed files"; exit 1; }
-HOME="$SANDBOX" "$ROOT/uninstall.sh" > /dev/null
+HOME="$SANDBOX" ADDONS_NO_RUN=1 "$ROOT/uninstall.sh" > /dev/null
 [ ! -e "$SANDBOX/.claude/scripts/claude-addons-update.sh" ] || { echo "FAIL: uninstall left the updater"; exit 1; }
+[ ! -e "$SANDBOX/Library/LaunchAgents/com.claude-addons.update.plist" ] || { echo "FAIL: uninstall left the timer"; exit 1; }
+node --test "$ROOT/auto-update/due.test.mjs" > /dev/null || { echo "FAIL: schedule rule"; exit 1; }
 echo "PASS: auto-update self-test"
