@@ -121,7 +121,17 @@
   .u-dot { flex: none; width: 9px; height: 9px; border-radius: 3px; display: inline-block; vertical-align: middle; margin-inline-end: 2px; }
   .u-models { grid-column: 1 / -1; display: flex; gap: 4px 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .u-models b { color: var(--ink); font-weight: 600; }
-  .u-mbar { grid-column: 1 / -1; display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: var(--line); }
+  .u-mt { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); overflow-x: auto; }
+  .u-mt h3 { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
+  .u-mt table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .u-mt th { font-weight: 500; color: var(--muted); text-align: center; padding: 4px 8px; white-space: nowrap; }
+  .u-mt th:first-child, .u-mt td:first-child { text-align: start; }
+  .u-mt td { padding: 7px 8px; border-top: 1px solid var(--line); text-align: center; white-space: nowrap; }
+  .u-mt td b { display: block; color: var(--ink); font-size: 15px; }
+  .u-mt td small { color: var(--faint); font-size: 11px; }
+  .u-mt td.zero { color: var(--faint); }
+  .u-mt tr.me td { background: var(--accent-soft); }
+  .u-mt .u-mbar { display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: var(--line); margin-top: 4px; max-width: 160px; }
   .u-all { margin-top: 10px; }
   .u-by { font-size: 12px; margin-inline-start: 8px; vertical-align: middle; }
   .u-daily { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
@@ -237,6 +247,23 @@ function modelLine(m) {
     .map(([k, l]) => `<span><i class="u-dot" style="background:var(--m-${k})"></i> ${l} <b>${pct(m[k] / t)}</b></span>`).join("");
 }
 const modelBar = (m) => { const t = mTotal(m); return t ? `<div class="u-mbar" aria-hidden="true">${MODELS.filter(([k]) => m[k]).map(([k]) => `<i style="flex:${m[k]};background:var(--m-${k})"></i>`).join("")}</div>` : ""; };
+// who used which model: a row per machine, a column per model that anyone used in this tab.
+// Plan tabs: the big number is that machine's slice of the plan spent on that model; other tabs: the amount.
+function usageTable(plan) {
+  const rows = usage.devices.map((d) => { const x = plan ? d.windows[usageTab] : d.periods[usageTab]; return { d, x, m: x.models ?? {} }; });
+  const cols = MODELS.filter(([k]) => rows.some((r) => r.m[k] > 0));
+  if (!cols.length) return "";
+  const cell = (r, k) => {
+    const t = mTotal(r.m), part = t ? (r.m[k] ?? 0) / t : 0;
+    if (!part) return `<td class="zero">—</td>`;
+    const v = Math.round(r.x.pct * part * 10) / 10, big = plan ? (v ? `${v}%` : `<bdi dir="ltr">&lt;0.1%</bdi>`) : uMoney(r.m[k]);
+    return `<td><b>${big}</b><small>${part < 0.005 ? "פחות מ-1%" : pct(part)} מהשימוש שלו</small></td>`;
+  };
+  return `<div class="u-mt"><h3>מי השתמש באיזה מודל${plan ? " — כמה מהמנוי" : ""}</h3><table>
+    <thead><tr><th>מכשיר</th>${cols.map(([k, l]) => `<th><i class="u-dot" style="background:var(--m-${k})"></i> ${l}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((r) => `<tr class="${r.d.me ? "me" : ""}"><td><i class="u-dot" style="background:${uColor(r.d.id)}"></i> ${esc(r.d.name)}${modelBar(r.m)}</td>${cols.map(([k]) => cell(r, k)).join("")}</tr>`).join("")}</tbody>
+  </table></div>`;
+}
 const ago = (iso) => {
   const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
   return m < 2 ? "עכשיו" : m < 60 ? `לפני ${m} דק׳` : m < 48 * 60 ? `לפני ${Math.round(m / 60)} שע׳` : `לפני ${Math.round(m / 1440)} ימים`;
@@ -279,9 +306,9 @@ function usageBody(id) {
         <div><span class="u-who"><i class="u-dot" style="background:${uColor(d.id)}"></i><input class="u-name" data-dev="${id}:${d.id}" value="${esc(d.name)}" maxlength="40" aria-label="שם המכשיר"></span> ${d.me ? '<span class="tag pending">המחשב הזה</span>' : ""}
           <div class="u-sub ${stale(d) ? "u-stale" : ""}">עודכן ${ago(d.updatedAt)}</div></div>
         <div class="u-end"><div class="u-big">${big}</div><div class="u-sub">${second}</div></div>
-        <div class="u-meter">${meter}</div>
-        ${modelBar((w ?? p).models)}<div class="u-models">${modelLine((w ?? p).models)}</div></div>`;
+        <div class="u-meter">${meter}</div></div>`;
     }).join("")}</div>
+    ${usageTable(plan)}
     ${usageDaily()}
     <div class="u-foot"><label>מחשב שחוזר אחרי הפסקה משלים עדכונים של עד <input type="number" dir="ltr" min="12" max="168" step="1" data-retention="${id}" value="${usage.retentionHours}"> שעות אחורה</label><span>לחץ על שם כדי לשנות אותו</span></div>`;
 }
