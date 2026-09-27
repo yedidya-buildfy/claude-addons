@@ -9,11 +9,13 @@
     --bg: #f5f4f1; --card: #fff; --ink: #1c1b19; --muted: #6a665f; --faint: #8f8a82; --line: #e3dfd8;
     --accent: #c2410c; --accent-soft: #fdf1ea; --accent-ink: #fff; --ok: #15803d; --bad: #b91c1c; --warn: #a16207;
     --u1: #c2410c; --u2: #0e7490; --u3: #7c3aed; --u4: #15803d; --u5: #a16207;
+    --m-f: #be185d; --m-o: #1d4ed8; --m-s: #0d9488; --m-h: #65a30d;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #151412; --card: #1f1d1a; --ink: #eeeae4; --muted: #a39e96; --faint: #7d786f; --line: #332f2a;
             --accent: #fb923c; --accent-soft: #2b1d12; --accent-ink: #1a0d04; --ok: #4ade80; --bad: #f87171; --warn: #facc15;
-            --u1: #fb923c; --u2: #22d3ee; --u3: #a78bfa; --u4: #4ade80; --u5: #facc15; }
+            --u1: #fb923c; --u2: #22d3ee; --u3: #a78bfa; --u4: #4ade80; --u5: #facc15;
+            --m-f: #f472b6; --m-o: #60a5fa; --m-s: #2dd4bf; --m-h: #a3e635; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink);
@@ -117,6 +119,11 @@
   .u-who { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
   .u-who .u-name { width: 17ch; min-width: 0; flex: 1; }
   .u-dot { flex: none; width: 9px; height: 9px; border-radius: 3px; display: inline-block; vertical-align: middle; margin-inline-end: 2px; }
+  .u-models { grid-column: 1 / -1; display: flex; gap: 4px 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .u-models b { color: var(--ink); font-weight: 600; }
+  .u-mbar { grid-column: 1 / -1; display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: var(--line); }
+  .u-all { margin-top: 10px; }
+  .u-by { font-size: 12px; margin-inline-start: 8px; vertical-align: middle; }
   .u-daily { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
   .u-daily h3 { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
   .u-lg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
@@ -218,7 +225,18 @@ function panel(a) {
 }
 
 // usage-by-device: one card per machine, fed live by the add-on's own script
-let usage = null, usageErr = "", usageStream = null, usageTab = "week";
+let usage = null, usageErr = "", usageStream = null, usageTab = "week", usageBy = "dev";
+// model families as the page names them, in the order they are shown
+const MODELS = [["o", "אופוס"], ["s", "סונט"], ["f", "פייבל"], ["h", "הייקו"]];
+const mTotal = (m) => MODELS.reduce((a, [k]) => a + (m?.[k] ?? 0), 0);
+// "● אופוס 82% ● סונט 18%" — only the models that were used, largest first
+function modelLine(m) {
+  const t = mTotal(m);
+  if (!t) return "";
+  return MODELS.filter(([k]) => m[k] / t >= 0.005).sort((a, b) => m[b[0]] - m[a[0]])
+    .map(([k, l]) => `<span><i class="u-dot" style="background:var(--m-${k})"></i> ${l} <b>${pct(m[k] / t)}</b></span>`).join("");
+}
+const modelBar = (m) => { const t = mTotal(m); return t ? `<div class="u-mbar" aria-hidden="true">${MODELS.filter(([k]) => m[k]).map(([k]) => `<i style="flex:${m[k]};background:var(--m-${k})"></i>`).join("")}</div>` : ""; };
 const ago = (iso) => {
   const m = Math.round((Date.now() - Date.parse(iso)) / 60000);
   return m < 2 ? "עכשיו" : m < 60 ? `לפני ${m} דק׳` : m < 48 * 60 ? `לפני ${Math.round(m / 60)} שע׳` : `לפני ${Math.round(m / 1440)} ימים`;
@@ -251,6 +269,7 @@ function usageBody(id) {
   return `${[mbDown, usageErr].filter(Boolean).map((m) => `<div class="drift">${esc(m)}</div>`).join("")}
     <div class="u-top"><div class="u-seg">${tabs.map(([k, l]) => `<button data-utab="${id}:${k}" class="${k === usageTab ? "on" : ""}">${l}</button>`).join("")}</div>
       ${plan ? `<div class="u-plan">נוצל במנוי: <b>${plan.utilization}%</b></div>` : ""}</div>
+    ${modelLine(usage.models?.[usageTab]) ? `<div class="u-models u-all">כל המנוי לפי מודל: ${modelLine(usage.models[usageTab])}</div>` : ""}
     <div class="u-devs">${usage.devices.map((d) => {
       const w = plan ? d.windows[usageTab] : null, p = plan ? null : d.periods[usageTab];
       const big = plan ? `${Math.round(w.pct)}%<small>מהמנוי</small>` : `${pct(p.share)}<small>מהשימוש</small>`;
@@ -260,22 +279,27 @@ function usageBody(id) {
         <div><span class="u-who"><i class="u-dot" style="background:${uColor(d.id)}"></i><input class="u-name" data-dev="${id}:${d.id}" value="${esc(d.name)}" maxlength="40" aria-label="שם המכשיר"></span> ${d.me ? '<span class="tag pending">המחשב הזה</span>' : ""}
           <div class="u-sub ${stale(d) ? "u-stale" : ""}">עודכן ${ago(d.updatedAt)}</div></div>
         <div class="u-end"><div class="u-big">${big}</div><div class="u-sub">${second}</div></div>
-        <div class="u-meter">${meter}</div></div>`;
+        <div class="u-meter">${meter}</div>
+        ${modelBar((w ?? p).models)}<div class="u-models">${modelLine((w ?? p).models)}</div></div>`;
     }).join("")}</div>
     ${usageDaily()}
     <div class="u-foot"><label>מחשב שחוזר אחרי הפסקה משלים עדכונים של עד <input type="number" dir="ltr" min="12" max="168" step="1" data-retention="${id}" value="${usage.retentionHours}"> שעות אחורה</label><span>לחץ על שם כדי לשנות אותו</span></div>`;
 }
 // every day, who used how much: one stacked column per day, 30 days
 function usageDaily() {
-  const days = usage.daily, max = Math.max(...days.map((d) => d.total));
+  const days = usage.daily, max = Math.max(...days.map((d) => d.total)), byModel = usageBy === "model";
   if (!max) return "";
   const step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500].find((x) => x * 4 >= max) ?? Math.ceil(max / 4), top = step * 4;
   const ids = [...usage.devices].map((d) => d.id).sort();
   const label = (day) => { const [, m, d] = day.split("-"); return `${+d}.${+m}`; };
-  return `<div class="u-daily"><h3>כל יום, מי השתמש כמה</h3>
-    <div class="u-lg">${usage.devices.map((d) => `<span><i class="u-dot" style="background:${uColor(d.id)}"></i> ${esc(d.name)}</span>`).join("")}</div>
+  // one stack per column: machines, or model families
+  const parts = (d) => byModel ? MODELS.filter(([k]) => d.models?.[k]).map(([k]) => [d.models[k], `var(--m-${k})`]) : ids.filter((id) => d.by[id]).map((id) => [d.by[id], uColor(id)]);
+  const legend = byModel ? MODELS.map(([k, l]) => `<span><i class="u-dot" style="background:var(--m-${k})"></i> ${l}</span>`) : usage.devices.map((d) => `<span><i class="u-dot" style="background:${uColor(d.id)}"></i> ${esc(d.name)}</span>`);
+  return `<div class="u-daily"><h3>כל יום, ${byModel ? "באיזה מודל" : "מי השתמש כמה"}
+      <span class="u-seg u-by">${[["dev", "לפי מכשיר"], ["model", "לפי מודל"]].map(([k, l]) => `<button data-uby="${k}" class="${k === usageBy ? "on" : ""}">${l}</button>`).join("")}</span></h3>
+    <div class="u-lg">${legend.join("")}</div>
     <div class="u-chart"><div class="u-y">${[4, 3, 2, 1, 0].map((k) => `<span>$${step * k}</span>`).join("")}</div>
-      <div class="u-plot">${days.map((d, j) => `<div class="u-col" data-uday="${j}" style="height:${(d.total / top) * 100}%">${ids.filter((id) => d.by[id]).map((id) => `<i style="flex:${d.by[id]};background:${uColor(id)}"></i>`).join("")}</div>`).join("")}</div>
+      <div class="u-plot">${days.map((d, j) => `<div class="u-col" data-uday="${j}" style="height:${(d.total / top) * 100}%">${parts(d).map(([w, c]) => `<i style="flex:${w};background:${c}"></i>`).join("")}</div>`).join("")}</div>
       <div class="u-x">${days.map((d, j) => `<span>${j === days.length - 1 ? "היום" : (days.length - 1 - j) % 7 === 0 ? label(d.day) : ""}</span>`).join("")}</div></div></div>`;
 }
 document.addEventListener("mouseover", (e) => {
@@ -284,7 +308,9 @@ document.addEventListener("mouseover", (e) => {
   const d = usage.daily[+col.dataset.uday], names = Object.fromEntries(usage.devices.map((x) => [x.id, x.name]));
   const [y, m, dd] = d.day.split("-").map(Number);
   tip.innerHTML = `<b>${new Date(y, m - 1, dd).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric" })}</b> · ${uMoney(d.total)}<br>`
-    + (Object.entries(d.by).sort((a, b) => b[1] - a[1]).map(([id, w]) => `<i class="u-dot" style="background:${uColor(id)}"></i> ${esc(names[id] ?? id)}: ${Math.round((w / d.total) * 100)}%`).join("<br>") || "אף אחד לא השתמש");
+    + ((usageBy === "model"
+      ? MODELS.filter(([k]) => d.models?.[k]).sort((a, b) => d.models[b[0]] - d.models[a[0]]).map(([k, l]) => `<i class="u-dot" style="background:var(--m-${k})"></i> ${l}: ${Math.round((d.models[k] / d.total) * 100)}%`)
+      : Object.entries(d.by).sort((a, b) => b[1] - a[1]).map(([id, w]) => `<i class="u-dot" style="background:${uColor(id)}"></i> ${esc(names[id] ?? id)}: ${Math.round((w / d.total) * 100)}%`)).join("<br>") || "אף אחד לא השתמש");
   const r = col.getBoundingClientRect();
   tip.style.display = "block";
   tip.style.left = `${Math.min(innerWidth - tip.offsetWidth - 8, Math.max(8, r.left + r.width / 2 - tip.offsetWidth / 2))}px`;
@@ -293,6 +319,8 @@ document.addEventListener("mouseover", (e) => {
 document.addEventListener("click", (e) => {
   const t = e.target.dataset?.utab;
   if (t) { const [id, k] = t.split(":"); usageTab = k; paintUsage(id); }
+  const by = e.target.dataset?.uby;
+  if (by) { usageBy = by; paintUsage(e.target.closest(".usage").id.slice(6)); }
 });
 document.addEventListener("change", async (e) => {
   const n = e.target.dataset?.dev, r = e.target.dataset?.retention;

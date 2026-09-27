@@ -58,3 +58,18 @@ test("a plan window whose reset time has passed is not shown", () => {
   assert.equal(v.devices[0].windows.five, undefined);
   assert.ok(v.plan.week);
 });
+
+test("model split: per device, per plan, per day, and a plan window by the days it touches", () => {
+  const M = { settings: L.settings, devices: {
+    aaaaaaaaaaaaaaaa: { name: "Mine", updatedAt: "u", nameSetAt: "n", hours: {}, days: {
+      "2026-09-26": { w: 10, f: 1, o: 6, s: 3, h: 0 }, "2026-09-10": { w: 4, f: 0, o: 0, s: 0, h: 4 } } },
+    bbbbbbbbbbbbbbbb: { name: "Dana", updatedAt: "u", nameSetAt: "n", hours: {}, days: { "2026-09-26": { w: 5, f: 0, o: 5, s: 0, h: 0 } } },
+  } };
+  const v = view(M, "aaaaaaaaaaaaaaaa", plan, now), mine = v.devices.find((d) => d.me);
+  assert.deepEqual(mine.periods.today.models, { f: 1, o: 6, s: 3, h: 0 });
+  assert.deepEqual(mine.periods.d30.models, { f: 1, o: 6, s: 3, h: 4 });
+  assert.deepEqual(v.models.today, { f: 1, o: 11, s: 3, h: 0 });
+  assert.deepEqual(v.daily.at(-1).models, { f: 1, o: 11, s: 3, h: 0 });
+  assert.deepEqual(mine.windows.week.models, { f: 1, o: 6, s: 3, h: 0 }); // 10.9 is outside the week
+  assert.deepEqual(v.models.week, v.models.today);
+});
