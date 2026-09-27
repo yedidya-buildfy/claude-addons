@@ -85,8 +85,16 @@ function currentName(tty) {
   return read(path.join(STATE, `tty.${tty}.name`));
 }
 
-async function rename() {
-  const terminal = vscode.window.activeTerminal;
+// From the tab's right-click menu VS Code passes the clicked terminal, which is
+// not necessarily the active one; from a keybinding or the palette nothing is.
+function targetTerminal(arg) {
+  return arg && typeof arg.sendText === "function" && "processId" in arg
+    ? arg
+    : vscode.window.activeTerminal;
+}
+
+async function rename(arg) {
+  const terminal = targetTerminal(arg);
   if (!terminal) {
     return;
   }
