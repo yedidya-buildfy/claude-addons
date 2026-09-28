@@ -674,12 +674,13 @@ function runStatusline() {
     const head = middle
       ? `\x1b[2m${modelLabel}\x1b[0m │ ${middle}`
       : `\x1b[2m${modelLabel}\x1b[0m`;
-    let subagents = '';
+    // Second line: the whole conversation so far — $ · time · tokens.
+    let totals = '';
     try {
-      subagents = formatSubagentRows(readSubagents(data.transcript_path));
+      totals = formatSessionTotals(readSessionTotals(data.transcript_path, claudeDir));
     } catch (e) {}
 
-    process.stdout.write(`${gsdUpdate}${head}${ctx ? ` │${ctx}` : ''}${speed}${usage}${lastCmdSuffix}${subagents}`);
+    process.stdout.write(`${gsdUpdate}${head}${ctx ? ` │${ctx}` : ''}${speed}${usage}${lastCmdSuffix}${totals ? `\n${totals}` : ''}`);
   } catch (e) {
     // Silent fail - don't break statusline on parse errors
   }
@@ -1355,31 +1356,22 @@ function formatModelLabel(data = {}) {
   return parts.join(' · ');
 }
 
-// --- Subagent rows -----------------------------------------------------------
-// Claude Code hands the statusline the MAIN conversation's data even while a
-// subagent's conversation is open (verified 2.1.282: the input never changes
-// when you switch views). So instead of "the one you're looking at", every
-// running subagent of this session gets its own row: name · model · effort ·
-// context. The subagent's own transcript records all three per reply. A
-// finished one stays (dimmed, ✓) until the user's next prompt.
+// --- Agent panel rows ------------------------------------------------------
+// Claude Code's own agent list (bottom of the screen, clickable, opens the
+// agent) lets a command draw each row: settings `subagentStatusLine` runs
+// `node gsd-statusline.js --agent-rows`, which gets
+// {transcript_path, columns, tasks:[{id, status, description, label, startTime,
+// model, effort?, contextWindowSize, tokenCount}]} on stdin and prints one
+// {"id","content"} JSON line per row. Found in 2.1.284; not in the docs.
+// Claude Code re-asks every 5s, so the clock moves in 5s steps.
 
-const SUBAGENT_STALE_MS = 30 * 60 * 1000;       // silent this long = gone (killed)
-const SUBAGENT_MAX_ROWS = 5;
 const SUBAGENT_TAIL_BYTES = 1024 * 1024;
 
-// ponytail: Claude Code never reports a subagent's window size. Opus/Sonnet/
-// Fable subagents are seen past 200K on this account, so they run on 1M;
-// everything else is assumed 200K and bumped to 1M once usage proves otherwise.
-function subagentWindow(model, used) {
-  const base = /opus|sonnet|fable/i.test(model || '') ? 1_000_000 : 200_000;
-  return used > base ? 1_000_000 : base;
-}
-
-function readTailLines(file) {
+function readTailLines(file, bytes = SUBAGENT_TAIL_BYTES) {
   let fd;
   try {
     const size = fs.statSync(file).size;
-    const span = Math.min(size, SUBAGENT_TAIL_BYTES);
+    const span = Math.min(size, bytes);
     const buf = Buffer.alloc(span);
     fd = fs.openSync(file, 'r');
     fs.readSync(fd, buf, 0, span, size - span);
@@ -1393,121 +1385,252 @@ function readTailLines(file) {
   }
 }
 
-// When the user last typed a prompt in the main conversation. Task
-// notifications are recorded as prompts too, so only origin "human" counts.
-// ponytail: only the last 1MB is searched; a longer stretch with no prompt
-// returns 0 and finished rows then live until SUBAGENT_STALE_MS.
-function readLastHumanPromptAt(transcriptPath) {
-  const lines = readTailLines(transcriptPath);
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (!lines[i].includes('"kind":"human"')) continue;
-    try {
-      const d = JSON.parse(lines[i]);
-      if (d.type === 'user' && d.origin?.kind === 'human') return Date.parse(d.timestamp) || 0;
-    } catch (e) {}
-  }
-  return 0;
-}
-
-// When the subagent started: the timestamp on the first line of its transcript.
-function readSubagentStart(file) {
-  let fd;
-  try {
-    const buf = Buffer.alloc(64 * 1024);
-    fd = fs.openSync(file, 'r');
-    const n = fs.readSync(fd, buf, 0, buf.length, 0);
-    for (const line of buf.subarray(0, n).toString('utf8').split('\n')) {
-      try { const t = Date.parse(JSON.parse(line).timestamp); if (t) return t; } catch (e) {}
-    }
-  } catch (e) {
-  } finally {
-    if (fd !== undefined) { try { fs.closeSync(fd); } catch (e) {} }
-  }
-  return 0;
-}
-
-// 59s · 4m 21s · 1h 2m
+// 59s · 4m 21s · 1h 2m · 3d 4h
 function formatDuration(ms) {
   const sec = Math.max(0, Math.floor(ms / 1000));
   if (sec < 60) return `${sec}s`;
   if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
-  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+  if (sec < 48 * 3600) return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+  return `${Math.floor(sec / 86400)}d ${Math.floor((sec % 86400) / 3600)}h`;
 }
 
-function readSubagentTail(file) {
-  try {
-    const lines = readTailLines(file);
-    let last = null, reply = null;
-    for (let i = lines.length - 1; i >= 0 && !reply; i--) {
-      if (!lines[i].trim()) continue;
-      let d;
-      try { d = JSON.parse(lines[i]); } catch (e) { continue; }
-      if (!d.message) continue;
-      if (!last) last = d;
-      if (d.type === 'assistant' && d.message.usage && d.message.model !== '<synthetic>') reply = d;
-    }
-    return { last, reply };
-  } catch (e) {
-    return { last: null, reply: null };
+// Effort and the finish time are not in Claude Code's row data; the agent's
+// own transcript has both (last real reply's effort, last line's timestamp).
+function readAgentTranscriptTail(transcriptPath, id) {
+  if (!transcriptPath || !transcriptPath.endsWith('.jsonl') || !/^[\w-]+$/.test(id)) return {};
+  const file = path.join(transcriptPath.slice(0, -'.jsonl'.length), 'subagents', `agent-${id}.jsonl`);
+  const lines = readTailLines(file, 256 * 1024);
+  let effort = '', lastAt = 0;
+  for (let i = lines.length - 1; i >= 0 && !effort; i--) {
+    if (!lines[i].trim()) continue;
+    let d;
+    try { d = JSON.parse(lines[i]); } catch (e) { continue; }
+    if (!lastAt) lastAt = Date.parse(d.timestamp) || 0;
+    if (d.type === 'assistant' && d.effort) effort = d.effort;
   }
+  return { effort, lastAt };
 }
 
-function readSubagents(transcriptPath, now = Date.now()) {
-  if (!transcriptPath || !transcriptPath.endsWith('.jsonl')) return [];
-  const dir = path.join(transcriptPath.slice(0, -'.jsonl'.length), 'subagents');
-  let names;
-  try { names = fs.readdirSync(dir); } catch (e) { return []; }
-  const out = [];
-  let promptAt;
-  for (const name of names) {
-    if (!/^agent-.*\.jsonl$/.test(name)) continue;
-    const file = path.join(dir, name);
-    let mtime;
-    try { mtime = fs.statSync(file).mtimeMs; } catch (e) { continue; }
-    if (now - mtime > SUBAGENT_STALE_MS) continue;
-    const { last, reply } = readSubagentTail(file);
-    if (!reply) continue;
-    const done = last?.type === 'assistant' && last.message.stop_reason === 'end_turn';
-    // A finished one stays until the user sends the next prompt.
-    if (done) {
-      if (promptAt === undefined) promptAt = readLastHumanPromptAt(transcriptPath);
-      if (promptAt >= (Date.parse(last.timestamp) || mtime)) continue;
-    }
-    let meta = {};
-    try { meta = JSON.parse(fs.readFileSync(file.replace(/\.jsonl$/, '.meta.json'), 'utf8')) || {}; } catch (e) {}
-    const u = reply.message.usage;
-    const used = (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0);
-    const startedAt = readSubagentStart(file);
-    out.push({
-      name: meta.description || meta.agentType || name.replace(/^agent-|\.jsonl$/g, ''),
-      model: reply.message.model,
-      effort: reply.effort || '',
-      used,
-      window: subagentWindow(reply.message.model, used),
-      done,
-      mtime,
-      // running time; frozen at the last reply once it has finished
-      elapsed: startedAt ? (done ? (Date.parse(last.timestamp) || mtime) : now) - startedAt : null,
-    });
+function fit(text, width) {
+  const t = String(text || '');
+  if (width <= 0) return '';
+  return t.length > width ? t.slice(0, Math.max(0, width - 1)) + '…' : t.padEnd(width);
+}
+
+// Fixed columns so every row lines up whatever the name:
+//   ● name…………  model · effort    bar pct   used/window   time   $   tokens   what it's doing
+// running = bright + coloured bar; finished = the whole row grey with ✓.
+const AGENT_MODEL_W = 17;   // "Opus 5.5 · xhigh"
+const AGENT_SIZE_W = 10;    // "1.05M/1M"
+const AGENT_TIME_W = 8;     // "13m 32s"
+const AGENT_COST_W = 7;     // "$12.34"
+const AGENT_TOK_W = 11;     // "12.3M tok"
+
+function formatAgentRow(task, { columns = 100, now = Date.now(), settings = {}, tail = {} } = {}) {
+  const running = task.status === 'running' || task.status === 'pending';
+  const window = task.contextWindowSize || 200_000;
+  const used = task.tokenCount || 0;
+  const pct = Math.min(100, Math.round((used / window) * 100));
+  const model = prettyModelName(String(task.model || '').replace(/-\d{8}$/, ''), settings);
+  const effort = task.effort || tail.effort || '';
+  const modelCol = fit([model, effort].filter(Boolean).join(' · '), AGENT_MODEL_W);
+  const size = fit(`${formatContextSize(used) || '0K'}/${formatContextSize(window)}`, AGENT_SIZE_W);
+  const endAt = running ? now : (tail.lastAt || now);
+  const time = task.startTime ? formatDuration(endAt - task.startTime).padStart(AGENT_TIME_W) : ''.padStart(AGENT_TIME_W);
+  const spent = tail.spent;
+  const cost = (spent ? (spent.cost >= 100 ? `$${Math.round(spent.cost)}` : `$${spent.cost.toFixed(2)}`) : '').padStart(AGENT_COST_W);
+  const tok = (spent ? `${formatTokenCount(spent.tokens)} tok` : '').padStart(AGENT_TOK_W);
+  const fixed = 2 + AGENT_MODEL_W + 1 + 10 + 1 + 4 + 1 + AGENT_SIZE_W + 1 + AGENT_TIME_W + AGENT_COST_W + AGENT_TOK_W;
+  const nameW = Math.max(10, Math.min(36, columns - fixed - 2));
+  const name = fit(task.description || task.label || task.id, nameW);
+  const pctText = `${pct}%`.padStart(4);
+  if (!running) {
+    const mark = task.status === 'completed' ? '✓' : '✗';
+    return `\x1b[2m${mark} ${name} ${modelCol} ${buildBar(pct)} ${pctText} ${size} ${time}${cost}${tok}\x1b[0m`;
   }
-  // Running first, then newest.
-  return out.sort((a, b) => (a.done - b.done) || (b.mtime - a.mtime));
+  const rest = columns - fixed - nameW - 3;
+  const doing = rest > 8 && task.label && task.label !== task.description ? `  \x1b[2m${fit(task.label, rest).trimEnd()}\x1b[0m` : '';
+  return `\x1b[32m●\x1b[0m \x1b[1m${name}\x1b[0m ${modelCol} \x1b[${usageColor(pct)}m${buildBar(pct)} ${pctText}\x1b[0m ${size} \x1b[36m${time}\x1b[0m\x1b[33m${cost}\x1b[0m${tok}${doing}`;
 }
 
-function formatSubagentRows(agents, settings = readClaudeSettings()) {
-  if (!agents.length) return '';
-  const rows = agents.slice(0, SUBAGENT_MAX_ROWS).map(a => {
-    const pct = Math.min(100, Math.round((a.used / a.window) * 100));
-    const label = [a.name, prettyModelName(String(a.model).replace(/-\d{8}$/, ''), settings) || a.model, a.effort].filter(Boolean).join(' · ');
-    const ctx = `\x1b[${usageColor(pct)}m${buildBar(pct)} ${pct}%\x1b[0m \x1b[2m${formatContextSize(a.used)}/${formatContextSize(a.window)}\x1b[0m`;
-    const time = a.elapsed == null ? '' : ` · ${formatDuration(a.elapsed)}`;
-    return a.done
-      ? `\x1b[2m  ✓ ${label} │ ${buildBar(pct)} ${pct}% ${formatContextSize(a.used)}/${formatContextSize(a.window)}${time}\x1b[0m`
-      : `  ↳ ${label} │ ${ctx}\x1b[2m${time}\x1b[0m`;
+function formatAgentRows(input, now = Date.now(), settings = readClaudeSettings(), claudeDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')) {
+  const tasks = Array.isArray(input?.tasks) ? input.tasks : [];
+  // Each agent's own $ and tokens, from the same incremental count as the
+  // session line below the status line.
+  let perFile = {};
+  try { perFile = readSessionTotals(input?.transcript_path, claudeDir)?.perFile || {}; } catch (e) {}
+  return tasks
+    .filter(t => t && typeof t.id === 'string')
+    .map(t => JSON.stringify({
+      id: t.id,
+      content: formatAgentRow(t, {
+        columns: input.columns || 100, now, settings,
+        tail: t.type === 'local_agent' ? { ...readAgentTranscriptTail(input.transcript_path, t.id), spent: perFile[`agent-${t.id}`] } : {},
+      }),
+    }))
+    .join('\n');
+}
+
+function runAgentRows() {
+  let input = '';
+  const guard = setTimeout(() => process.exit(0), 3000);
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', c => input += c);
+  process.stdin.on('end', () => {
+    clearTimeout(guard);
+    try {
+      const out = formatAgentRows(JSON.parse(input));
+      if (out) process.stdout.write(out + '\n');
+    } catch (e) { /* empty output = Claude Code keeps its own rows */ }
   });
-  const more = agents.length - SUBAGENT_MAX_ROWS;
-  if (more > 0) rows.push(`\x1b[2m  +${more} more\x1b[0m`);
-  return '\n' + rows.join('\n');
+}
+
+// --- Whole-session totals: $ · time · tokens ---------------------------------
+// Everything this conversation and its subagents have used since it began,
+// read from the transcripts on disk, so it survives closing and continuing.
+// A continued conversation can start a new transcript that copies the old
+// lines; those keep the old `session_id`, which is how the earlier transcript
+// (and its subagents) are found. Replies are counted once by message id —
+// Claude Code writes one line per content block, each repeating the usage.
+// Read incrementally: a cache keeps each file's offset and the running sums.
+
+// $ per million tokens: [input, output, cache read]. Cache writes are 1.25×
+// input (5 min) or 2× (1 hour). Checked 2026-09-28 against Anthropic's list.
+// ponytail: a model not listed here (e.g. GPT/Gemini via CCX) adds tokens but
+// no dollars.
+const MODEL_PRICES = [
+  [/fable-5-1|mythos-5-1/, [10, 50, 0.25]],
+  [/fable|mythos/, [10, 50, 1]],
+  [/opus-5-5/, [4, 20, 0.2]],
+  [/opus-4-1|opus-4(?!-\d)|opus-4-2025/, [15, 75, 1.5]],
+  [/opus/, [5, 25, 0.5]],
+  [/sonnet-5/, [2, 10, 0.2]],
+  [/sonnet/, [3, 15, 0.3]],
+  [/haiku-4/, [1, 5, 0.1]],
+  [/haiku/, [0.8, 4, 0.08]],
+];
+
+function usageCost(model, u) {
+  const hit = MODEL_PRICES.find(([re]) => re.test(model || ''));
+  if (!hit) return 0;
+  const [inP, outP, readP] = hit[1];
+  const cw = u.cache_creation_input_tokens || 0;
+  const cw1h = Math.min(cw, u.cache_creation?.ephemeral_1h_input_tokens || 0);
+  const cost = (u.input_tokens || 0) * inP + (u.output_tokens || 0) * outP
+    + (u.cache_read_input_tokens || 0) * readP + (cw - cw1h) * inP * 1.25 + cw1h * inP * 2;
+  return (u.speed === 'fast' ? 2 : 1) * cost / 1e6;
+}
+
+function emptyTotals() {
+  return { input: 0, write: 0, read: 0, output: 0, cost: 0, start: 0 };
+}
+
+// Fold new lines of one transcript into the totals. `st` = {seen, foreign}.
+function addTranscriptLines(text, totals, st, ownSession, fileTotals = { tokens: 0, cost: 0 }) {
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    const isReply = line.includes('"assistant"') && line.includes('"usage"');
+    if (!isReply && totals.start) {
+      if (line.includes('"session_id"')) {
+        const m = line.match(/"session_id":"([\w-]+)"/);
+        if (m && m[1] !== ownSession) st.foreign[m[1]] = 1;
+      }
+      continue;
+    }
+    let d;
+    try { d = JSON.parse(line); } catch (e) { continue; }
+    const t = Date.parse(d.timestamp) || 0;
+    if (t && (!totals.start || t < totals.start)) totals.start = t;
+    if (d.session_id && d.session_id !== ownSession) st.foreign[d.session_id] = 1;
+    const m = d.message;
+    if (d.type !== 'assistant' || !m?.usage || !m.id || m.model === '<synthetic>') continue;
+    if (st.seen[m.id]) continue;
+    st.seen[m.id] = 1;
+    const u = m.usage;
+    totals.input += u.input_tokens || 0;
+    totals.write += u.cache_creation_input_tokens || 0;
+    totals.read += u.cache_read_input_tokens || 0;
+    totals.output += u.output_tokens || 0;
+    const cost = usageCost(m.model, u);
+    totals.cost += cost;
+    fileTotals.tokens += (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0);
+    fileTotals.cost += cost;
+  }
+}
+
+function sessionFiles(transcriptPath) {
+  const out = [transcriptPath];
+  const sub = path.join(transcriptPath.slice(0, -'.jsonl'.length), 'subagents');
+  try {
+    for (const n of fs.readdirSync(sub)) if (/^agent-.*\.jsonl$/.test(n)) out.push(path.join(sub, n));
+  } catch (e) {}
+  return out;
+}
+
+function sessionTotalsCachePath(claudeDir, session) {
+  return path.join(claudeDir, 'cache', `session-totals-${session}.json`);
+}
+
+function readSessionTotals(transcriptPath, claudeDir) {
+  if (!transcriptPath || !transcriptPath.endsWith('.jsonl')) return null;
+  const session = path.basename(transcriptPath, '.jsonl');
+  if (!/^[\w-]+$/.test(session)) return null;
+  const cachePath = sessionTotalsCachePath(claudeDir, session);
+  let c;
+  try { c = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch (e) {}
+  if (!c || c.v !== 2) c = { v: 2, offsets: {}, totals: emptyTotals(), seen: {}, foreign: {}, perFile: {} };
+  const projectDir = path.dirname(transcriptPath);
+  let changed = false;
+  // The current transcript last, so copied lines are already `seen`.
+  const roots = [...Object.keys(c.foreign).filter(s => /^[\w-]+$/.test(s)).map(s => path.join(projectDir, `${s}.jsonl`)), transcriptPath];
+  for (const root of roots) {
+    const own = path.basename(root, '.jsonl');
+    for (const file of sessionFiles(root)) {
+      let size;
+      try { size = fs.statSync(file).size; } catch (e) { continue; }
+      const from = c.offsets[file] || 0;
+      if (size <= from) continue;
+      let fd;
+      try {
+        fd = fs.openSync(file, 'r');
+        const buf = Buffer.alloc(size - from);
+        fs.readSync(fd, buf, 0, buf.length, from);
+        const end = buf.lastIndexOf(0x0a); // only whole lines; the rest next time
+        if (end < 0) continue;
+        addTranscriptLines(buf.subarray(0, end).toString('utf8'), c.totals, c, own, c.perFile[path.basename(file, '.jsonl')] ||= { tokens: 0, cost: 0 });
+        c.offsets[file] = from + end + 1;
+        changed = true;
+      } catch (e) {
+      } finally {
+        if (fd !== undefined) { try { fs.closeSync(fd); } catch (e) {} }
+      }
+    }
+  }
+  if (changed) {
+    try {
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      const tmp = `${cachePath}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(c));
+      fs.renameSync(tmp, cachePath);
+    } catch (e) {}
+  }
+  return { ...c.totals, perFile: c.perFile };
+}
+
+function formatTokenCount(n) {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}K`;
+  return String(n);
+}
+
+function formatSessionTotals(t, now = Date.now()) {
+  if (!t || !t.start) return '';
+  const total = t.input + t.write + t.read + t.output;
+  const dollars = t.cost >= 100 ? `$${Math.round(t.cost)}` : `$${t.cost.toFixed(2)}`;
+  return `\x1b[1;33m${dollars}\x1b[0m \x1b[2m·\x1b[0m \x1b[36m${formatDuration(now - t.start)}\x1b[0m`
+    + ` \x1b[2m·\x1b[0m \x1b[1m${formatTokenCount(total)} tokens\x1b[0m`
+    + ` \x1b[2m(reread ${formatTokenCount(t.read)} · new ${formatTokenCount(t.input + t.write)} · written ${formatTokenCount(t.output)})\x1b[0m`;
 }
 
 // Export helpers for unit tests. Harmless when run as a script.
@@ -1522,7 +1645,7 @@ module.exports = {
   latencyBar, latencyColor, formatLatency, formatNetSegment, readTokensPerSecond, readNetCache,
   readTranscriptRequests, charsPerToken, finishedRate, readLiveCharRate, streamLogPath,
   countLatin, tokenModel, estimateTokens,
-  readSubagents, formatSubagentRows, subagentWindow, readLastHumanPromptAt, formatDuration,
+  formatDuration, formatAgentRow, formatAgentRows, usageCost, readSessionTotals, formatSessionTotals,
 };
 
 /**
@@ -1556,5 +1679,6 @@ module.exports.renderStatusline = renderStatusline;
 
 if (require.main === module) {
   if (process.argv.includes('--net-sampler')) runNetSampler();
+  else if (process.argv.includes('--agent-rows')) runAgentRows();
   else runStatusline();
 }
