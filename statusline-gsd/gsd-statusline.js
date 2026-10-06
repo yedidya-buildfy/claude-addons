@@ -116,6 +116,33 @@ function readLastSlashCommand(transcriptPath) {
   return name;
 }
 
+/**
+ * After a compaction Claude Code keeps reporting the last pre-compact usage
+ * (preserved messages still carry it) until the next reply lands, so the
+ * meter shows the old, near-full number. If the newest usage-bearing line in
+ * the transcript tail is a compact_boundary, return its postTokens instead.
+ */
+function readPostCompactTokens(transcriptPath) {
+  if (!transcriptPath || typeof transcriptPath !== 'string') return null;
+  try {
+    const stat = fs.statSync(transcriptPath);
+    const start = Math.max(0, stat.size - 256 * 1024);
+    const fd = fs.openSync(transcriptPath, 'r');
+    const buf = Buffer.alloc(stat.size - start);
+    try { fs.readSync(fd, buf, 0, buf.length, start); } finally { fs.closeSync(fd); }
+    const lines = buf.toString('utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const l = lines[i];
+      if (l.includes('"compact_boundary"')) {
+        const t = JSON.parse(l).compactMetadata?.postTokens;
+        return typeof t === 'number' && t >= 0 ? t : null;
+      }
+      if (l.includes('"type":"assistant"') && l.includes('"usage"')) return null;
+    }
+  } catch (e) {}
+  return null;
+}
+
 // --- GSD state reader -------------------------------------------------------
 
 /**
@@ -515,19 +542,21 @@ function runStatusline() {
     const modelLabel = formatModelLabel(data);
     const dir = data.workspace?.current_dir || process.cwd();
     const session = data.session_id || '';
-    const remaining = data.context_window?.remaining_percentage;
+    let remaining = data.context_window?.remaining_percentage;
 
     // Context window display (shows USED percentage scaled to usable context)
-    // Claude Code reserves a buffer for autocompact. By default this is ~16.5%
-    // of the total window, but users can override it via CLAUDE_CODE_AUTO_COMPACT_WINDOW
+    // Claude Code reserves a ~33k-token buffer for autocompact (~16.5% of a 200k window, ~3.3% of 1M)
+    // Users can override it via CLAUDE_CODE_AUTO_COMPACT_WINDOW
     // (a token count). When the env var is set, compute the buffer % dynamically so
     // the meter correctly reflects early-compaction configurations (#2219).
     const totalCtx = data.context_window?.context_window_size || data.context_window?.total_tokens || 1_000_000;
     const acw = parseInt(process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '0', 10);
     const AUTO_COMPACT_BUFFER_PCT = acw > 0
       ? Math.min(100, (acw / totalCtx) * 100)
-      : 16.5;
+      : Math.min(100, (33_000 / totalCtx) * 100); // ponytail: 33k = CC's 200k-era buffer; re-check if CC changes autocompact math
     let ctx = '';
+    const postCompact = readPostCompactTokens(data.transcript_path);
+    if (postCompact != null) remaining = Math.max(0, 100 - (postCompact / totalCtx) * 100);
     if (remaining != null) {
       // Normalize: subtract buffer from remaining, scale to usable range
       const usableRemaining = Math.max(0, ((remaining - AUTO_COMPACT_BUFFER_PCT) / (100 - AUTO_COMPACT_BUFFER_PCT)) * 100);
@@ -1636,7 +1665,7 @@ function formatSessionTotals(t, now = Date.now()) {
 // Export helpers for unit tests. Harmless when run as a script.
 module.exports = {
   readGsdState, parseStateMd, formatGsdState,
-  readGsdConfig, getConfigValue, readLastSlashCommand,
+  readGsdConfig, getConfigValue, readLastSlashCommand, readPostCompactTokens,
   usageColor, formatReset, readUsageCache, formatUsage,
   providerForModel, formatContextSize, formatModelLabel,
   bareModelId, prettyModelName, readPermissionMode, activeComboModelName,
