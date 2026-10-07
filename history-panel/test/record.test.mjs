@@ -68,3 +68,24 @@ test("session start and end come from lines that have a time", () => {
   assert.equal(s.first, human("y", 5).timestamp);
   assert.equal(s.last, turnEnd(12).timestamp);
 });
+
+test("the summary written after a compaction is not a prompt", () => {
+  assert.equal(promptText({ ...human("This session is being continued from a previous conversation", 0), isCompactSummary: true }), null);
+  assert.equal(promptText({ ...human("x", 0), isVisibleInTranscriptOnly: true }), null);
+});
+
+test("only the last entry can still be running", () => {
+  const { entries } = parseSession([human("a", 0), reply(1), human("b", 2), reply(3, { stop: "tool_use" })], { price });
+  assert.deepEqual(entries.map((e) => e.running), [false, true]);
+  const done = parseSession([human("a", 0), reply(1)], { price, finished: true });
+  assert.equal(done.entries[0].running, false);
+});
+
+test("subagent final words travel with its row for the summary", async () => {
+  const fs = await import("node:fs"), os = await import("node:os"), path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hp-ag-"));
+  fs.writeFileSync(path.join(dir, "agent-z.jsonl"), JSON.stringify({ type: "assistant", timestamp: "2026-10-07T14:27:00Z", message: { id: "y", model: "m", usage: {}, content: [{ type: "text", text: "Found two conflicting places." }] } }));
+  const lines = [human("go", 0), reply(1, { stop: "tool_use", tools: [["t9", "Agent", { subagent_type: "Explore", description: "map" }]] }), result(2, "t9", "", { toolUseResult: { agentId: "z" } }), reply(3), turnEnd(4)];
+  const { entries } = parseSession(lines, { price, subagentDir: dir });
+  assert.equal(entries[0].rows[0].result, "Found two conflicting places.");
+});

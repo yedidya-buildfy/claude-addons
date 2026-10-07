@@ -138,6 +138,12 @@ test("an add-on that needs another is refused without it", () => {
   assert.throws(() => go(P, cfg), /needs "tab-status"/);
 });
 
+test("a default-on add-on whose dependency is off stays off instead of stopping the update", () => {
+  const { P } = sandbox();
+  const cfg = all(false); delete cfg.enabled["history-panel"];
+  assert.doesNotThrow(() => go(P, cfg));
+});
+
 test("ntfy topic is generated once, kept private, and survives off/on", () => {
   const { home, P } = sandbox();
   const cfg = all(false); cfg.enabled["phone-alerts"] = true;

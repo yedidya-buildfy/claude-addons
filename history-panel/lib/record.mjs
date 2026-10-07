@@ -26,7 +26,7 @@ function rawText(d) {
 
 // The text the human typed, or null when the line is not a human prompt.
 export function promptText(d) {
-  if (d.type !== "user" || d.isMeta || d.isSidechain) return null;
+  if (d.type !== "user" || d.isMeta || d.isSidechain || d.isCompactSummary || d.isVisibleInTranscriptOnly) return null;
   const t = rawText(d);
   if (!t || INTERRUPT.test(t)) return null;
   const s = SLASH.exec(t);
@@ -37,7 +37,9 @@ export function promptText(d) {
 
 const inTok = (u) => (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
 
-export function parseSession(lines, { price, subagentDir = null } = {}) {
+// finished: the caller knows the session's turn has ended (the Stop hook runs before
+// Claude writes the turn's end marker), so no entry is running.
+export function parseSession(lines, { price, subagentDir = null, finished = false } = {}) {
   const entries = [];
   const calls = new Map();
   const seen = new Set();
@@ -111,6 +113,9 @@ export function parseSession(lines, { price, subagentDir = null } = {}) {
     }
   }
   for (const e of entries) e.rows = foldPushRetries(e.rows);
+  // Only the newest entry can still be running; older ones whose end marker never came
+  // (/compact, an API error, a crash) are over.
+  entries.forEach((e, i) => { if (i < entries.length - 1 || finished) e.running = false; });
   const times = lines.map((d) => d.timestamp).filter(Boolean);
   return { entries, first: times[0] || null, last: times.at(-1) || null, model };
 }

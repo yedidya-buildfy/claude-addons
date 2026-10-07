@@ -129,3 +129,36 @@ test("a push error after a successful commit does not fail the commit", () => {
   const rows = bashRows("git commit -q -m x && git push -q origin master", bad("error: failed to push some refs to 'x'\nfatal: unable to access"), "/r/app");
   assert.deepEqual(kinds(rows).map((k) => [k[0], k[3]]), [["commit", false], ["push", true]]);
 });
+
+test("deploy words inside quotes, and commands the tool blocked, are not deploys", () => {
+  assert.deepEqual(bashRows('ps aux | grep -E "deploy.sh|convex deploy|git push"', ok("x"), "/r"), []);
+  assert.deepEqual(bashRows("npx convex deploy", bad("<tool_use_error>Blocked</tool_use_error>"), "/r/app"), []);
+  assert.equal(bashRows('curl -s "http://1.2.3.4:8000/api/v1/deploy?uuid=abc"', ok("{}"), "/r")[0].kind, "prod");
+});
+
+test("push and merge stay green when another part of the command failed", () => {
+  const pushed = "To https://github.com/a/b.git\n   1111111..2222222  main -> main\nX gh: not logged in";
+  assert.deepEqual(kinds(bashRows("git push origin main && gh pr create", bad(pushed), "/r/b")), [["push", "נדחף ל‑main", "b · 2222222", false]]);
+  assert.deepEqual(kinds(bashRows("git merge --ff-only lab && grep x y", bad("Updating 1..2\nFast-forward\n a | 1 +"), "/r/e2k-platform")), [["merge", "אוחד", "lab → e2k-platform", false]]);
+});
+
+test("a rejected bare push names its branch, so the retry folds into one row", () => {
+  const rej = "To https://github.com/a/b.git\n ! [rejected]        master -> master (fetch first)\nerror: failed to push some refs";
+  const rows = foldPushRetries([...bashRows("git push", bad(rej), "/r/b"), ...bashRows("git push origin master", ok("To https://github.com/a/b.git\n   1111111..2222222  master -> master"), "/r/b")]);
+  assert.deepEqual(kinds(rows), [["push", "נדחף ל‑master", "b · 2222222", false]]);
+});
+
+test("merge source skips redirections and option values", () => {
+  assert.equal(bashRows('git merge --no-ff -m "merge lab" lab 2>&1', ok("Merge made by"), "/r/app")[0].detail, "lab → app");
+  assert.equal(bashRows("git merge -X theirs feature >/dev/null", ok(""), "/r/app")[0].detail, "feature → app");
+});
+
+test("git on its own line of a multi-line command counts", () => {
+  assert.equal(bashRows("cd /r/b\ngit push origin main", ok("To https://github.com/a/b.git\n   1111111..2222222  main -> main"), "/r")[0].kind, "push");
+});
+
+test("a later 'branch is not fully merged' does not fail a merge; a refused fast-forward does", () => {
+  const out = "Exit code 1\n3455b2b docs(lab): handoff\nerror: the branch 'lab' is not fully merged";
+  assert.deepEqual(kinds(bashRows("git merge --ff-only -q lab && git log --oneline -1 && git branch -d lab", bad(out), "/r/e2k-platform")).find((k) => k[0] === "merge"), ["merge", "אוחד", "lab → e2k-platform", false]);
+  assert.equal(bashRows("git merge --ff-only lab", bad("fatal: Not possible to fast-forward, aborting."), "/r/p")[0].fail, true);
+});

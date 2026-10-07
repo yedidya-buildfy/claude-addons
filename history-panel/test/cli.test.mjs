@@ -50,9 +50,9 @@ test("cached summaries replace the stand-ins", () => {
   assert.deepEqual([t.title, t.ask, t.did, t.summarized], ["כותרת", "ביקשת", "קרה", true]);
 });
 
-test("unknown session is a calm JSON error, exit 0", () => {
+test("a session with no record yet is a calm message, exit 0", () => {
   const run = sandbox([human("x", 0)]);
-  assert.deepEqual(JSON.parse(run("build", "nope")), { error: "לא נמצאה רשומה לשיחה הזו" });
+  assert.deepEqual(JSON.parse(run("build", "nope")), { pending: true, empty: "עוד לא נשלחה הודעה בשיחה הזו" });
 });
 
 test("entry prints the full prompt and reply as Markdown", () => {

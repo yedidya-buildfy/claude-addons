@@ -130,7 +130,10 @@ export function resolve(manifests, cfg, P) {
   for (const m of manifests) {
     if (!enabled[m.id]) continue;
     for (const dep of m.requires || []) {
-      if (!enabled[dep]) throw new Error(`"${m.id}" needs "${dep}" to be on`);
+      if (enabled[dep]) continue;
+      // On only by default (no choice saved): stay off rather than stop the whole update.
+      if (!m.required && cfg.enabled[m.id] === undefined) { enabled[m.id] = false; break; }
+      throw new Error(`"${m.id}" needs "${dep}" to be on`);
     }
   }
   return { enabled, values };

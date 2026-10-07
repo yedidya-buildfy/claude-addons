@@ -10,7 +10,9 @@ import { pathToFileURL } from "node:url";
 import { readLines, parseSession } from "./lib/record.mjs";
 
 const HOME = os.homedir();
-const PROJECTS = process.env.HISTORY_PROJECTS || path.join(HOME, ".claude", "projects");
+// Sessions live under the config folder in use: ~/.claude, a CLAUDE_CONFIG_DIR, or ccx's own.
+const PROJECTS = process.env.HISTORY_PROJECTS ? [process.env.HISTORY_PROJECTS]
+  : [...new Set([process.env.CLAUDE_CONFIG_DIR, path.join(HOME, ".claude"), path.join(HOME, ".claude-ccx")].filter(Boolean).map((d) => path.join(d, "projects")))];
 const STATE = process.env.HISTORY_STATE || path.join(HOME, ".claude", "terminal-state");
 export const CACHE = process.env.HISTORY_CACHE || path.join(HOME, ".claude", "history-panel", "cache");
 const STATUSLINE = path.resolve(process.env.HISTORY_STATUSLINE || path.join(HOME, ".claude", "gsd-statusline.js"));
@@ -21,9 +23,11 @@ const price = (model, u) => usageCost(model, u);
 
 export function findRecord(id) {
   if (!SAFE.test(id)) return null;
-  for (const dir of fs.existsSync(PROJECTS) ? fs.readdirSync(PROJECTS) : []) {
-    const f = path.join(PROJECTS, dir, `${id}.jsonl`);
-    if (fs.existsSync(f)) return f;
+  for (const root of PROJECTS) {
+    for (const dir of fs.existsSync(root) ? fs.readdirSync(root) : []) {
+      const f = path.join(root, dir, `${id}.jsonl`);
+      if (fs.existsSync(f)) return f;
+    }
   }
   return null;
 }
@@ -40,17 +44,17 @@ const hhmm = (iso) => { const d = new Date(iso); return `${String(d.getHours()).
 const k = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}K`);
 const listening = (port) => { try { execFileSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"], { stdio: "pipe", timeout: 1500 }); return true; } catch { return false; } };
 
-function load(id) {
+function load(id, { finished = false } = {}) {
   const record = findRecord(id);
   if (!record) return null;
   const { lines, bad } = readLines(record);
   const subagentDir = path.join(path.dirname(record), id, "subagents");
-  return { record, bad, ...parseSession(lines, { price, subagentDir }) };
+  return { record, bad, ...parseSession(lines, { price, subagentDir, finished }) };
 }
 
 export function build(id) {
   const s = load(id);
-  if (!s) return { error: "לא נמצאה רשומה לשיחה הזו" };
+  if (!s) return { pending: true, empty: "עוד לא נשלחה הודעה בשיחה הזו" };
   const cache = readCache(id);
   const window = windowFor(id, s.model);
   const ports = new Map();
@@ -72,7 +76,8 @@ export function build(id) {
     };
   });
   const missing = s.entries.some((e) => !e.running && !cache.entries[e.uuid] && Date.now() - (cache.failed[e.uuid] || 0) > 120_000);
-  if (missing && !process.env.HISTORY_NO_SPAWN) spawn(process.execPath, [new URL(import.meta.url).pathname, "summarize", id], { detached: true, stdio: "ignore" }).unref();
+  const busy = fs.existsSync(path.join(CACHE, `${id}.lock`));
+  if (missing && !busy && !process.env.HISTORY_NO_SPAWN) spawn(process.execPath, [new URL(import.meta.url).pathname, "summarize", id], { detached: true, stdio: "ignore" }).unref();
   const last = s.entries.at(-1);
   return {
     name: (fs.existsSync(path.join(STATE, `${id}.name`)) && fs.readFileSync(path.join(STATE, `${id}.name`), "utf8").trim()) || id.slice(0, 8),
@@ -98,11 +103,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process
     if (process.env.HISTORY_PANEL_CHILD) process.exit(0);         // our own `claude -p` fallback
     if (id === "--hook") {                                          // Stop hook: return at once, work detached
       const input = JSON.parse(fs.readFileSync(0, "utf8") || "{}");
-      if (SAFE.test(input.session_id || "")) spawn(process.execPath, [new URL(import.meta.url).pathname, "summarize", input.session_id], { detached: true, stdio: "ignore" }).unref();
+      if (SAFE.test(input.session_id || "")) spawn(process.execPath, [new URL(import.meta.url).pathname, "summarize", input.session_id, "--finished"], { detached: true, stdio: "ignore" }).unref();
       process.exit(0);
     }
     const { run } = await import("./lib/summarize.mjs");
-    await run(id, { load, readCache, CACHE });
+    await run(id, { load, readCache, CACHE, finished: arg === "--finished" });
   }
   else { process.stderr.write("usage: history.mjs build|entry|summarize <session> [n]\n"); process.exit(2); }
 }

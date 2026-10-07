@@ -14,7 +14,8 @@ const STICKY = path.join(HOME, ".claude", "scripts", "sticky-claude");
 const SAFE = /^[\w./-]{1,80}$/;
 const read = (f) => { try { return fs.readFileSync(f, "utf8").trim(); } catch { return ""; } };
 // A GUI-launched VS Code may not have node on PATH; the add-on records where it is.
-const NODE = read(path.join(HOME, ".claude", "history-panel", "node-path")) || "node";
+const recorded = read(path.join(HOME, ".claude", "history-panel", "node-path"));
+const NODE = recorded && fs.existsSync(recorded) ? recorded : "node";   // a node upgrade can move it
 const ps = (args) => { try { return execFileSync("ps", args, { encoding: "utf8" }); } catch { return ""; } };
 
 // Mirror of tab-status's sessionTty: the shell's process subtree may paint on a
@@ -53,6 +54,7 @@ class HistoryView {
   }
 
   async follow(force = false) {
+    if (!this.view || !this.view.visible) return;   // hidden or never opened: no process scans
     const term = vscode.window.activeTerminal;
     const pid = term && (await term.processId);
     const id = pid ? sessionOf(pid) : null;
@@ -80,6 +82,8 @@ class HistoryView {
       let data;
       try { data = JSON.parse(out); } catch { data = { error: err ? `ההיסטוריה לא נטענה: ${String(err.message).split("\n")[0]}` : "ההיסטוריה לא נטענה" }; }
       this.post(data);
+      // A new session writes its record only at the first prompt: look again shortly.
+      if (data.pending || (!data.record && data.error)) { clearTimeout(this.timer); this.timer = setTimeout(() => this.refresh(), 3000); }
       if (data.record && data.record !== this.record) {
         this.unwatch();
         this.record = data.record;

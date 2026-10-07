@@ -32,16 +32,27 @@ export function rowFromCompact(d) {
 
 // A git subcommand as a real command word: start of the command or after && ; | (,
 // optionally `git -C <dir>`. Quoted text (echo 'git push', grep "git push") does not match.
-const gitCmd = (cmd, sub) => new RegExp(`(?:^|&&|;|\\|\\||\\(|\\bdo\\b)\\s*(?:[A-Z_]+=\\S+\\s+)*git(?:\\s+-C\\s+(\\S+))?\\s+${sub}(?![\\w-])`).exec(cmd);
+const gitCmd = (cmd, sub) => new RegExp(`(?:^|&&|;|\\|\\||\\(|\\bdo\\b|\\n)\\s*(?:[A-Z_]+=\\S+\\s+)*git(?:\\s+-C\\s+(\\S+))?\\s+${sub}(?![\\w-])`).exec(cmd);
 // $VAR in a cd target is read from an assignment earlier in the same command.
 const expand = (cmd, p) => p.replace(/\$\{?(\w+)\}?/g, (m, v) => (new RegExp(`(?:^|[\\s;&])${v}=("?)([^"\\s;&]+)\\1`).exec(cmd) || [])[2] || (v === "HOME" ? os.homedir() : m)).replace(/^~(?=\/|$)/, os.homedir());
 const repoOf = (cmd, cwd, dashC) => {
   const cd = /(?:^|&&|;)\s*cd\s+("?)([^"&;]+)\1\s*&&/.exec(cmd);
   return path.basename(expand(cmd, (dashC || (cd && cd[2].trim()) || cwd || "")).replace(/\/+$/, "")) || "?";
 };
+const VALUED = new Set(["-m", "-F", "-X", "-s", "--strategy", "--strategy-option", "--file", "--message"]);
 const argsAfter = (cmd, sub) => {
-  const m = new RegExp(`git(?:\\s+-C\\s+\\S+)?\\s+${sub}\\s+([^&;|]*)`).exec(cmd);
-  return m ? m[1].trim().split(/\s+/).filter((a) => a && !a.startsWith("-")) : [];
+  const m = new RegExp(`git(?:\\s+-C\\s+\\S+)?\\s+${sub}\\s+([^&;|\\n]*)`).exec(cmd);
+  const out = [];
+  const words = m ? m[1].trim().split(/\s+/) : [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (!w || w === '""' || w === "''") continue;
+    if (/^\d*[<>]/.test(w)) { if (/^\d*[<>]+&?$/.test(w)) i++; continue; }   // 2>&1, >/dev/null, > file
+    if (VALUED.has(w)) { i++; continue; }
+    if (w.startsWith("-")) continue;
+    out.push(w);
+  }
+  return out;
 };
 const lineMatch = (out, re) => String(out || "").split("\n").map((l) => re.exec(l)).find(Boolean) || null;
 const row = (kind, at, what, detail, more, extra = {}) => ({ kind, at, what, detail, more, ...extra });
@@ -75,12 +86,16 @@ function pushRow(cmd, res, cwd) {
   const args = argsAfter(cmd, "push");
   const range = lineMatch(out, /^\s*\+?\s*([0-9a-f]{7,})\.\.\.?([0-9a-f]{7,})\s+(\S+)\s+->\s+(\S+)/);
   const created = lineMatch(out, /^\s*\*\s+\[new branch\]\s+(\S+)\s+->\s+(\S+)/);
-  const branch = range ? range[4] : created ? created[2] : args[1] || "?";
+  const rej = lineMatch(out, /\[(?:remote )?rejected\]\s+\S+\s+->\s+(\S+)/);
+  const branch = range ? range[4] : created ? created[2] : args[1] || (rej && rej[1]) || "?";
   const rejected = out.split("\n").filter((l) => /\[(remote )?rejected\]|^error: failed to push/.test(l.trim()));
+  const pushed = !!(range || created || /Everything up-to-date/.test(out));
+  // The command's exit code may come from another step (gh, grep); git's own words decide.
+  const failed = res.isError && !pushed && (rejected.length > 0 || /^(error|fatal): /m.test(out));
   const remote = lineMatch(out, /^To\s+(\S+)/);
   const more = [["מאגר", remote ? remote[1].replace(/\.git$/, "").replace(/^https?:\/\//, "") : repo], ["ענף", branch]];
   if (range) more.push(["שינויים", `${range[1].slice(0, 7)} → ${range[2].slice(0, 7)}`]);
-  if (res.isError) return [row("push", res.at, "דחיפה נכשלה", `${repo} · ${branch}`, [...more, ["שגיאה", rejected[0] || first(out)]], { fail: true, repo, branch })];
+  if (failed) return [row("push", res.at, "דחיפה נכשלה", `${repo} · ${branch}`, [...more, ["שגיאה", rejected[0] || first(out)]], { fail: true, repo, branch })];
   const rejects = rejected.filter((l) => /rejected/.test(l)).length;
   if (rejects) more.push(["ניסיונות", `${rejects + 1} · ${rejects} נדחו`]);
   const what = /Everything up-to-date/.test(out) ? "דחיפה: כבר מעודכן" : `נדחף ל‑${branch}`;
@@ -93,7 +108,7 @@ function mergeRow(cmd, res, cwd) {
   const from = argsAfter(cmd, "merge").at(-1);
   if (!from) return [];
   const into = repoOf(cmd, cwd, g[1]);
-  if (res.isError || /CONFLICT|Automatic merge failed/.test(res.out)) {
+  if (/CONFLICT|Automatic merge failed|Not possible to fast-forward|refusing to merge|not something we can merge|would be overwritten by merge|merge is not possible|not concluded your merge/.test(res.out)) {
     const files = String(res.out).split("\n").filter((l) => l.startsWith("CONFLICT")).map((l) => l.replace(/^.*Merge conflict in /, ""));
     return [row("merge", res.at, "האיחוד נעצר בהתנגשות", `${from} → ${into}`, [["מ", from], ["אל", into], ["התנגשויות", files.join(", ") || first(res.out)]], { fail: true })];
   }
@@ -126,14 +141,14 @@ function serverRow(cmd, res, cwd) {
 
 // Production deploys we recognise. Add a line here for a new kind of deploy.
 const PROD = [
-  [/\/api\/v1\/deploy\b/, (cmd) => `Coolify · ${(/uuid=([\w-]+)/.exec(cmd) || [])[1] || "?"}`],
+  [(skel, full) => /(?:^|&&|;|\||\n)\s*curl\b/.test(skel) && /\/api\/v1\/deploy\b/.test(full), (cmd) => `Coolify · ${(/uuid=([\w-]+)/.exec(cmd) || [])[1] || "?"}`],
   [/git(?:\s+-C\s+\S+)?\s+push\b[^&;|]*\bproduction\b/, (cmd, cwd) => `ענף production · ${repoOf(cmd, cwd)}`],
   [/\bvercel\b[^&;|]*--prod\b/, (cmd, cwd) => `Vercel · ${repoOf(cmd, cwd)}`],
   [/\bconvex\s+deploy\b/, (cmd, cwd) => `Convex · ${repoOf(cmd, cwd)}`],
   [/\bfly(?:ctl)?\s+deploy\b/, (cmd, cwd) => `Fly · ${repoOf(cmd, cwd)}`],
 ];
-function prodRow(cmd, res, cwd) {
-  const hit = PROD.find(([re]) => re.test(cmd));
+function prodRow(cmd, res, cwd, skel) {
+  const hit = PROD.find(([test]) => (typeof test === "function" ? test(skel, cmd) : test.test(skel)));
   if (!hit) return [];
   const where = hit[1](cmd, cwd);
   if (res.isError) return [row("prod", res.at, "העלייה לפרודקשן נכשלה", where, [["לאן", where], ["שגיאה", first(res.out)]], { fail: true })];
@@ -155,9 +170,10 @@ export const skeleton = (cmd) => cmd
   .replace(/"(?:[^"\\]|\\.)*"/g, '""');
 
 export function bashRows(full, res, cwd) {
+  if (/^\s*<tool_use_error>/.test(res.out || "")) return [];   // blocked before it ran
   const cmd = skeleton(full);
   const rows = [...worktreeRow(cmd, res, cwd), ...commitRow(cmd, res, cwd), ...mergeRow(cmd, res, cwd)];
-  const prod = prodRow(full.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n[\s\S]*?\n\s*\2(?=\s|$)/g, "<<DOC"), res, cwd);
+  const prod = prodRow(full.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n[\s\S]*?\n\s*\2(?=\s|$)/g, "<<DOC"), res, cwd, cmd);
   if (!prod.length || !/push/.test(cmd)) rows.push(...pushRow(cmd, res, cwd)); // a push to production is the prod row
   rows.push(...prod, ...serverRow(cmd, res, cwd), ...updateRow(cmd, res));
   return rows;
@@ -200,7 +216,7 @@ function answerRows(call, res) {
 function agentRow(call, res, { price, subagentDir }) {
   const type = call.input.subagent_type || "general-purpose";
   const id = res.result?.agentId;
-  let cost = 0, tools = 0, t0 = null, t1 = null, model = res.result?.resolvedModel || call.input.model || "?";
+  let cost = 0, tools = 0, t0 = null, t1 = null, model = res.result?.resolvedModel || call.input.model || "?", said = "";
   const file = id && subagentDir ? path.join(subagentDir, `agent-${id}.jsonl`) : null;
   if (file && fs.existsSync(file)) {
     const seen = new Set();
@@ -211,6 +227,8 @@ function agentRow(call, res, { price, subagentDir }) {
       if (!m) continue;
       if (m.usage && m.id && !seen.has(m.id)) { seen.add(m.id); cost += price(m.model, m.usage); }
       tools += (m.content || []).filter((x) => x.type === "tool_use").length;
+      const text = (m.content || []).filter((x) => x.type === "text").map((x) => x.text).join("\n").trim();
+      if (text) said = text;
       model = m.model || model;
     }
   }
@@ -219,7 +237,7 @@ function agentRow(call, res, { price, subagentDir }) {
   const time = mins === null ? "רץ" : mins < 1 ? "פחות מדקה" : `${mins} דק׳`;
   return [row("agent", res.at, `סוכן משנה: ${type}`, `${time} · $${cost.toFixed(2)}`,
     [["סוג", `${type} · ${model}`], ["המשימה", call.input.description || clip(first(call.input.prompt), 80)], ["זמן", time], ["עלות", `$${cost.toFixed(2)}`], ["כלים", `${tools} קריאות`]],
-    { cost, aiKey: id ? `agent:${id}` : undefined, fail: res.isError || undefined })];
+    { cost, aiKey: id ? `agent:${id}` : undefined, result: clip(said, 3000) || undefined, fail: res.isError || undefined })];
 }
 
 export function rowsFromTool(call, res, ctx) {

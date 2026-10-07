@@ -37,13 +37,20 @@ async function viaGateway(model, messages) {
   return c.message?.content || "";
 }
 
-// Last resort on machines without the gateway. Runs in its own folder so its
-// record does not land in the user's project, and our Stop hook skips it.
+// Last resort on machines without the gateway: a headless `claude -p` with every hook
+// off (no phone alert, no update check, no recursion into our own Stop hook), without the
+// parent session's variables, and in its own folder so its record stays out of the project.
+export function fallbackArgs(prompt, parentEnv = process.env) {
+  const env = Object.fromEntries(Object.entries(parentEnv).filter(([k]) => k !== "CLAUDECODE" && !k.startsWith("CLAUDE_CODE_")));
+  env.HISTORY_PANEL_CHILD = "1";
+  return { args: ["-p", "--model", "haiku", "--settings", JSON.stringify({ disableAllHooks: true }), prompt], env };
+}
+
 function viaClaude(messages) {
   const dir = path.join(os.homedir(), ".claude", "history-panel", "scratch");
   fs.mkdirSync(dir, { recursive: true });
-  return new Promise((resolve, reject) => execFile("claude", ["-p", "--model", "haiku", `${messages[0].content}\n\n${messages[1].content}`],
-    { cwd: dir, timeout: 90_000, env: { ...process.env, HISTORY_PANEL_CHILD: "1" } }, (err, out) => (err ? reject(err) : resolve(out))));
+  const { args, env } = fallbackArgs(`${messages[0].content}\n\n${messages[1].content}`);
+  return new Promise((resolve, reject) => execFile("claude", args, { cwd: dir, timeout: 90_000, env }, (err, out) => (err ? reject(err) : resolve(out))));
 }
 
 export async function askModel(messages) {
@@ -71,13 +78,37 @@ export async function summarizeBatch(items, ask = askModel) {
 
 const AGENT_SYSTEM = "In one short sentence, in Hebrew, plain words: what did this helper agent find or do? Reply with only the sentence.";
 
-export async function run(id, { load, readCache, CACHE, ask = askModel }) {
+const STALE = 10 * 60_000;   // a lock untouched this long belongs to a summarizer that died
+
+// One summarizer per session: the lock is created only if absent (atomic), touched after
+// every batch, and removed only by its owner.
+function takeLock(lock) {
+  for (let i = 0; i < 2; i++) {
+    try { fs.writeFileSync(lock, String(process.pid), { flag: "wx" }); return true; } catch (e) {
+      if (e.code !== "EEXIST") return false;
+      try { if (Date.now() - fs.statSync(lock).mtimeMs < STALE) return false; fs.rmSync(lock, { force: true }); } catch { return false; }
+    }
+  }
+  return false;
+}
+
+export async function run(id, { load, readCache, CACHE, ask = askModel, finished = false }) {
   fs.mkdirSync(CACHE, { recursive: true });
   const lock = path.join(CACHE, `${id}.lock`);
-  try { const st = fs.statSync(lock); if (Date.now() - st.mtimeMs < 120_000) return; } catch {}
-  fs.writeFileSync(lock, String(process.pid));
+  if (!takeLock(lock)) return;
+  const mine = { entries: {}, ai: {}, failed: {} };
+  const touch = () => { try { const t = new Date(); fs.utimesSync(lock, t, t); } catch {} };
+  const save = () => {
+    const now = readCache(id);   // someone may have written since we started: merge, never overwrite
+    for (const k of ["entries", "ai"]) now[k] = { ...now[k], ...mine[k] };
+    now.failed = { ...now.failed, ...mine.failed };
+    for (const u of Object.keys(now.entries)) delete now.failed[u];
+    const tmp = path.join(CACHE, `${id}.json.${process.pid}.tmp`);
+    fs.writeFileSync(tmp, JSON.stringify(now));
+    fs.renameSync(tmp, path.join(CACHE, `${id}.json`));
+  };
   try {
-    const s = load(id);
+    const s = load(id, { finished });
     if (!s) return;
     const cache = readCache(id);
     const todo = s.entries.filter((e) => !e.running && !cache.entries[e.uuid] && Date.now() - (cache.failed[e.uuid] || 0) > 120_000);
@@ -85,18 +116,17 @@ export async function run(id, { load, readCache, CACHE, ask = askModel }) {
       const batch = todo.slice(i, i + BATCH);
       let got = {};
       try { got = await summarizeBatch(batch, ask); } catch {}
-      for (const e of batch) { if (got[e.uuid]) { cache.entries[e.uuid] = got[e.uuid]; delete cache.failed[e.uuid]; } else cache.failed[e.uuid] = Date.now(); }
-      save(CACHE, id, cache);
+      for (const e of batch) { if (got[e.uuid]) mine.entries[e.uuid] = got[e.uuid]; else mine.failed[e.uuid] = Date.now(); }
+      save();
+      touch();
     }
     for (const r of s.entries.flatMap((e) => e.rows).filter((r) => r.aiKey && !cache.ai[r.aiKey])) {
-      try { cache.ai[r.aiKey] = (await ask([{ role: "system", content: AGENT_SYSTEM }, { role: "user", content: r.more.map(([a, b]) => `${a}: ${b}`).join("\n") }])).trim().slice(0, 200); } catch {}
+      const facts = r.more.map(([a, b]) => `${a}: ${b}`).join("\n") + (r.result ? `\n\nIts final words:\n${r.result}` : "");
+      try { mine.ai[r.aiKey] = (await ask([{ role: "system", content: AGENT_SYSTEM }, { role: "user", content: facts }])).trim().slice(0, 200); } catch {}
+      touch();
     }
-    save(CACHE, id, cache);
-  } finally { fs.rmSync(lock, { force: true }); }
-}
-
-function save(dir, id, cache) {
-  const tmp = path.join(dir, `${id}.json.${process.pid}.tmp`);
-  fs.writeFileSync(tmp, JSON.stringify(cache));
-  fs.renameSync(tmp, path.join(dir, `${id}.json`));
+    save();
+  } finally {
+    try { if (fs.readFileSync(lock, "utf8") === String(process.pid)) fs.rmSync(lock, { force: true }); } catch {}
+  }
 }

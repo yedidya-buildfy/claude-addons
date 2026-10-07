@@ -149,7 +149,7 @@ function did(t) {
 function cards(s) {
   return `<div class="b-wrap">${s.turns.map((t) => `
     <div class="turn${openTurns.has(t.uuid) ? " open" : ""}">
-      <div class="b-card${t.running ? " running" : ""}" data-n="${t.n}" data-uuid="${t.uuid}">
+      <div class="b-card${t.running ? " running" : ""}" data-n="${t.n}" data-uuid="${esc(t.uuid)}">
         <div class="b-top"><span class="chev"></span><span class="t">${esc(t.title)}</span><span class="b-meta"><span class="num time">${t.t}</span><span class="num cost" data-tip="${esc(t.br)}">${money(t.cost)}</span></span></div>
         <div class="b-line2">${track(t, "mtrack")}<span class="num">${label(t)}</span><span class="num cost">${money(t.cost)}</span>${icons(t)}</div>
         <div class="b-body">
@@ -159,7 +159,7 @@ function cards(s) {
           <a class="open-link" data-open="${t.n}">פתח את ההודעה המלאה</a>
         </div>
       </div>
-      <div class="b-evs">${t.events.slice().sort((a, b) => a[1].localeCompare(b[1])).map((e, i) => ev(e, `${t.uuid}:${i}`)).join("")}</div>
+      <div class="b-evs">${t.events.slice().sort((a, b) => a[1].localeCompare(b[1])).map((e, i) => ev(e, esc(`${t.uuid}:${i}`))).join("")}</div>
     </div>`).join("")}</div>`;
 }
 
