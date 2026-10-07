@@ -1,5 +1,6 @@
 // history-panel/lib/events.mjs
 // Technical rows: facts read from what Claude ran and what came back. Never a model.
+import fs from "node:fs";
 import path from "node:path";
 
 export const first = (s) => String(s || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
@@ -169,7 +170,50 @@ export function foldPushRetries(rows) {
   return out;
 }
 
+
+function answerRows(call, res) {
+  const qs = call.input.questions || [];
+  if (res.isError || !res.result?.answers) {
+    return [row("answer", res.at, "דילגת על שאלה", clip(qs[0]?.question, 40), [["השאלה", qs.map((q) => q.question).join(" · ")], ["מה קרה", first(res.out) || "—"]], { fail: true })];
+  }
+  return qs.map((q) => {
+    const chosen = String(res.result.answers[q.question] ?? "");
+    const labels = (q.options || []).map((o) => o.label);
+    const own = !labels.includes(chosen);
+    return row("answer", res.at, `ענית: ${clip(q.question, 40)}`, own ? "תשובה משלך" : clip(chosen, 40),
+      [["השאלה", q.question], ["האפשרויות", labels.join(" · ") || "—"], [own ? "כתבת" : "בחרת", chosen]]);
+  });
+}
+
+function agentRow(call, res, { price, subagentDir }) {
+  const type = call.input.subagent_type || "general-purpose";
+  const id = res.result?.agentId;
+  let cost = 0, tools = 0, t0 = null, t1 = null, model = res.result?.resolvedModel || call.input.model || "?";
+  const file = id && subagentDir ? path.join(subagentDir, `agent-${id}.jsonl`) : null;
+  if (file && fs.existsSync(file)) {
+    const seen = new Set();
+    for (const raw of fs.readFileSync(file, "utf8").split("\n")) {
+      let d; try { d = JSON.parse(raw); } catch { continue; }
+      if (d.timestamp) { t0 ??= d.timestamp; t1 = d.timestamp; }
+      const m = d.type === "assistant" && d.message;
+      if (!m) continue;
+      if (m.usage && m.id && !seen.has(m.id)) { seen.add(m.id); cost += price(m.model, m.usage); }
+      tools += (m.content || []).filter((x) => x.type === "tool_use").length;
+      model = m.model || model;
+    }
+  }
+  cost = Math.round(cost * 100) / 100;
+  const mins = t0 && t1 ? Math.round((Date.parse(t1) - Date.parse(t0)) / 60000) : null;
+  const time = mins === null ? "רץ" : mins < 1 ? "פחות מדקה" : `${mins} דק׳`;
+  return [row("agent", res.at, `סוכן משנה: ${type}`, `${time} · $${cost.toFixed(2)}`,
+    [["סוג", `${type} · ${model}`], ["המשימה", call.input.description || clip(first(call.input.prompt), 80)], ["זמן", time], ["עלות", `$${cost.toFixed(2)}`], ["כלים", `${tools} קריאות`]],
+    { cost, aiKey: id ? `agent:${id}` : undefined, fail: res.isError || undefined })];
+}
+
 export function rowsFromTool(call, res, ctx) {
   if (call.name === "Bash") return bashRows(String(call.input.command || ""), res, call.cwd);
+  if (call.name === "AskUserQuestion") return answerRows(call, res);
+  if (call.name === "Agent" || call.name === "Task") return agentRow(call, res, ctx);
+  if (call.name === "EnterWorktree") return [row("worktree", res.at, res.isError ? "פתיחת עותק עבודה נכשלה" : "נפתח עותק עבודה", clip(first(res.out), 50) || "—", [["תוצאה", first(res.out) || "—"]], res.isError ? { fail: true } : {})];
   return [];
 }

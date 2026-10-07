@@ -2,6 +2,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { bashRows, foldPushRetries } from "../lib/events.mjs";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { rowsFromTool } from "../lib/events.mjs";
+import { price } from "./fixture.mjs";
 
 const ok = (out) => ({ isError: false, out, at: "2026-10-07T17:00:00Z" });
 const bad = (out) => ({ isError: true, out, at: "2026-10-07T17:00:00Z" });
@@ -68,4 +73,36 @@ test("add-ons update", () => {
 test("text that only quotes git commands is not a row", () => {
   assert.deepEqual(bashRows("grep -n 'git push' notes.md", ok("12: run git push origin main"), "/r"), []);
   assert.deepEqual(bashRows("echo 'git commit -m x'", ok("git commit -m x"), "/r"), []);
+});
+
+test("each answered question is its own row with question, options and the choice", () => {
+  const call = { name: "AskUserQuestion", cwd: "/r", input: { questions: [
+    { question: "איך להציג עלות?", options: [{ label: "דולרים לפי מחירון (מומלץ)" }, { label: "אחוז מהמנוי" }] },
+    { question: "אילו שיחות?", options: [{ label: "רק פתוחים" }] } ] } };
+  const result = { answers: { "איך להציג עלות?": "דולרים לפי מחירון (מומלץ)", "אילו שיחות?": "בכל שיחה ההיסטוריה שלה" } };
+  const rows = rowsFromTool(call, { isError: false, out: "", result, at: "t" }, { price });
+  assert.deepEqual(rows.map((r) => r.what), ["ענית: איך להציג עלות?", "ענית: אילו שיחות?"]);
+  assert.deepEqual(rows[0].more, [["השאלה", "איך להציג עלות?"], ["האפשרויות", "דולרים לפי מחירון (מומלץ) · אחוז מהמנוי"], ["בחרת", "דולרים לפי מחירון (מומלץ)"]]);
+  assert.deepEqual(rows[1].more.at(-1), ["כתבת", "בכל שיחה ההיסטוריה שלה"]);
+});
+
+test("a declined question is a stop-like row, not an answer", () => {
+  const call = { name: "AskUserQuestion", cwd: "/r", input: { questions: [{ question: "Q?", options: [] }] } };
+  const rows = rowsFromTool(call, { isError: true, out: "The user doesn't want to proceed", result: null, at: "t" }, { price });
+  assert.equal(rows[0].fail, true);
+});
+
+test("subagent row reads its own record for cost, time and tool count", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hp-"));
+  fs.writeFileSync(path.join(dir, "agent-abc.jsonl"), [
+    { type: "assistant", timestamp: "2026-10-07T14:27:00Z", message: { id: "x1", model: "claude-sonnet-5", usage: { input_tokens: 100_000, output_tokens: 80_000 }, content: [{ type: "tool_use", name: "Grep" }] } },
+    { type: "assistant", timestamp: "2026-10-07T14:29:10Z", message: { id: "x2", model: "claude-sonnet-5", usage: { input_tokens: 0, output_tokens: 0 }, content: [{ type: "tool_use", name: "Read" }, { type: "text", text: "done" }] } },
+  ].map(JSON.stringify).join("\n"));
+  const call = { name: "Agent", cwd: "/r", input: { subagent_type: "Explore", description: "map mic positions", model: "sonnet" } };
+  const [r] = rowsFromTool(call, { isError: false, out: "", result: { agentId: "abc", resolvedModel: "claude-sonnet-5" }, at: "t" }, { price, subagentDir: dir });
+  assert.equal(r.what, "סוכן משנה: Explore");
+  assert.equal(r.cost, 0.18);
+  assert.equal(r.detail, "2 דק׳ · $0.18");
+  assert.deepEqual(r.more.find(([k]) => k === "כלים"), ["כלים", "2 קריאות"]);
+  assert.equal(r.aiKey, "agent:abc");
 });
