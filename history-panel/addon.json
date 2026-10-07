@@ -1,0 +1,69 @@
+{
+  "id": "history-panel",
+  "order": 12,
+  "default": true,
+  "requires": [
+    "tab-status",
+    "statusline-gsd"
+  ],
+  "title": "היסטוריית הודעות ליד הטרמינל",
+  "summary": "חלון ב‑VS Code שמראה לכל טרמינל מה ביקשת, מה קרה, כמה עלה וכמה קונטקסט, ושורות טכניות כמו דחיפה, איחוד ופרודקשן.",
+  "detect": {
+    "file": "~/.claude/history-panel/history.mjs"
+  },
+  "files": [
+    {
+      "from": "history.mjs",
+      "to": "~/.claude/history-panel/history.mjs",
+      "mode": "755"
+    },
+    {
+      "from": "lib/record.mjs",
+      "to": "~/.claude/history-panel/lib/record.mjs"
+    },
+    {
+      "from": "lib/events.mjs",
+      "to": "~/.claude/history-panel/lib/events.mjs"
+    },
+    {
+      "from": "lib/summarize.mjs",
+      "to": "~/.claude/history-panel/lib/summarize.mjs"
+    },
+    {
+      "from": "vscode-extension/package.json",
+      "to": "~/.vscode/extensions/claude-history/package.json",
+      "when": "vscode"
+    },
+    {
+      "from": "vscode-extension/extension.js",
+      "to": "~/.vscode/extensions/claude-history/extension.js",
+      "when": "vscode"
+    },
+    {
+      "from": "vscode-extension/view.html",
+      "to": "~/.vscode/extensions/claude-history/view.html",
+      "when": "vscode"
+    }
+  ],
+  "claudeSettings": [
+    {
+      "file": "settings.json.snippet"
+    }
+  ],
+  "vscodeSettings": "vscode-settings.snippet",
+  "ownsCommands": "history-panel/history\\.mjs",
+  "run": {
+    "cmd": "command -v node > ~/.claude/history-panel/node-path || true",
+    "when": "changed"
+  },
+  "group": "טרמינל",
+  "details": [
+    "חלון \"History\" באזור התחתון של VS Code. גוררים אותו פעם אחת ליד הטרמינל; הוא עוקב אחרי הטרמינל שפתוח מולך.",
+    "לכל הודעה ששלחת: כותרת, מה ביקשת ומה קרה (מודל זול מסכם), שעה, מחיר כמו בשורת המצב, ופס שמראה רק את הקונטקסט שההודעה הוסיפה.",
+    "שורות טכניות בנוסח קבוע, בלי מודל: שמירה, דחיפה, איחוד, עותק עבודה, שרת מקומי ופורט, פרודקשן, תשובות לשאלות, הכוונה באמצע, עצירה, פקודות וסוכני משנה. לחיצה פותחת את כל הפרטים.",
+    "לחיצה על הודעה קופצת אליה בטרמינל; \"פתח את ההודעה המלאה\" פותח אותה מהרשומה גם אם הטרמינל כבר לא זוכר אותה.",
+    "הטרמינל זוכר 50,000 שורות במקום 1,000.",
+    "צר מ‑340 נקודות: כל הודעה שתי שורות (כותרת, ומתחת פס, מחיר וסמלים)."
+  ],
+  "howToCheck": "Reload Window, פתח את הלשונית History באזור התחתון, גרור אותה ליד הטרמינל, ושלח הודעה לקלוד: אחרי שהוא מסיים מופיע כרטיס עם סיכום, מחיר ופס קונטקסט."
+}
