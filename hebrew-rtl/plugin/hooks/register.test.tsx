@@ -44,10 +44,3 @@ test('draws a sent Hebrew prompt right-aligned with its marker', async $ => {
   expect((await m.findAll({ type: 'Text', text: ' ❯' })).length).toBe(1)
 })
 
-import { withCursor } from './register'
-
-test('the draft preview shows where the cursor is', () => {
-  expect(withCursor('שלום עולם', 4)).toBe('שלום▏ עולם')
-  expect(withCursor('שלום', 0)).toBe('▏שלום')
-  expect(withCursor('שלום', 99)).toBe('שלום▏')
-})

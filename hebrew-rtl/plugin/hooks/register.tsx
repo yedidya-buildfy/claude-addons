@@ -1,4 +1,3 @@
-import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 const HEB = /[֐-׿]/
@@ -98,10 +97,6 @@ export function layout(text: string, columns: number): Chunk[] {
   return chunks
 }
 
-// The prompt box is drawn by Claude Code itself; a mod cannot lay it out. What a mod
-// can do: keep the draft (prompt.edit) and show it right-aligned just above the box.
-const draft = atom({ plugin: 'hebrew-rtl', key: 'draft' } as const, '')
-
 // A typed prompt as rows: Hebrew lines wrapped and mirrored for RTL, other lines as typed.
 export function promptRows(text: string, width: number): string[] {
   const out: string[] = []
@@ -113,12 +108,6 @@ export function promptRows(text: string, width: number): string[] {
     }
   }
   return out
-}
-
-// The draft with a thin bar where the next typed character lands.
-export function withCursor(text: string, cursor: number): string {
-  const c = Math.max(0, Math.min(text.length, cursor))
-  return text.slice(0, c) + '▏' + text.slice(c)
 }
 
 export const register: Register = on => {
@@ -133,37 +122,6 @@ export const register: Register = on => {
           <Box key={`u${j}`} width="100%" justifyContent="flex-end">
             <Text>{r || ' '}</Text>
             <Text color="suggestion">{j ? '  ' : ' ❯'}</Text>
-          </Box>
-        ))}
-      </Box>
-    )
-  })
-
-  // Live preview of a Hebrew draft, right-aligned, just above the prompt box, with the
-  // cursor shown. The box's own (unreadable, unordered) Hebrew is dimmed so the eye
-  // goes to the readable copy.
-  on('prompt.edit', async ($, e, next) => {
-    const r = await next(e)
-    const hebrew = HEB.test(r.text)
-    await update($, draft, () => (hebrew ? withCursor(r.text, r.cursor) : ''))
-    if (!hebrew) return r
-    return { ...r, decorations: [...(r.decorations ?? []), { start: 0, end: r.text.length, dimColor: true }] }
-  })
-  on('prompt.submit', async ($, e, next) => {
-    await update($, draft, () => '')
-    return next(e)
-  })
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
-    const text = await read($, draft)
-    if (!HEB.test(text)) return next(e)
-    const { Box, Text } = $.ui.resolve(e)
-    const rows = promptRows(text, (e.viewport?.columns ?? 80) - 6).slice(-6)
-    return (
-      <Box flexDirection="column" width="100%">
-        {rows.map((r, j) => (
-          <Box key={`d${j}`} width="100%" justifyContent="flex-end">
-            <Text color="claude">{r || ' '}</Text>
           </Box>
         ))}
       </Box>
