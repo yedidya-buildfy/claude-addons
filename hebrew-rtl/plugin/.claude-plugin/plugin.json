@@ -1,0 +1,8 @@
+{
+  "name": "hebrew-rtl",
+  "version": "0.1.0",
+  "description": "Draws Hebrew lines of assistant replies right-aligned, right-to-left, in the terminal",
+  "author": {
+    "name": "yedidya-buildfy"
+  }
+}
