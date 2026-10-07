@@ -13,7 +13,7 @@ const BATCH = 10;
 const head = (s, n) => (s.length > n ? s.slice(0, n / 2) + "\n…\n" + s.slice(-n / 2) : s);
 
 const SYSTEM = "You summarize turns of a conversation between a user and a coding assistant, for the user's own history list. " +
-  "For each numbered turn return {n, title, asked, happened}: title at most 28 characters, whole words; asked = what was wanted, one sentence, " +
+  "For each numbered turn return {n, title, asked, happened}: title at most 24 characters, whole words; asked = what was wanted, one sentence, " +
   "written as the request itself (never start with 'the user asked' or 'המשתמש ביקש' — the list already labels it 'you asked'); " +
   "happened = the outcome, one or two short sentences, concrete (what was built, found, pushed, decided). " +
   "Write in the language the user wrote in. Plain words, no code identifiers, no file names. Reply with only a JSON array.";
@@ -71,7 +71,7 @@ export async function summarizeBatch(items, ask = askModel) {
   for (const a of answer || []) {
     const e = items[(a.n || 0) - 1];
     if (!e || !a.title) continue;
-    out[e.uuid] = { title: fit(String(a.title).trim(), 28), asked: String(a.asked || ""), happened: String(a.happened || "") };
+    out[e.uuid] = { title: fit(String(a.title).trim(), 24), asked: String(a.asked || ""), happened: String(a.happened || "") };
   }
   return out;
 }

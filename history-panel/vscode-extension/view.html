@@ -17,7 +17,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-body { background: var(--side); color: var(--ink); font: var(--fs)/1.45 var(--ui); }
+body { background: var(--side); color: var(--ink); font: calc(var(--fs) - 1px)/1.45 var(--ui); }
 .hist { height: 100vh; display: flex; flex-direction: column; container-type: inline-size; }
 .hist-scroll { overflow-y: auto; flex: 1; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
@@ -35,7 +35,7 @@ body { background: var(--side); color: var(--ink); font: var(--fs)/1.45 var(--ui
 .b-card::before { content: ""; position: absolute; right: -15px; top: 13px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .b-card.running::before { background: var(--busy); }
 .b-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
-.b-top .t { font-weight: 600; font-size: calc(var(--fs) + 1px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-top .t { font-weight: 600; font-size: var(--fs); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-meta { display: flex; gap: 8px; font-size: 11.5px; direction: ltr; flex: none; }
 .b-card p { margin: 2px 0; }
 .open-link { display: inline-block; margin-top: 4px; color: var(--accent); font-size: 12px; cursor: pointer; text-decoration: underline; }
@@ -68,7 +68,6 @@ body { background: var(--side); color: var(--ink); font: var(--fs)/1.45 var(--ui
 
 /* compact: below 340px every message is a title line and a data line; a click opens it in place */
 .icons, .chev, .b-line2 { display: none; }
-@container (max-width: 230px) { .mtrack { display: none !important; } }
 @container (max-width: 340px) {
   .b-wrap { padding: 4px 6px; }
   .turn { margin-bottom: 2px; }
@@ -76,13 +75,11 @@ body { background: var(--side); color: var(--ink); font: var(--fs)/1.45 var(--ui
   .b-card:hover { background: var(--hover); border-color: transparent; }
   .b-card::before { display: none; }
   .b-top { margin: 0; gap: 6px; }
-  .b-top .t { font-size: var(--fs); font-weight: 500; flex: 1; }
-  .turn.open .b-top .t { white-space: normal; }
+  .b-top .t { font-size: calc(var(--fs) - 1px); font-weight: 500; flex: 1; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
   .b-top .b-meta { display: none; }
-  .b-line2 { display: flex; align-items: center; gap: 6px; margin: 1px 15px 0 0; direction: ltr; justify-content: flex-end; font-size: calc(var(--fs) - 1px); white-space: nowrap; overflow: hidden; }
-  .mtrack { flex: 0 1 56px; height: 5px; min-width: 24px; }
-  .b-line2 .lbl2 { color: var(--muted); }
-  .b-line2 .icons { order: -1; margin-inline-end: auto; }
+  .b-line2 { display: flex; align-items: center; gap: 6px; margin: 2px 15px 0 0; direction: ltr; font-size: calc(var(--fs) - 2.5px); white-space: nowrap; }
+  .mtrack { flex: 1 1 auto; height: 6px; min-width: 40px; }
+  .b-line2 .icons { flex: none; }
   .chev { display: inline; color: var(--faint); font-size: 9px; flex: none; }
   .chev::before { content: "◂"; }
   .turn.open .chev::before { content: "▾"; }
@@ -148,7 +145,7 @@ function cards(s) {
     <div class="turn${openTurns.has(t.uuid) ? " open" : ""}">
       <div class="b-card${t.running ? " running" : ""}" data-n="${t.n}" data-uuid="${esc(t.uuid)}">
         <div class="b-top"><span class="chev"></span><span class="t">${esc(t.title)}</span><span class="b-meta"><span class="num time">${t.t}</span><span class="num cost" data-tip="${esc(t.br)}">${money(t.cost)}</span></span></div>
-        <div class="b-line2" title="מחיר ההודעה · כמה מהקונטקסט היה מלא לפני ואחרי · כמה היא הוסיפה">${track(t, "mtrack")}<span class="num ctx">${pct(t.ctx[0])}→${pct(t.ctx[1])}%</span><span class="num lbl2">+${Math.max(0, pct(t.ctx[1]) - pct(t.ctx[0]))}%</span><span class="num cost">${money(t.cost)}</span>${icons(t)}</div>
+        <div class="b-line2" title="הפס: כל חלון הקונטקסט. אפור = מה שהיה לפני ההודעה, ירוק = מה שהיא הוסיפה. אחריו: לפני→אחרי, ומחיר ההודעה">${icons(t)}${track(t, "mtrack")}<span class="num ctx">${pct(t.ctx[0])}→${pct(t.ctx[1])}%</span><span class="num cost">${money(t.cost)}</span></div>
         <div class="b-body">
           <p><span class="k">ביקשת:</span> ${esc(t.ask)}</p>
           <p><span class="k">קרה:</span> ${did(t)}</p>

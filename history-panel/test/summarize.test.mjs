@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { summarizeBatch, parseAnswer } from "../lib/summarize.mjs";
 
-test("batch asks once and maps answers by uuid; titles fit in 28 chars", async () => {
+test("batch asks once and maps answers by uuid; titles fit in 24 chars", async () => {
   let calls = 0;
   const ask = async (messages) => {
     calls++;
@@ -12,7 +12,7 @@ test("batch asks once and maps answers by uuid; titles fit in 28 chars", async (
   };
   const out = await summarizeBatch([{ uuid: "u1", prompt: "תדחוף", reply: ["נדחף."], rows: [{ what: "נדחף ל‑master", detail: "b" }] }], ask);
   assert.equal(calls, 1);
-  assert.ok([...out.u1.title].length <= 28 && "דחיפה למאגר התוספים וגם עוד הרבה מילים".startsWith(out.u1.title + " "));
+  assert.ok([...out.u1.title].length <= 24 && "דחיפה למאגר התוספים וגם עוד הרבה מילים".startsWith(out.u1.title + " "));
   assert.equal(out.u1.happened, "נדחף.");
 });
 
@@ -25,6 +25,7 @@ test("a long title is cut at a word, not inside one", async () => {
   const ask = async () => JSON.stringify([{ n: 1, title: "תכנון היסטוריית שיחות ועלויות לכל הודעה", asked: "a", happened: "b" }]);
   const out = await summarizeBatch([{ uuid: "u1", prompt: "x", reply: [], rows: [] }], ask);
   assert.equal(out.u1.title, "תכנון היסטוריית שיחות");
+  assert.ok([..."תכנון היסטוריית שיחות"].length <= 24);
 });
 
 test("the claude -p fallback runs with hooks off and without the parent's session variables", async () => {

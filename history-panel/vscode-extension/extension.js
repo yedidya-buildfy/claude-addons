@@ -100,7 +100,8 @@ class HistoryView {
     if (!this.view) return;
     this.view.webview.postMessage({ type: "data", data });
     // The view's title line carries the session's totals, like the status line.
-    this.view.description = data.turns ? `${data.name} · $${Number(data.cost).toFixed(2)} · ${data.minutes}m · ${data.ctxPct}%` : "";
+    // Numbers first: the name is Hebrew and would otherwise reorder the line.
+    this.view.description = data.turns ? `$${Number(data.cost).toFixed(2)} · ${data.ctxPct}% · ${data.minutes}m · ${data.name}` : "";
   }
 
   // Text the size of the terminal, where Claude Code's own text is.
