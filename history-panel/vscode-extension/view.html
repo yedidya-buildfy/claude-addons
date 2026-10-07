@@ -44,6 +44,9 @@ body { background: var(--side); color: var(--ink); font: calc(var(--fs) - 1px)/1
 .fork { position: absolute; left: 6px; bottom: 4px; visibility: hidden; background: var(--side); font: inherit; font-size: calc(var(--fs) - 2px); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; cursor: pointer; white-space: nowrap; line-height: 1.5; padding: 0 4px; }
 .fork:hover { border-color: var(--accent); color: var(--accent); }
 .b-card:hover .fork { visibility: visible; }
+/* the numbers (time, cost, context) also show only while the pointer is on the message; an opened one keeps them */
+.turn:not(.open) .b-card:not(:hover) .b-meta { visibility: hidden; }
+.turn:not(.open) .b-card:not(:hover) :is(.slice, .b-line2) { display: none; }
 .b-line3 { display: none; }
 .open-link { display: inline-block; margin-top: 4px; color: var(--accent); font-size: 12px; cursor: pointer; text-decoration: underline; }
 

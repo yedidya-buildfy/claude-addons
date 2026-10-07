@@ -130,9 +130,11 @@ class HistoryView {
       let r;
       try { r = JSON.parse(out); } catch { r = { error: err ? String(err.message).split("\n")[0] : "הפיצול נכשל" }; }
       if (r.error) return vscode.window.showErrorMessage(`פיצול: ${r.error}`);
-      const term = vscode.window.createTerminal({ name: `${name} · פיצול מ־#${n}`, cwd: r.cwd && fs.existsSync(r.cwd) ? r.cwd : undefined });
+      // auto-claude would replace the typed line with a fresh session; this terminal resumes instead,
+      // launched the way auto-claude launches every terminal.
+      const term = vscode.window.createTerminal({ name: `${name} · פיצול מ־#${n}`, cwd: r.cwd && fs.existsSync(r.cwd) ? r.cwd : undefined, env: { CLAUDE_AUTOSTART_OFF: "1" } });
       term.show(false);
-      term.sendText(`claude --resume ${r.id}`);
+      term.sendText(`claude --dangerously-skip-permissions --resume ${r.id}`);
     });
   }
 
