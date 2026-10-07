@@ -13,13 +13,12 @@
   --ink: var(--vscode-foreground, #cdd6f4); --muted: var(--vscode-descriptionForeground, #7f849c); --faint: #585b70;
   --cost: #f9e2af; --time: #89dceb; --ctx: #a6e3a1; --busy: #f38ba8; --accent: #89b4fa; --track: #2a2b3d; --spent: #45475a;
   --ui: var(--vscode-font-family, system-ui); --mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+  --fs: 12px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
-body { background: var(--side); color: var(--ink); font: 13px/1.45 var(--ui); }
+body { background: var(--side); color: var(--ink); font: var(--fs)/1.45 var(--ui); }
 .hist { height: 100vh; display: flex; flex-direction: column; container-type: inline-size; }
-.hist-title { display: flex; align-items: center; gap: 10px; padding: 6px 10px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; }
-.hist-title .name { font-weight: 600; font-size: 12px; color: var(--ink); direction: rtl; margin-inline-start: auto; overflow: hidden; text-overflow: ellipsis; }
 .hist-scroll { overflow-y: auto; flex: 1; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
 .cost { color: var(--cost); } .time { color: var(--time); } .ctx { color: var(--ctx); }
@@ -27,7 +26,6 @@ body { background: var(--side); color: var(--ink); font: 13px/1.45 var(--ui); }
 .busy { color: var(--busy); }
 .pending { color: var(--muted); font-style: italic; }
 .empty { padding: 30px 16px; text-align: center; color: var(--muted); direction: rtl; }
-.sum { display: flex; gap: 8px; align-items: baseline; }
 [data-tip] { position: relative; cursor: help; }
 [data-tip]:hover::after { content: attr(data-tip); position: absolute; top: 100%; right: 0; z-index: 5; margin-top: 4px; white-space: nowrap; background: var(--side); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; font: 11.5px var(--mono); }
 
@@ -37,7 +35,7 @@ body { background: var(--side); color: var(--ink); font: 13px/1.45 var(--ui); }
 .b-card::before { content: ""; position: absolute; right: -15px; top: 13px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .b-card.running::before { background: var(--busy); }
 .b-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
-.b-top .t { font-weight: 600; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-top .t { font-weight: 600; font-size: calc(var(--fs) + 1px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-meta { display: flex; gap: 8px; font-size: 11.5px; direction: ltr; flex: none; }
 .b-card p { margin: 2px 0; }
 .open-link { display: inline-block; margin-top: 4px; color: var(--accent); font-size: 12px; cursor: pointer; text-decoration: underline; }
@@ -70,6 +68,7 @@ body { background: var(--side); color: var(--ink); font: 13px/1.45 var(--ui); }
 
 /* compact: below 340px every message is a title line and a data line; a click opens it in place */
 .icons, .chev, .b-line2 { display: none; }
+@container (max-width: 230px) { .mtrack { display: none !important; } }
 @container (max-width: 340px) {
   .b-wrap { padding: 4px 6px; }
   .turn { margin-bottom: 2px; }
@@ -77,10 +76,12 @@ body { background: var(--side); color: var(--ink); font: 13px/1.45 var(--ui); }
   .b-card:hover { background: var(--hover); border-color: transparent; }
   .b-card::before { display: none; }
   .b-top { margin: 0; gap: 6px; }
-  .b-top .t { font-size: 13px; font-weight: 500; flex: 1; white-space: normal; overflow: visible; line-height: 1.35; }
+  .b-top .t { font-size: var(--fs); font-weight: 500; flex: 1; }
+  .turn.open .b-top .t { white-space: normal; }
   .b-top .b-meta { display: none; }
-  .b-line2 { display: flex; align-items: center; gap: 8px; margin: 2px 15px 0 0; direction: ltr; justify-content: flex-end; font-size: 11px; }
-  .mtrack { flex: 0 1 70px; height: 5px; min-width: 30px; }
+  .b-line2 { display: flex; align-items: center; gap: 6px; margin: 1px 15px 0 0; direction: ltr; justify-content: flex-end; font-size: calc(var(--fs) - 1px); white-space: nowrap; overflow: hidden; }
+  .mtrack { flex: 0 1 56px; height: 5px; min-width: 24px; }
+  .b-line2 .lbl2 { color: var(--muted); }
   .b-line2 .icons { order: -1; margin-inline-end: auto; }
   .chev { display: inline; color: var(--faint); font-size: 9px; flex: none; }
   .chev::before { content: "◂"; }
@@ -102,7 +103,6 @@ body { background: var(--side); color: var(--ink); font: 13px/1.45 var(--ui); }
 </head>
 <body>
 <div class="hist">
-  <div class="hist-title" id="htitle">HISTORY</div>
   <div class="hist-scroll" id="hist"><div class="empty">טוען…</div></div>
 </div>
 <script>
@@ -119,9 +119,6 @@ const money = (x) => `$${Number(x || 0).toFixed(2)}`;
 const pct = (tokens) => Math.round((tokens / S.window) * 100);
 const share = (tokens) => Math.min(100, (tokens / S.window) * 100);
 
-function header(s) {
-  return `HISTORY <span class="sum"><span class="num cost">${money(s.cost)}</span><span class="num time">${s.minutes}m</span><span class="num ctx">${s.ctxPct}%</span></span><span class="name">${esc(s.name)}</span>`;
-}
 function label(t) {
   const [a, b] = t.ctx;
   return b < a ? `<span class="ctx">↺ ${pct(b)}%</span>` : `<span class="ctx">${pct(a)}%→${pct(b)}%</span> <span class="add">+${pct(b) - pct(a)}%</span>`;
@@ -151,7 +148,7 @@ function cards(s) {
     <div class="turn${openTurns.has(t.uuid) ? " open" : ""}">
       <div class="b-card${t.running ? " running" : ""}" data-n="${t.n}" data-uuid="${esc(t.uuid)}">
         <div class="b-top"><span class="chev"></span><span class="t">${esc(t.title)}</span><span class="b-meta"><span class="num time">${t.t}</span><span class="num cost" data-tip="${esc(t.br)}">${money(t.cost)}</span></span></div>
-        <div class="b-line2">${track(t, "mtrack")}<span class="num">${label(t)}</span><span class="num cost">${money(t.cost)}</span>${icons(t)}</div>
+        <div class="b-line2" title="מחיר ההודעה · כמה מהקונטקסט היה מלא לפני ואחרי · כמה היא הוסיפה">${track(t, "mtrack")}<span class="num ctx">${pct(t.ctx[0])}→${pct(t.ctx[1])}%</span><span class="num lbl2">+${Math.max(0, pct(t.ctx[1]) - pct(t.ctx[0]))}%</span><span class="num cost">${money(t.cost)}</span>${icons(t)}</div>
         <div class="b-body">
           <p><span class="k">ביקשת:</span> ${esc(t.ask)}</p>
           <p><span class="k">קרה:</span> ${did(t)}</p>
@@ -164,16 +161,18 @@ function cards(s) {
 }
 
 function render() {
-  const h = document.getElementById("hist"), title = document.getElementById("htitle");
-  if (!S || S.empty || S.error) { title.textContent = "HISTORY"; h.innerHTML = `<div class="empty">${esc((S && (S.empty || S.error)) || "טוען…")}</div>`; return; }
+  const h = document.getElementById("hist");
+  if (!S || S.empty || S.error) { h.innerHTML = `<div class="empty">${esc((S && (S.empty || S.error)) || "טוען…")}</div>`; return; }
   const atBottom = h.scrollHeight - h.scrollTop - h.clientHeight < 40;
   const keep = h.scrollTop;
-  title.innerHTML = header(S);
   h.innerHTML = S.turns.length ? cards(S) + (S.bad ? `<div class="empty">${S.bad} שורות ברשומה לא נקראו</div>` : "") : `<div class="empty">עוד לא נשלחה הודעה בשיחה הזו</div>`;
   h.scrollTop = atBottom ? h.scrollHeight : keep;   // follow new messages, but never yank the reader away
 }
 
-window.addEventListener("message", (e) => { if (e.data.type === "data") { S = e.data.data; render(); } });
+window.addEventListener("message", (e) => {
+  if (e.data.type === "data") { S = e.data.data; render(); }
+  if (e.data.type === "font") document.documentElement.style.setProperty("--fs", `${e.data.size}px`);
+});
 document.getElementById("hist").addEventListener("click", (e) => {
   const open = e.target.closest("[data-open]");
   if (open) return vscode.postMessage({ type: "open", n: Number(open.dataset.open) });

@@ -50,6 +50,7 @@ class HistoryView {
     view.webview.html = fs.readFileSync(path.join(__dirname, "view.html"), "utf8");
     view.webview.onDidReceiveMessage((m) => this.onMessage(m));
     view.onDidChangeVisibility(() => view.visible && this.follow(true));
+    this.font();
     this.follow(true);
   }
 
@@ -95,7 +96,18 @@ class HistoryView {
     });
   }
 
-  post(data) { if (this.view) this.view.webview.postMessage({ type: "data", data }); }
+  post(data) {
+    if (!this.view) return;
+    this.view.webview.postMessage({ type: "data", data });
+    // The view's title line carries the session's totals, like the status line.
+    this.view.description = data.turns ? `${data.name} · $${Number(data.cost).toFixed(2)} · ${data.minutes}m · ${data.ctxPct}%` : "";
+  }
+
+  // Text the size of the terminal, where Claude Code's own text is.
+  font() {
+    const size = vscode.workspace.getConfiguration("terminal.integrated").get("fontSize") || vscode.workspace.getConfiguration("editor").get("fontSize") || 12;
+    if (this.view) this.view.webview.postMessage({ type: "font", size });
+  }
 
   async onMessage(m) {
     if (m.type === "jump") {
@@ -116,13 +128,31 @@ class HistoryView {
   }
 }
 
+// Once per machine: offer to put History next to the terminal. VS Code lets an extension
+// move its view into the terminal's area but not choose its side, and a forced move could
+// undo where the person already dragged it, so it asks instead of moving on its own.
+async function offerPlacement(ctx) {
+  if (ctx.globalState.get("claudeHistory.placed")) return;
+  await ctx.globalState.update("claudeHistory.placed", true);
+  const yes = "ליד הטרמינל";
+  const pick = await vscode.window.showInformationMessage("לשים את חלון ההיסטוריה ליד הטרמינל?", yes, "לא עכשיו");
+  if (pick !== yes) return;
+  try {
+    await vscode.commands.executeCommand("vscode.moveViews", { viewIds: ["claudeHistory.view"], destinationId: "workbench.panel.terminal" });
+  } catch {
+    vscode.window.showInformationMessage("גרור את הלשונית History אל אזור הטרמינל.");
+  }
+}
+
 function activate(ctx) {
   const view = new HistoryView();
   ctx.subscriptions.push(
     vscode.window.registerWebviewViewProvider("claudeHistory.view", view, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.window.onDidChangeActiveTerminal(() => view.follow()),
+    vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration("terminal.integrated.fontSize") && view.font()),
     { dispose: () => view.unwatch() },
   );
+  offerPlacement(ctx);
   const tick = setInterval(() => view.follow(), 3000);    // a session can start in an already-focused terminal
   ctx.subscriptions.push({ dispose: () => clearInterval(tick) });
 }
