@@ -132,7 +132,7 @@ class HistoryView {
       if (r.error) return vscode.window.showErrorMessage(`פיצול: ${r.error}`);
       // auto-claude would replace the typed line with a fresh session; this terminal resumes instead,
       // launched the way auto-claude launches every terminal.
-      const term = vscode.window.createTerminal({ name: `${name} · פיצול מ־#${n}`, cwd: r.cwd && fs.existsSync(r.cwd) ? r.cwd : undefined, env: { CLAUDE_AUTOSTART_OFF: "1" } });
+      const term = vscode.window.createTerminal({ name: `⑂ ${name}`, cwd: r.cwd && fs.existsSync(r.cwd) ? r.cwd : undefined, env: { CLAUDE_AUTOSTART_OFF: "1" } });
       term.show(false);
       term.sendText(`claude --dangerously-skip-permissions --resume ${r.id}`);
     });
