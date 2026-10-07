@@ -99,6 +99,7 @@ class HistoryView {
   post(data) {
     if (!this.view) return;
     this.view.webview.postMessage({ type: "data", data });
+    if (data.name) this.name = data.name;
     // The view's title line carries the session's totals, like the status line.
     // Numbers first: the name is Hebrew and would otherwise reorder the line.
     this.view.description = data.turns ? `$${Number(data.cost).toFixed(2)} · ${data.ctxPct}% · ${data.minutes}m · ${data.name}` : "";
@@ -118,6 +119,21 @@ class HistoryView {
       await vscode.commands.executeCommand("workbench.action.terminal.scrollToBottom");
       for (let i = 0; i < m.total - m.n + 1; i++) await vscode.commands.executeCommand("workbench.action.terminal.scrollToPreviousCommand");
     } else if (m.type === "open") this.openEntry(m.n);
+    else if (m.type === "fork") this.fork(m.n);
+  }
+
+  // A new terminal whose Claude remembers this conversation up to message n.
+  fork(n) {
+    if (!this.session) return;
+    const name = this.name || "שיחה";
+    execFile(NODE, [CLI, "fork", this.session, String(n)], { timeout: 20000 }, (err, out) => {
+      let r;
+      try { r = JSON.parse(out); } catch { r = { error: err ? String(err.message).split("\n")[0] : "הפיצול נכשל" }; }
+      if (r.error) return vscode.window.showErrorMessage(`פיצול: ${r.error}`);
+      const term = vscode.window.createTerminal({ name: `${name} · פיצול מ־#${n}`, cwd: r.cwd && fs.existsSync(r.cwd) ? r.cwd : undefined });
+      term.show(false);
+      term.sendText(`claude --resume ${r.id}`);
+    });
   }
 
   openEntry(n) {

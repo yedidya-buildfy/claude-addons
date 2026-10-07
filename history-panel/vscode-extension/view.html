@@ -38,6 +38,10 @@ body { background: var(--side); color: var(--ink); font: calc(var(--fs) - 1px)/1
 .b-top .t { font-weight: 600; font-size: var(--fs); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .b-meta { display: flex; gap: 8px; font-size: 11.5px; direction: ltr; flex: none; }
 .b-card p { margin: 2px 0; }
+.links { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.fork { font: inherit; font-size: calc(var(--fs) - 2px); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; cursor: pointer; white-space: nowrap; line-height: 1.6; }
+.fork:hover { border-color: var(--accent); color: var(--accent); }
+.b-line3 { display: none; }
 .open-link { display: inline-block; margin-top: 4px; color: var(--accent); font-size: 12px; cursor: pointer; text-decoration: underline; }
 
 .ev { display: grid; grid-template-columns: 14px minmax(0, max-content) minmax(0, 1fr) auto 10px; align-items: center; column-gap: 8px; margin: -4px 26px 10px 0; padding: 2px 8px; font-size: 12px; direction: rtl; border-right: 2px solid var(--line); cursor: pointer; }
@@ -77,12 +81,22 @@ body { background: var(--side); color: var(--ink); font: calc(var(--fs) - 1px)/1
   .b-top { margin: 0; gap: 6px; }
   .b-top .t { font-size: calc(var(--fs) - 1px); font-weight: 500; flex: 1; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
   .b-top .b-meta { display: none; }
-  .b-line2 { display: flex; align-items: center; gap: 6px; margin: 2px 15px 0 0; direction: ltr; font-size: calc(var(--fs) - 2.5px); white-space: nowrap; }
-  .mtrack { flex: 1 1 auto; height: 6px; min-width: 40px; }
+  /* fixed columns, so bars, percents and costs line up in every row */
+  .b-line2 { display: grid; grid-template-columns: 64px 9ch 6.5ch; justify-content: end; align-items: center; column-gap: 8px; margin: 2px 0 0; direction: ltr; font-size: calc(var(--fs) - 2.5px); white-space: nowrap; }
+  .mtrack { width: 64px; height: 6px; min-width: 0; }
+  .c-pct { text-align: left; }
+  .c-cost { text-align: right; }
+  .b-line3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 3px; direction: rtl; }
+  .b-line3 .icons { direction: ltr; }
+  .has-marks .fork.wide { display: none; }   /* it already sits on the marks row */
   .b-line2 .icons { flex: none; }
-  .chev { display: inline; color: var(--faint); font-size: 9px; flex: none; }
-  .chev::before { content: "◂"; }
-  .turn.open .chev::before { content: "▾"; }
+  .b-wrap { position: relative; padding-right: 14px; }
+  .b-wrap::before { content: ""; position: absolute; right: 9px; top: 0; bottom: 0; width: 1px; background: var(--line); }
+  .b-card { padding-right: 4px; }
+  .chev { display: block; position: absolute; right: -9px; top: 9px; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .turn.open .chev { background: var(--accent); }
+  .running .chev { background: var(--busy); }
+  .b-card { position: relative; }
   .running .t { color: var(--busy); }
   .icons { display: inline-flex; gap: 3px; font-size: 11px; flex: none; }
   .icons sub { font-size: 8px; color: var(--muted); }
@@ -140,17 +154,19 @@ function did(t) {
   if (t.running) return `<span class="busy">עובד…</span>`;
   return t.summarized ? esc(t.did) : `<span class="pending">${esc(t.did)}</span>`;
 }
+const forkBtn = (t, cls = "") => `<button class="fork ${cls}" data-fork="${t.n}" title="שיחה חדשה בטרמינל חדש, שזוכרת הכול עד ההודעה הזו ושום דבר אחריה">⑂ פצל מכאן</button>`;
 function cards(s) {
   return `<div class="b-wrap">${s.turns.map((t) => `
-    <div class="turn${openTurns.has(t.uuid) ? " open" : ""}">
+    <div class="turn${openTurns.has(t.uuid) ? " open" : ""}${t.events.length ? " has-marks" : ""}">
       <div class="b-card${t.running ? " running" : ""}" data-n="${t.n}" data-uuid="${esc(t.uuid)}">
         <div class="b-top"><span class="chev"></span><span class="t">${esc(t.title)}</span><span class="b-meta"><span class="num time">${t.t}</span><span class="num cost" data-tip="${esc(t.br)}">${money(t.cost)}</span></span></div>
-        <div class="b-line2" title="הפס: כל חלון הקונטקסט. אפור = מה שהיה לפני ההודעה, ירוק = מה שהיא הוסיפה. אחריו: לפני→אחרי, ומחיר ההודעה">${icons(t)}${track(t, "mtrack")}<span class="num ctx">${pct(t.ctx[0])}→${pct(t.ctx[1])}%</span><span class="num cost">${money(t.cost)}</span></div>
+        <div class="b-line2" title="הפס: כל חלון הקונטקסט. אפור = מה שהיה לפני ההודעה, ירוק = מה שהיא הוסיפה. אחריו: לפני→אחרי, ומחיר ההודעה">${track(t, "mtrack")}<span class="num ctx c-pct">${pct(t.ctx[0])}→${pct(t.ctx[1])}%</span><span class="num cost c-cost">${money(t.cost)}</span></div>
+        ${t.events.length ? `<div class="b-line3">${icons(t)}${t.running ? "" : forkBtn(t)}</div>` : ""}
         <div class="b-body">
           <p><span class="k">ביקשת:</span> ${esc(t.ask)}</p>
           <p><span class="k">קרה:</span> ${did(t)}</p>
           ${slice(t)}
-          <a class="open-link" data-open="${t.n}">פתח את ההודעה המלאה</a>
+          <div class="links"><a class="open-link" data-open="${t.n}">פתח את ההודעה המלאה</a>${t.running ? "" : forkBtn(t, "wide")}</div>
         </div>
       </div>
       <div class="b-evs">${t.events.slice().sort((a, b) => a[1].localeCompare(b[1])).map((e, i) => ev(e, esc(`${t.uuid}:${i}`))).join("")}</div>
@@ -171,6 +187,8 @@ window.addEventListener("message", (e) => {
   if (e.data.type === "font") document.documentElement.style.setProperty("--fs", `${e.data.size}px`);
 });
 document.getElementById("hist").addEventListener("click", (e) => {
+  const forkAt = e.target.closest("[data-fork]");
+  if (forkAt) return vscode.postMessage({ type: "fork", n: Number(forkAt.dataset.fork) });
   const open = e.target.closest("[data-open]");
   if (open) return vscode.postMessage({ type: "open", n: Number(open.dataset.open) });
   const row = e.target.closest("[data-ev]");

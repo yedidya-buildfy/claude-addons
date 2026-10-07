@@ -61,3 +61,18 @@ test("entry prints the full prompt and reply as Markdown", () => {
   assert.match(md, /השאלה המלאה/);
   assert.match(md, /התשובה המלאה/);
 });
+
+test("fork copies the conversation up to the end of message n into a new session", () => {
+  const lines = [{ type: "last-prompt", leafUuid: "zzz", sessionId: "s1" }, human("one", 0), reply(1, { text: "a" }), turnEnd(2), human("two", 3), reply(4, { text: "b" }), turnEnd(5), human("three", 6), reply(7, { text: "c" })];
+  for (const l of lines) l.sessionId = "s1";
+  const run = sandbox(lines);
+  const out = JSON.parse(run("fork", "s1", "2"));
+  assert.match(out.id, /^[0-9a-f-]{36}$/);
+  assert.equal(out.cwd, "/r/app");
+  const copy = fs.readFileSync(out.record, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.deepEqual(copy.filter((d) => d.type === "user").map((d) => d.message.content), ["one", "two"]);
+  assert.ok(copy.every((d) => d.sessionId === out.id));
+  assert.ok(!copy.some((d) => d.type === "last-prompt"));     // would point Claude at a message the copy no longer has
+  assert.equal(path.dirname(out.record), path.dirname(out.record.replace(out.id, "s1")));
+  assert.deepEqual(JSON.parse(run("fork", "s1", "9")), { error: "אין הודעה כזו בשיחה" });
+});

@@ -7,7 +7,8 @@ import path from "node:path";
 import { spawn, execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
-import { readLines, parseSession } from "./lib/record.mjs";
+import { randomUUID } from "node:crypto";
+import { readLines, parseSession, promptText } from "./lib/record.mjs";
 
 const HOME = os.homedir();
 // Sessions live under the config folder in use: ~/.claude, a CLAUDE_CONFIG_DIR, or ccx's own.
@@ -87,6 +88,29 @@ export function build(id) {
   };
 }
 
+// A new session holding the conversation up to the end of message n: Claude resumes it
+// remembering everything until then and nothing after. The original is not touched.
+export function fork(id, n) {
+  const record = findRecord(id);
+  if (!record) return { error: "לא נמצאה רשומה לשיחה הזו" };
+  const raw = fs.readFileSync(record, "utf8").split("\n").filter((l) => l.trim());
+  const keep = [];
+  let seen = 0, cwd = null;
+  for (const l of raw) {
+    let d;
+    try { d = JSON.parse(l); } catch { continue; }
+    if (promptText(d) !== null && ++seen > n) break;
+    if (d.type === "last-prompt" || d.type === "summary") continue;   // they point at messages the copy may not have
+    cwd = d.cwd || cwd;
+    keep.push(d);
+  }
+  if (!Number.isInteger(n) || n < 1 || seen < n) return { error: "אין הודעה כזו בשיחה" };
+  const fresh = randomUUID();
+  const out = path.join(path.dirname(record), `${fresh}.jsonl`);
+  fs.writeFileSync(out, keep.map((d) => JSON.stringify("sessionId" in d ? { ...d, sessionId: fresh } : d)).join("\n") + "\n", { flag: "wx" });
+  return { id: fresh, record: out, cwd };
+}
+
 export function entryMarkdown(id, n) {
   const s = load(id);
   const e = s?.entries[n - 1];
@@ -99,6 +123,7 @@ const [cmd, id, arg] = process.argv.slice(2);
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   if (cmd === "build") process.stdout.write(JSON.stringify(build(id)));
   else if (cmd === "entry") process.stdout.write(entryMarkdown(id, Number(arg)));
+  else if (cmd === "fork") process.stdout.write(JSON.stringify(fork(id, Number(arg))));
   else if (cmd === "summarize") {
     if (process.env.HISTORY_PANEL_CHILD) process.exit(0);         // our own `claude -p` fallback
     if (id === "--hook") {                                          // Stop hook: return at once, work detached
@@ -109,5 +134,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process
     const { run } = await import("./lib/summarize.mjs");
     await run(id, { load, readCache, CACHE, finished: arg === "--finished" });
   }
-  else { process.stderr.write("usage: history.mjs build|entry|summarize <session> [n]\n"); process.exit(2); }
+  else { process.stderr.write("usage: history.mjs build|entry|fork|summarize <session> [n]\n"); process.exit(2); }
 }
