@@ -61,3 +61,10 @@ test("compaction adds a row and the next slice starts from the compacted size", 
   assert.deepEqual(entries[1].ctx, [20_000, 30_000]);
   assert.equal(entries[0].rows.at(-1).kind, "compact");
 });
+
+test("session start and end come from lines that have a time", () => {
+  const lines = [{ type: "last-prompt" }, { type: "mode", mode: "normal" }, human("x", 5), reply(9), turnEnd(12), { type: "last-prompt" }];
+  const s = parseSession(lines, { price });
+  assert.equal(s.first, human("y", 5).timestamp);
+  assert.equal(s.last, turnEnd(12).timestamp);
+});

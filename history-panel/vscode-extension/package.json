@@ -1,0 +1,15 @@
+{
+  "name": "claude-history",
+  "displayName": "Claude History",
+  "description": "What each Claude session did, beside its terminal.",
+  "version": "0.1.0",
+  "publisher": "claude-addons",
+  "license": "MIT",
+  "engines": { "vscode": "^1.80.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "viewsContainers": { "panel": [{ "id": "claudeHistory", "title": "History", "icon": "$(history)" }] },
+    "views": { "claudeHistory": [{ "type": "webview", "id": "claudeHistory.view", "name": "History" }] }
+  }
+}

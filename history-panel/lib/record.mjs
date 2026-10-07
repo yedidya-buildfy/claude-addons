@@ -111,5 +111,6 @@ export function parseSession(lines, { price, subagentDir = null } = {}) {
     }
   }
   for (const e of entries) e.rows = foldPushRetries(e.rows);
-  return { entries, first: lines[0]?.timestamp || null, last: lines.at(-1)?.timestamp || null, model };
+  const times = lines.map((d) => d.timestamp).filter(Boolean);
+  return { entries, first: times[0] || null, last: times.at(-1) || null, model };
 }

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="he">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+<title>History</title>
+<style>
+/* The approved mockup (docs/superpowers/specs/2026-10-07-history-panel-designs.html, variant B),
+   on VS Code's own theme; numbers keep the status line's colors. */
+:root {
+  --side: var(--vscode-panel-background, #181825); --panel: var(--vscode-editorWidget-background, #1e1e2e);
+  --hover: var(--vscode-list-hoverBackground, #26263a); --line: var(--vscode-panel-border, #313244);
+  --ink: var(--vscode-foreground, #cdd6f4); --muted: var(--vscode-descriptionForeground, #7f849c); --faint: #585b70;
+  --cost: #f9e2af; --time: #89dceb; --ctx: #a6e3a1; --busy: #f38ba8; --accent: #89b4fa; --track: #2a2b3d; --spent: #45475a;
+  --ui: var(--vscode-font-family, system-ui); --mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--side); color: var(--ink); font: 13px/1.45 var(--ui); }
+.hist { height: 100vh; display: flex; flex-direction: column; container-type: inline-size; }
+.hist-title { display: flex; align-items: center; gap: 10px; padding: 6px 10px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.hist-title .name { font-weight: 600; font-size: 12px; color: var(--ink); direction: rtl; margin-inline-start: auto; overflow: hidden; text-overflow: ellipsis; }
+.hist-scroll { overflow-y: auto; flex: 1; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
+.cost { color: var(--cost); } .time { color: var(--time); } .ctx { color: var(--ctx); }
+.k { color: var(--muted); font-weight: 500; }
+.busy { color: var(--busy); }
+.pending { color: var(--muted); font-style: italic; }
+.empty { padding: 30px 16px; text-align: center; color: var(--muted); direction: rtl; }
+.sum { display: flex; gap: 8px; align-items: baseline; }
+[data-tip] { position: relative; cursor: help; }
+[data-tip]:hover::after { content: attr(data-tip); position: absolute; top: 100%; right: 0; z-index: 5; margin-top: 4px; white-space: nowrap; background: var(--side); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; font: 11.5px var(--mono); }
+
+.b-wrap { padding: 10px 12px 14px; direction: rtl; }
+.b-card { position: relative; margin: 0 14px 10px 0; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.b-card:hover { border-color: var(--faint); }
+.b-card::before { content: ""; position: absolute; right: -15px; top: 13px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.b-card.running::before { background: var(--busy); }
+.b-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.b-top .t { font-weight: 600; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-meta { display: flex; gap: 8px; font-size: 11.5px; direction: ltr; flex: none; }
+.b-card p { margin: 2px 0; }
+.open-link { display: inline-block; margin-top: 4px; color: var(--accent); font-size: 12px; cursor: pointer; text-decoration: underline; }
+
+.ev { display: grid; grid-template-columns: 14px minmax(0, max-content) minmax(0, 1fr) auto 10px; align-items: center; column-gap: 8px; margin: -4px 26px 10px 0; padding: 2px 8px; font-size: 12px; direction: rtl; border-right: 2px solid var(--line); cursor: pointer; }
+.ev + .ev { margin-top: -8px; }
+.ev:hover { background: var(--hover); }
+.ev::after { content: "◂"; color: var(--faint); font-size: 9px; grid-row: 1; grid-column: 5; }
+.ev.open-ev::after { content: "▾"; }
+.ev-ic { text-align: center; }
+.ev-what { font-weight: 500; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-d { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-t { font-size: 11px; }
+.ev.open-ev .ev-what { white-space: normal; }
+.ev.open-ev .ev-d { grid-row: 2; grid-column: 2 / -1; white-space: normal; }
+.ev-ai { grid-column: 1 / -1; padding-right: 22px; color: var(--muted); font-style: italic; font-size: 12px; }
+.ev-ai::before { content: "AI · "; font-style: normal; color: var(--faint); font-family: var(--mono); font-size: 10.5px; }
+.ev-more { display: none; grid-column: 1 / -1; margin: 4px 22px 4px 0; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 12px; line-height: 1.5; }
+.ev.open-ev .ev-more { display: grid; }
+.ev-more dt { color: var(--muted); }
+.ev-more dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.slice { display: flex; align-items: center; gap: 8px; margin-top: 6px; direction: ltr; }
+.track { position: relative; flex: 1; height: 8px; background: var(--track); border-radius: 2px; overflow: hidden; min-width: 60px; }
+.track .before { position: absolute; inset: 0 auto 0 0; background: var(--spent); }
+.track .mine { position: absolute; top: 0; bottom: 0; background: var(--ctx); }
+.running .track .mine { background: var(--busy); }
+.slice .lbl { font-size: 11.5px; white-space: nowrap; }
+.slice .lbl .add { color: var(--muted); }
+
+/* compact: below 340px every message is a title line and a data line; a click opens it in place */
+.icons, .chev, .b-line2 { display: none; }
+@container (max-width: 340px) {
+  .b-wrap { padding: 4px 6px; }
+  .turn { margin-bottom: 2px; }
+  .b-card { margin: 0; padding: 3px 6px; border-color: transparent; background: none; border-radius: 4px; }
+  .b-card:hover { background: var(--hover); border-color: transparent; }
+  .b-card::before { display: none; }
+  .b-top { margin: 0; gap: 6px; }
+  .b-top .t { font-size: 13px; font-weight: 500; flex: 1; white-space: normal; overflow: visible; line-height: 1.35; }
+  .b-top .b-meta { display: none; }
+  .b-line2 { display: flex; align-items: center; gap: 8px; margin: 2px 15px 0 0; direction: ltr; justify-content: flex-end; font-size: 11px; }
+  .mtrack { flex: 0 1 70px; height: 5px; min-width: 30px; }
+  .b-line2 .icons { order: -1; margin-inline-end: auto; }
+  .chev { display: inline; color: var(--faint); font-size: 9px; flex: none; }
+  .chev::before { content: "◂"; }
+  .turn.open .chev::before { content: "▾"; }
+  .running .t { color: var(--busy); }
+  .icons { display: inline-flex; gap: 3px; font-size: 11px; flex: none; }
+  .icons sub { font-size: 8px; color: var(--muted); }
+  .b-body, .b-evs { display: none; }
+  .turn.open .b-card { background: var(--panel); border-color: var(--line); }
+  .turn.open .b-body { display: block; padding-top: 4px; }
+  .turn.open .b-evs { display: block; }
+  .turn.open .ev { margin: 2px 4px 2px 0; }
+  .ev { grid-template-columns: 14px minmax(0, 1fr) auto 10px; }
+  .ev-d { grid-row: 2; grid-column: 2 / -1; }
+  .ev-t { grid-row: 1; grid-column: 3; }
+  .ev::after { grid-column: 4; }
+}
+</style>
+</head>
+<body>
+<div class="hist">
+  <div class="hist-title" id="htitle">HISTORY</div>
+  <div class="hist-scroll" id="hist"><div class="empty">טוען…</div></div>
+</div>
+<script>
+const vscode = acquireVsCodeApi();
+const EV = { answer: ["❓", "#f5c2e7"], note: ["✎", "#f9e2af"], stop: ["⏹", "#f38ba8"], slash: ["⌘", "#bac2de"], btw: ["💬", "#94e2d5"], agent: ["🤖", "#b4befe"],
+  commit: ["●", "#bac2de"], push: ["⬆", "#a6e3a1"], merge: ["⎇", "#cba6f7"], worktree: ["⑂", "#89b4fa"], server: ["▶", "#89dceb"], prod: ["🚀", "#fab387"],
+  update: ["↻", "#bac2de"], compact: ["↺", "#bac2de"], fail: ["✕", "#f38ba8"] };
+let S = null;
+const openTurns = new Set();
+const openRows = new Set();
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const money = (x) => `$${Number(x || 0).toFixed(2)}`;
+const pct = (tokens) => Math.round((tokens / S.window) * 100);
+const share = (tokens) => Math.min(100, (tokens / S.window) * 100);
+
+function header(s) {
+  return `HISTORY <span class="sum"><span class="num cost">${money(s.cost)}</span><span class="num time">${s.minutes}m</span><span class="num ctx">${s.ctxPct}%</span></span><span class="name">${esc(s.name)}</span>`;
+}
+function label(t) {
+  const [a, b] = t.ctx;
+  return b < a ? `<span class="ctx">↺ ${pct(b)}%</span>` : `<span class="ctx">${pct(a)}%→${pct(b)}%</span> <span class="add">+${pct(b) - pct(a)}%</span>`;
+}
+function track(t, cls = "") {
+  const [a, b] = t.ctx;
+  const start = b < a ? share(b) : share(a), width = b < a ? 0 : Math.max(share(b) - share(a), 0.6);
+  return `<span class="track ${cls}"><span class="before" style="width:${start}%"></span><span class="mine" style="left:${start}%;width:${width}%"></span></span>`;
+}
+const slice = (t) => `<div class="slice">${track(t)}<span class="lbl num">${label(t)}</span></div>`;
+function icons(t) {
+  const n = {};
+  t.events.forEach((e) => { const k = e[6] ? "fail" : e[0]; n[k] = (n[k] || 0) + 1; });
+  const parts = Object.entries(n).map(([k, c]) => `<span style="color:${(EV[k] || EV.fail)[1]}">${(EV[k] || EV.fail)[0]}${c > 1 ? `<sub>${c}</sub>` : ""}</span>`);
+  return parts.length ? `<span class="icons">${parts.join("")}</span>` : "";
+}
+function ev([kind, time, what, detail, ai, more, fail], key) {
+  const [ic, color] = fail ? EV.fail : EV[kind] || EV.fail;
+  return `<div class="ev${openRows.has(key) ? " open-ev" : ""}" data-ev="${key}"><span class="ev-ic" style="color:${color}">${ic}</span><span class="ev-what" style="color:${color}">${esc(what)}</span><span class="ev-d" dir="auto">${esc(detail)}</span><span class="num time ev-t">${time}</span>${ai ? `<span class="ev-ai">${esc(ai)}</span>` : ""}<dl class="ev-more">${(more || []).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>`;
+}
+function did(t) {
+  if (t.running) return `<span class="busy">עובד…</span>`;
+  return t.summarized ? esc(t.did) : `<span class="pending">${esc(t.did)}</span>`;
+}
+function cards(s) {
+  return `<div class="b-wrap">${s.turns.map((t) => `
+    <div class="turn${openTurns.has(t.uuid) ? " open" : ""}">
+      <div class="b-card${t.running ? " running" : ""}" data-n="${t.n}" data-uuid="${t.uuid}">
+        <div class="b-top"><span class="chev"></span><span class="t">${esc(t.title)}</span><span class="b-meta"><span class="num time">${t.t}</span><span class="num cost" data-tip="${esc(t.br)}">${money(t.cost)}</span></span></div>
+        <div class="b-line2">${track(t, "mtrack")}<span class="num">${label(t)}</span><span class="num cost">${money(t.cost)}</span>${icons(t)}</div>
+        <div class="b-body">
+          <p><span class="k">ביקשת:</span> ${esc(t.ask)}</p>
+          <p><span class="k">קרה:</span> ${did(t)}</p>
+          ${slice(t)}
+          <a class="open-link" data-open="${t.n}">פתח את ההודעה המלאה</a>
+        </div>
+      </div>
+      <div class="b-evs">${t.events.slice().sort((a, b) => a[1].localeCompare(b[1])).map((e, i) => ev(e, `${t.uuid}:${i}`)).join("")}</div>
+    </div>`).join("")}</div>`;
+}
+
+function render() {
+  const h = document.getElementById("hist"), title = document.getElementById("htitle");
+  if (!S || S.empty || S.error) { title.textContent = "HISTORY"; h.innerHTML = `<div class="empty">${esc((S && (S.empty || S.error)) || "טוען…")}</div>`; return; }
+  const atBottom = h.scrollHeight - h.scrollTop - h.clientHeight < 40;
+  const keep = h.scrollTop;
+  title.innerHTML = header(S);
+  h.innerHTML = S.turns.length ? cards(S) + (S.bad ? `<div class="empty">${S.bad} שורות ברשומה לא נקראו</div>` : "") : `<div class="empty">עוד לא נשלחה הודעה בשיחה הזו</div>`;
+  h.scrollTop = atBottom ? h.scrollHeight : keep;   // follow new messages, but never yank the reader away
+}
+
+window.addEventListener("message", (e) => { if (e.data.type === "data") { S = e.data.data; render(); } });
+document.getElementById("hist").addEventListener("click", (e) => {
+  const open = e.target.closest("[data-open]");
+  if (open) return vscode.postMessage({ type: "open", n: Number(open.dataset.open) });
+  const row = e.target.closest("[data-ev]");
+  if (row) { const k = row.dataset.ev; openRows.has(k) ? openRows.delete(k) : openRows.add(k); row.classList.toggle("open-ev"); return; }
+  const card = e.target.closest("[data-n]");
+  if (!card) return;
+  const u = card.dataset.uuid;
+  openTurns.has(u) ? openTurns.delete(u) : openTurns.add(u);
+  card.parentNode.classList.toggle("open");
+  vscode.postMessage({ type: "jump", n: Number(card.dataset.n), total: S.turns.length });
+});
+</script>
+</body>
+</html>
