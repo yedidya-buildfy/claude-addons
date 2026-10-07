@@ -106,3 +106,26 @@ test("subagent row reads its own record for cost, time and tool count", () => {
   assert.deepEqual(r.more.find(([k]) => k === "כלים"), ["כלים", "2 קריאות"]);
   assert.equal(r.aiKey, "agent:abc");
 });
+
+test("a commit is not failed by a later step of the same command", () => {
+  const out = "Exit code 1\n## master...origin/master [ahead 1]\nremote: Internal Server Error\n ! [remote rejected] master -> master";
+  const rows = bashRows("git commit -q -m x && git fetch -q && git push -q origin master", bad(out), "/r/app");
+  assert.deepEqual(kinds(rows)[0], ["commit", "נשמר שינוי", "app", false]);
+  assert.deepEqual(kinds(bashRows("git commit -m x", bad("nothing to commit, working tree clean"), "/r/app")), [["commit", "השמירה נכשלה", "app", true]]);
+});
+
+test("repo name follows cd through a shell variable, and a push names its remote", () => {
+  assert.equal(bashRows('R=/x/claude-addons; cd $R && git commit -m "a" && git log --oneline -1', ok("abc1234 a"), "/r")[0].detail, "claude-addons · abc1234");
+  assert.equal(bashRows("git push origin master", ok("To https://github.com/a/claude-addons.git\n   1111111..2222222  master -> master"), "/r/repo")[0].detail, "claude-addons · 2222222");
+});
+
+test("commands inside a heredoc or a quoted string are not run commands", () => {
+  const heredoc = "cat >> notes.md <<'EOF'\nrun: cd x && git push origin master\nEOF\n";
+  assert.deepEqual(bashRows(heredoc, ok(""), "/r"), []);
+  assert.deepEqual(kinds(bashRows('git commit -m "then && git push origin main"', ok("[main abc1234] then"), "/r/app")).map((k) => k[0]), ["commit"]);
+});
+
+test("a push error after a successful commit does not fail the commit", () => {
+  const rows = bashRows("git commit -q -m x && git push -q origin master", bad("error: failed to push some refs to 'x'\nfatal: unable to access"), "/r/app");
+  assert.deepEqual(kinds(rows).map((k) => [k[0], k[3]]), [["commit", false], ["push", true]]);
+});

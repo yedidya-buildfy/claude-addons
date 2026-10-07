@@ -579,6 +579,7 @@ function runStatusline() {
             session_id: session,
             remaining_percentage: remaining,
             used_pct: rawUsedPct,
+            context_window_size: totalCtx,
             timestamp: Math.floor(Date.now() / 1000)
           });
           fs.writeFileSync(bridgePath, bridgeData);

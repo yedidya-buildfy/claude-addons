@@ -1,6 +1,7 @@
 // history-panel/lib/events.mjs
 // Technical rows: facts read from what Claude ran and what came back. Never a model.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export const first = (s) => String(s || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
@@ -32,9 +33,11 @@ export function rowFromCompact(d) {
 // A git subcommand as a real command word: start of the command or after && ; | (,
 // optionally `git -C <dir>`. Quoted text (echo 'git push', grep "git push") does not match.
 const gitCmd = (cmd, sub) => new RegExp(`(?:^|&&|;|\\|\\||\\(|\\bdo\\b)\\s*(?:[A-Z_]+=\\S+\\s+)*git(?:\\s+-C\\s+(\\S+))?\\s+${sub}(?![\\w-])`).exec(cmd);
+// $VAR in a cd target is read from an assignment earlier in the same command.
+const expand = (cmd, p) => p.replace(/\$\{?(\w+)\}?/g, (m, v) => (new RegExp(`(?:^|[\\s;&])${v}=("?)([^"\\s;&]+)\\1`).exec(cmd) || [])[2] || (v === "HOME" ? os.homedir() : m)).replace(/^~(?=\/|$)/, os.homedir());
 const repoOf = (cmd, cwd, dashC) => {
   const cd = /(?:^|&&|;)\s*cd\s+("?)([^"&;]+)\1\s*&&/.exec(cmd);
-  return path.basename((dashC || (cd && cd[2].trim()) || cwd || "").replace(/\/+$/, "")) || "?";
+  return path.basename(expand(cmd, (dashC || (cd && cd[2].trim()) || cwd || "")).replace(/\/+$/, "")) || "?";
 };
 const argsAfter = (cmd, sub) => {
   const m = new RegExp(`git(?:\\s+-C\\s+\\S+)?\\s+${sub}\\s+([^&;|]*)`).exec(cmd);
@@ -50,7 +53,8 @@ function commitRow(cmd, res, cwd) {
   const head = lineMatch(res.out, /^\[([^\s\]]+)(?: \(root-commit\))? ([0-9a-f]{7,})\] (.+)$/);
   const log = head ? null : lineMatch(res.out, /^([0-9a-f]{7,40}) (.+)$/);
   if (!head && !log) {
-    if (res.isError) return [row("commit", res.at, "השמירה נכשלה", repo, [["מאגר", repo], ["שגיאה", first(res.out)]], { fail: true })];
+    const why = lineMatch(res.out, /^(nothing (?:added )?to commit.*|no changes added to commit.*|Aborting commit.*|.*Please tell me who you are.*|.*pre-commit.*fail.*)$/i);
+    if (res.isError && why) return [row("commit", res.at, "השמירה נכשלה", repo, [["מאגר", repo], ["שגיאה", why[1]]], { fail: true })];
     return [row("commit", res.at, "נשמר שינוי", repo, [["מאגר", repo]])];
   }
   const id = (head ? head[2] : log[1]).slice(0, 7);
@@ -65,9 +69,10 @@ function commitRow(cmd, res, cwd) {
 function pushRow(cmd, res, cwd) {
   const g = gitCmd(cmd, "push");
   if (!g) return [];
-  const repo = repoOf(cmd, cwd, g[1]);
-  const args = argsAfter(cmd, "push");
   const out = String(res.out || "");
+  const to = lineMatch(out, /^To\s+\S*?([^/\s:]+?)(?:\.git)?\/?$/);
+  const repo = to ? to[1] : repoOf(cmd, cwd, g[1]);
+  const args = argsAfter(cmd, "push");
   const range = lineMatch(out, /^\s*\+?\s*([0-9a-f]{7,})\.\.\.?([0-9a-f]{7,})\s+(\S+)\s+->\s+(\S+)/);
   const created = lineMatch(out, /^\s*\*\s+\[new branch\]\s+(\S+)\s+->\s+(\S+)/);
   const branch = range ? range[4] : created ? created[2] : args[1] || "?";
@@ -143,9 +148,16 @@ function updateRow(cmd, res) {
   return [row("update", res.at, "עדכון תוספים הותקן", `${a} → ${b}`, [["לפני", a], ["אחרי", b]])];
 }
 
-export function bashRows(cmd, res, cwd) {
+// The command as the shell runs it: heredoc bodies and quoted strings are data, not commands.
+export const skeleton = (cmd) => cmd
+  .replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n[\s\S]*?\n\s*\2(?=\s|$)/g, "<<DOC")
+  .replace(/'[^']*'/g, "''")
+  .replace(/"(?:[^"\\]|\\.)*"/g, '""');
+
+export function bashRows(full, res, cwd) {
+  const cmd = skeleton(full);
   const rows = [...worktreeRow(cmd, res, cwd), ...commitRow(cmd, res, cwd), ...mergeRow(cmd, res, cwd)];
-  const prod = prodRow(cmd, res, cwd);
+  const prod = prodRow(full.replace(/<<-?\s*(['"]?)(\w+)\1[^\n]*\n[\s\S]*?\n\s*\2(?=\s|$)/g, "<<DOC"), res, cwd);
   if (!prod.length || !/push/.test(cmd)) rows.push(...pushRow(cmd, res, cwd)); // a push to production is the prod row
   rows.push(...prod, ...serverRow(cmd, res, cwd), ...updateRow(cmd, res));
   return rows;
