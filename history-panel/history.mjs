@@ -94,6 +94,15 @@ const [cmd, id, arg] = process.argv.slice(2);
 if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   if (cmd === "build") process.stdout.write(JSON.stringify(build(id)));
   else if (cmd === "entry") process.stdout.write(entryMarkdown(id, Number(arg)));
-  else if (cmd === "summarize") { const { run } = await import("./lib/summarize.mjs"); await run(id, { load, readCache, CACHE }); }
+  else if (cmd === "summarize") {
+    if (process.env.HISTORY_PANEL_CHILD) process.exit(0);         // our own `claude -p` fallback
+    if (id === "--hook") {                                          // Stop hook: return at once, work detached
+      const input = JSON.parse(fs.readFileSync(0, "utf8") || "{}");
+      if (SAFE.test(input.session_id || "")) spawn(process.execPath, [new URL(import.meta.url).pathname, "summarize", input.session_id], { detached: true, stdio: "ignore" }).unref();
+      process.exit(0);
+    }
+    const { run } = await import("./lib/summarize.mjs");
+    await run(id, { load, readCache, CACHE });
+  }
   else { process.stderr.write("usage: history.mjs build|entry|summarize <session> [n]\n"); process.exit(2); }
 }
