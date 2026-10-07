@@ -65,7 +65,8 @@ body { background: var(--side); color: var(--ink); font: calc(var(--fs) - 1px)/1
 .ev-more dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; white-space: pre-wrap; }
 
 .slice { display: flex; align-items: center; gap: 8px; margin-top: 6px; direction: ltr; }
-.track { position: relative; flex: 1; height: 8px; background: var(--track); border-radius: 2px; overflow: hidden; min-width: 60px; }
+/* the whole window stays visible on any background, hovered cards included: a light fill plus a hairline edge */
+.track { position: relative; flex: 1; height: 8px; background: color-mix(in srgb, var(--ink) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 18%, transparent); border-radius: 2px; overflow: hidden; min-width: 60px; }
 .track .before { position: absolute; inset: 0 auto 0 0; background: var(--spent); }
 .track .mine { position: absolute; top: 0; bottom: 0; background: var(--ctx); }
 .running .track .mine { background: var(--busy); }
