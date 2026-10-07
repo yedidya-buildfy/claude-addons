@@ -40,7 +40,7 @@ body { background: var(--side); color: var(--ink); font: calc(var(--fs) - 1px)/1
 .b-card p { margin: 2px 0; }
 .links { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
 /* one fork button per message, shown only while the pointer is on it */
-.fork { position: absolute; left: 6px; top: 4px; visibility: hidden; background: var(--side); font: inherit; font-size: calc(var(--fs) - 2px); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; cursor: pointer; white-space: nowrap; line-height: 1.6; }
+.fork { position: absolute; left: 6px; bottom: 4px; visibility: hidden; background: var(--side); font: inherit; font-size: calc(var(--fs) - 2px); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; cursor: pointer; white-space: nowrap; line-height: 1.5; padding: 0 4px; }
 .fork:hover { border-color: var(--accent); color: var(--accent); }
 .b-card:hover .fork { visibility: visible; }
 .b-line3 { display: none; }
@@ -84,12 +84,12 @@ body { background: var(--side); color: var(--ink); font: calc(var(--fs) - 1px)/1
   .b-top .t { font-size: calc(var(--fs) - 1px); font-weight: 500; flex: 1; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.3; }
   .b-top .b-meta { display: none; }
   /* fixed columns, so bars, percents and costs line up in every row */
-  .b-line2 { display: grid; grid-template-columns: 64px 9ch 6.5ch; justify-content: end; align-items: center; column-gap: 8px; margin: 2px 0 0; direction: ltr; font-size: calc(var(--fs) - 2.5px); white-space: nowrap; }
-  .mtrack { width: 64px; height: 6px; min-width: 0; }
+  .b-line2 { display: grid; grid-template-columns: 52px 9ch 6.5ch; justify-content: end; align-items: center; column-gap: 8px; margin: 2px 0 0; direction: ltr; font-size: calc(var(--fs) - 2.5px); white-space: nowrap; }
+  .mtrack { width: 52px; height: 6px; min-width: 0; }
   .c-pct { text-align: left; }
   .c-cost { text-align: right; }
   .b-line3 { display: flex; align-items: center; gap: 8px; margin-top: 3px; direction: rtl; }
-  .fork { top: 2px; left: 2px; }
+  .fork { bottom: 2px; left: 2px; }   /* the data and marks lines are right-aligned: their left end is free */
   .b-line3 .icons { direction: ltr; }
   .b-line2 .icons { flex: none; }
   .b-wrap { position: relative; padding-right: 14px; }
@@ -156,7 +156,7 @@ function did(t) {
   if (t.running) return `<span class="busy">עובד…</span>`;
   return t.summarized ? esc(t.did) : `<span class="pending">${esc(t.did)}</span>`;
 }
-const forkBtn = (t, cls = "") => `<button class="fork ${cls}" data-fork="${t.n}" title="שיחה חדשה בטרמינל חדש, שזוכרת הכול עד ההודעה הזו ושום דבר אחריה">⑂ פצל מכאן</button>`;
+const forkBtn = (t, cls = "") => `<button class="fork ${cls}" data-fork="${t.n}">⑂ פצל</button>`;
 function cards(s) {
   return `<div class="b-wrap">${s.turns.map((t) => `
     <div class="turn${openTurns.has(t.uuid) ? " open" : ""}${t.events.length ? " has-marks" : ""}">
