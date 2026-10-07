@@ -1,3 +1,4 @@
+import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 const HEB = /[֐-׿]/
@@ -97,7 +98,68 @@ export function layout(text: string, columns: number): Chunk[] {
   return chunks
 }
 
+// The prompt box is drawn by Claude Code itself; a mod cannot lay it out. What a mod
+// can do: keep the draft (prompt.edit) and show it right-aligned just above the box.
+const draft = atom({ plugin: 'hebrew-rtl', key: 'draft' } as const, '')
+
+// A typed prompt as rows: Hebrew lines wrapped and mirrored for RTL, other lines as typed.
+export function promptRows(text: string, width: number): string[] {
+  const out: string[] = []
+  for (const line of text.split('\n')) {
+    if (!HEB.test(line)) { out.push(line); continue }
+    for (const piece of wrap(mirror(line.replace(/\[Image #\d+\]\s*/g, '')), Math.max(10, width))) {
+      const firstStrong = [...piece].map(strong).find(Boolean)
+      out.push((firstStrong === 'L' ? RLM : '') + piece)
+    }
+  }
+  return out
+}
+
 export const register: Register = on => {
+  // A sent prompt in the transcript, right-aligned, its marker on the right.
+  on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.origin.kind !== 'composer' || !HEB.test(e.props.text)) return next(e)
+    const { Box, Text } = $.ui.resolve(e)
+    const rows = promptRows(e.props.text, (e.viewport?.columns ?? 80) - 6)
+    return (
+      <Box flexDirection="column" width="100%">
+        {rows.map((r, j) => (
+          <Box key={`u${j}`} width="100%" justifyContent="flex-end">
+            <Text>{r || ' '}</Text>
+            <Text color="suggestion">{j ? '  ' : ' ❯'}</Text>
+          </Box>
+        ))}
+      </Box>
+    )
+  })
+
+  // Live preview of a Hebrew draft, right-aligned, just above the prompt box.
+  on('prompt.edit', async ($, e, next) => {
+    const r = await next(e)
+    await update($, draft, () => r.text)
+    return r
+  })
+  on('prompt.submit', async ($, e, next) => {
+    await update($, draft, () => '')
+    return next(e)
+  })
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.hasSurvey) return next(e)
+    const text = await read($, draft)
+    if (!HEB.test(text)) return next(e)
+    const { Box, Text } = $.ui.resolve(e)
+    const rows = promptRows(text, (e.viewport?.columns ?? 80) - 6).slice(-6)
+    return (
+      <Box flexDirection="column" width="100%">
+        {rows.map((r, j) => (
+          <Box key={`d${j}`} width="100%" justifyContent="flex-end">
+            <Text dimColor>{r || ' '}</Text>
+          </Box>
+        ))}
+      </Box>
+    )
+  })
+
   on('ui.render', { component: 'AssistantMessage' }, ($, e, next) => {
     if (e.surface !== 'terminal' || e.props.isSummary || !HEB.test(e.props.text)) return next(e)
     const { Box, Text, Markdown } = $.ui.resolve(e)

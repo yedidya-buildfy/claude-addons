@@ -27,3 +27,19 @@ test('draws right-aligned rows on the terminal', async $ => {
   })
   expect((await m.findAll({ type: 'Text', text: 'שלום עולם' })).length).toBe(1)
 })
+
+import { promptRows } from './register'
+
+test('a sent Hebrew prompt becomes right-aligned rows; English lines stay as typed', () => {
+  expect(promptRows('שלום (עולם)\nnpm run dev', 40)).toEqual(['שלום )עולם(', 'npm run dev'])
+  for (const r of promptRows('אחת שתיים שלוש ארבע חמש שש שבע שמונה', 12)) expect([...r].length <= 12).toBe(true)
+})
+
+test('draws a sent Hebrew prompt right-aligned with its marker', async $ => {
+  const m = await $.ui.mount({
+    plugin: 'hebrew-rtl', surface: 'terminal', component: 'UserMessage',
+    props: { text: 'תתקן את הקלט', origin: { kind: 'composer' }, isExpanded: true },
+  })
+  expect((await m.findAll({ type: 'Text', text: 'תתקן את הקלט' })).length).toBe(1)
+  expect((await m.findAll({ type: 'Text', text: ' ❯' })).length).toBe(1)
+})

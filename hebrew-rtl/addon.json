@@ -8,16 +8,32 @@
     "file": "~/.claude/mods/hebrew-rtl/hooks/register.tsx"
   },
   "files": [
-    { "from": "plugin/.claude-plugin/plugin.json", "to": "~/.claude/mods/hebrew-rtl/.claude-plugin/plugin.json" },
-    { "from": "plugin/hooks/hooks.json", "to": "~/.claude/mods/hebrew-rtl/hooks/hooks.json" },
-    { "from": "plugin/hooks/register.tsx", "to": "~/.claude/mods/hebrew-rtl/hooks/register.tsx" }
+    {
+      "from": "plugin/.claude-plugin/plugin.json",
+      "to": "~/.claude/mods/hebrew-rtl/.claude-plugin/plugin.json"
+    },
+    {
+      "from": "plugin/hooks/hooks.json",
+      "to": "~/.claude/mods/hebrew-rtl/hooks/hooks.json"
+    },
+    {
+      "from": "plugin/hooks/register.tsx",
+      "to": "~/.claude/mods/hebrew-rtl/hooks/register.tsx"
+    },
+    {
+      "from": "plugin/types/index.d.ts",
+      "to": "~/.claude/mods/hebrew-rtl/types/index.d.ts"
+    }
   ],
   "claudeSettings": [
-    { "file": "settings.json.snippet" }
+    {
+      "file": "settings.json.snippet"
+    }
   ],
   "group": "טרמינל",
   "details": [
     "כל שורה בעברית בתשובה מיושרת לימין, כמו במסמך Word. שורה ארוכה נשברת לכמה שורות, וכל אחת מהן מיושרת לימין.",
+    "גם ההודעה ששלחת מוצגת מימין לשמאל. בזמן ההקלדה בעברית מופיעה מעל תיבת הכתיבה שורה מיושרת לימין שמראה את מה שאתה כותב (את התיבה עצמה קלוד קוד מצייר, ותוסף לא יכול לשנות אותה).",
     "נקודות ומספרים של רשימה עוברים לצד ימין, והזחה של תתי־פריטים נספרת מימין. סוגריים סביב עברית מוצגים בכיוון הנכון.",
     "קוד, טבלאות ושורות שכולן באנגלית נשארים כמו קודם.",
     "מה עוד חסר: הדגשה באמצע משפט עברי נעלמת, טבלאות בעברית לא מתוקנות, ושורת הסיכום האפורה לא מתוקנת.",
