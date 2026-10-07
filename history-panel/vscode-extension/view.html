@@ -19,7 +19,8 @@
 html, body { margin: 0; height: 100%; }
 body { background: var(--side); color: var(--ink); font: calc(var(--fs) - 1px)/1.45 var(--ui); }
 .hist { height: 100vh; display: flex; flex-direction: column; container-type: inline-size; }
-.hist-scroll { overflow-y: auto; flex: 1; }
+.hist-scroll { overflow-y: auto; flex: 1; scrollbar-width: none; }   /* scrolls by wheel/trackpad; no bar eating width */
+.hist-scroll::-webkit-scrollbar { display: none; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
 .cost { color: var(--cost); } .time { color: var(--time); } .ctx { color: var(--ctx); }
 .k { color: var(--muted); font-weight: 500; }
@@ -69,7 +70,6 @@ body { background: var(--side); color: var(--ink); font: calc(var(--fs) - 1px)/1
 .track { position: relative; flex: 1; height: 8px; background: color-mix(in srgb, var(--ink) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 18%, transparent); border-radius: 2px; overflow: hidden; min-width: 60px; }
 .track .before { position: absolute; inset: 0 auto 0 0; background: var(--spent); }
 .track .mine { position: absolute; top: 0; bottom: 0; background: var(--ctx); }
-.running .track .mine { background: var(--busy); }
 .slice .lbl { font-size: 11.5px; white-space: nowrap; }
 .slice .lbl .add { color: var(--muted); }
 
@@ -132,6 +132,14 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 const money = (x) => `$${Number(x || 0).toFixed(2)}`;
 const pct = (tokens) => Math.round((tokens / S.window) * 100);
 const share = (tokens) => Math.min(100, (tokens / S.window) * 100);
+// Same fill level and colours as the status line's context meter: the window less the
+// ~33k-token buffer Claude keeps for auto-compact, then green <50, yellow <65, orange <80, red.
+function level(tokens) {
+  const buffer = Math.min(100, (33000 / S.window) * 100);
+  const usable = Math.max(0, ((100 - (tokens / S.window) * 100 - buffer) / (100 - buffer)) * 100);
+  const used = Math.max(0, Math.min(100, Math.round(100 - usable)));
+  return used < 50 ? "#a6e3a1" : used < 65 ? "#f9e2af" : used < 80 ? "#fab387" : "#f38ba8";
+}
 
 function label(t) {
   const [a, b] = t.ctx;
@@ -140,7 +148,7 @@ function label(t) {
 function track(t, cls = "") {
   const [a, b] = t.ctx;
   const start = b < a ? share(b) : share(a), width = b < a ? 0 : Math.max(share(b) - share(a), 0.6);
-  return `<span class="track ${cls}"><span class="before" style="width:${start}%"></span><span class="mine" style="left:${start}%;width:${width}%"></span></span>`;
+  return `<span class="track ${cls}"><span class="before" style="width:${start}%"></span><span class="mine" style="left:${start}%;width:${width}%;background:${level(b)}"></span></span>`;
 }
 const slice = (t) => `<div class="slice">${track(t)}<span class="lbl num">${label(t)}</span></div>`;
 function icons(t) {
@@ -163,7 +171,7 @@ function cards(s) {
     <div class="turn${openTurns.has(t.uuid) ? " open" : ""}${t.events.length ? " has-marks" : ""}">
       <div class="b-card${t.running ? " running" : ""}" data-n="${t.n}" data-uuid="${esc(t.uuid)}">
         <div class="b-top"><span class="chev"></span><span class="t">${esc(t.title)}</span><span class="b-meta"><span class="num time">${t.t}</span><span class="num cost" data-tip="${esc(t.br)}">${money(t.cost)}</span></span></div>
-        <div class="b-line2">${track(t, "mtrack")}<span class="num ctx c-pct">${pct(t.ctx[0])}→${pct(t.ctx[1])}%</span><span class="num cost c-cost">${money(t.cost)}</span></div>
+        <div class="b-line2">${track(t, "mtrack")}<span class="num c-pct" style="color:${level(t.ctx[1])}">${pct(t.ctx[0])}→${pct(t.ctx[1])}%</span><span class="num cost c-cost">${money(t.cost)}</span></div>
         ${t.events.length ? `<div class="b-line3">${icons(t)}</div>` : ""}
         ${t.running ? "" : forkBtn(t)}
         <div class="b-body">
