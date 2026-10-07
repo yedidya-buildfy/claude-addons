@@ -115,6 +115,12 @@ export function promptRows(text: string, width: number): string[] {
   return out
 }
 
+// The draft with a thin bar where the next typed character lands.
+export function withCursor(text: string, cursor: number): string {
+  const c = Math.max(0, Math.min(text.length, cursor))
+  return text.slice(0, c) + '▏' + text.slice(c)
+}
+
 export const register: Register = on => {
   // A sent prompt in the transcript, right-aligned, its marker on the right.
   on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
@@ -133,11 +139,15 @@ export const register: Register = on => {
     )
   })
 
-  // Live preview of a Hebrew draft, right-aligned, just above the prompt box.
+  // Live preview of a Hebrew draft, right-aligned, just above the prompt box, with the
+  // cursor shown. The box's own (unreadable, unordered) Hebrew is dimmed so the eye
+  // goes to the readable copy.
   on('prompt.edit', async ($, e, next) => {
     const r = await next(e)
-    await update($, draft, () => r.text)
-    return r
+    const hebrew = HEB.test(r.text)
+    await update($, draft, () => (hebrew ? withCursor(r.text, r.cursor) : ''))
+    if (!hebrew) return r
+    return { ...r, decorations: [...(r.decorations ?? []), { start: 0, end: r.text.length, dimColor: true }] }
   })
   on('prompt.submit', async ($, e, next) => {
     await update($, draft, () => '')
@@ -153,7 +163,7 @@ export const register: Register = on => {
       <Box flexDirection="column" width="100%">
         {rows.map((r, j) => (
           <Box key={`d${j}`} width="100%" justifyContent="flex-end">
-            <Text dimColor>{r || ' '}</Text>
+            <Text color="claude">{r || ' '}</Text>
           </Box>
         ))}
       </Box>
