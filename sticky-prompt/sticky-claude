@@ -11,20 +11,27 @@ Why a wrapper and not a hook: everything else was tried and lost.
     control sequences, so the marks never reach the terminal.
 
 Sitting in the middle solves both: the marks are injected into Claude's own
-output, at the exact bytes where it draws the message, so they land on the real
-rows and are never redrawn.
+output, so they land on the real rows.
 
-What it looks for: Claude draws a submitted message as a background-coloured
-block whose first row opens with the `❯` glyph. That combination appears
-nowhere else — not even in the input box while you type. The marks go around
-the block: prompt-start before its first row, command-start and command-running
-at the end of its last row, so exactly the message rows get pinned.
+What it looks for: Claude draws a sent message as a background-coloured block
+whose first row opens with the `❯` glyph. That combination appears nowhere
+else — not even in the input box while you type.
+
+When it marks: not when the block is drawn. While a turn runs Claude redraws
+the same message many times as the rows below it change (a queued message is
+redrawn every frame), and a mark set on each draw stays behind on a row that
+later holds reply text — the pin then shows the wrong words and the newest
+message is lost among stale marks. So the wrapper keeps a small model of the
+screen (which row holds which message block) and marks a block once it has
+settled: when Claude goes quiet, or just before its first row scrolls off the
+top. The mark is written by stepping the cursor to that row and back.
 
 Sticky scroll pins at most `terminal.integrated.stickyScroll.maxLineCount` rows
 (default 5, hard max 10) and never more than 40% of the terminal height, so a
 long message is shown cut with an ellipsis. That is VS Code's cut, not ours.
 """
 import codecs
+import ctypes
 import fcntl
 import os
 import pty
@@ -34,23 +41,19 @@ import signal
 import struct
 import sys
 import termios
+import time
 import tty
 
 BEL = b"\a"
 OPEN = b"\x1b]633;D;0" + BEL + b"\x1b]633;A" + BEL
 CLOSE_B = b"\x1b]633;B" + BEL + b"\x1b]633;C" + BEL
 
-# background colour on, then a foreground colour, then the prompt glyph
-BOX_START = re.compile(
-    rb"\x1b\[48;[25];[\d;]+m(?=\x1b\[38;[25];[\d;]+m\xe2\x9d\xaf )")
-BOX_END = b"\x1b[49m"
-# cursor parking that follows the final row of the block
-TRAILING_MOVES = re.compile(rb"(?:\r|\x1b\[\d*[ABCD])+$")
-# how Claude steps from one row of the block to the next
-ROW_BREAK = re.compile(rb"\r(?:\x1b\[\d*[CD])*\x1b\[\d*B")
-ANSI = re.compile(rb"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\a\x1b]*(?:\a|\x1b\\)")
-
-HOLD_LIMIT = 1 << 16   # give up waiting for the end of a block after this much
+# one escape sequence (CSI, OSC, or a short ESC form), a control byte, or text
+TOKEN = re.compile(rb"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\a\x1b]*(?:\a|\x1b\\)"
+                   rb"|\x1b[()][0-9A-Za-z]|\x1b[^\[\]()]|[\r\n]|[^\x1b\r\n]+")
+INCOMPLETE = re.compile(rb"\x1b(?:\[[0-?]*[ -/]*|\][^\a\x1b]*\x1b?|[()])?$")
+GLYPH = "❯ ".encode()   # with a plain space; the input box uses a no-break one
+QUIET = 0.4   # seconds without output after which the screen counts as settled
 
 # Rows to pin. Closing the block after this many rows fixes the pinned window at
 # the first N rows of the message, instead of leaving it to VS Code to work out
@@ -60,55 +63,190 @@ try:
 except ValueError:
     ROWS_PINNED = 3
 
+HEB = re.compile("[֐-׿]")
+LTR_RUN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 ._/:@#-]*[A-Za-z0-9])?")
 
-def command_name(block):
+
+def logical(row):
+    """Claude draws Hebrew rows already reversed (the terminal has no bidi);
+    turn one back into reading order for the command name."""
+    if not HEB.search(row):
+        return row
+    return LTR_RUN.sub(lambda m: m[0][::-1], row[::-1])
+
+
+def command_name(rows):
     """The message text, for VS Code's go-to-recent-command list."""
-    text = ANSI.sub(b"", block).replace(b"\r", b" ")
-    text = b" ".join(text.split())
-    text = text.decode("utf-8", "replace").lstrip("❯ ").strip()
+    rows = [rows[0].removeprefix("❯ ")] + rows[1:] if rows else rows
+    text = " ".join(logical(" ".join(r.split())) for r in rows)
     return text.replace("\\", "\\x5c").replace(";", "\\x3b").encode("utf-8")
 
 
-class Marker:
-    """Injects the marks into Claude's output stream."""
+class Block:
+    def __init__(self, row):
+        self.row = row          # its first row on screen
+        self.last = row         # its last row with text
+        self.rows = {}          # row -> text drawn there
+        self.marked = False
+        # Sent, not queued: a sent message's text gets its own colour after the
+        # glyph; a queued one stays in the glyph's grey until its turn starts.
+        self.sent = False
 
-    def __init__(self):
+    def text(self):
+        return [self.rows[r] for r in sorted(self.rows)]
+
+
+class Marker:
+    """Follows Claude's output on a model of the screen and marks each message
+    block once, after it has settled."""
+
+    def __init__(self, height, row):
+        self.height = height
+        self.row = row          # the cursor's screen row, from 0
+        self.col0 = True        # cursor known to be in the first column
+        self.blocks = {}        # first row -> Block
+        self.ghosts = {}        # first row -> text of a marked block erased there
+        self.drawing = None     # block whose rows are being drawn now
+        self.colours = 0        # 1 after a background colour, 2 after bg + fg
+        self.bg = False         # a background colour is on
         self.held = b""
+
+    def resize(self, height, row):
+        # ponytail: a reflow moves rows we cannot follow; unmarked blocks are dropped
+        self.height, self.row = height, min(row, height - 1)
+        self.blocks = {r: b for r, b in self.blocks.items() if b.marked}
+        self.drawing = None
 
     def feed(self, chunk):
         data = self.held + chunk
-        self.held = b""
+        cut = INCOMPLETE.search(data)
+        end = cut.start() if cut and cut.start() < len(data) else len(data)
+        self.held = data[end:]
         out = []
-        pos = 0
-        while True:
-            start = BOX_START.search(data, pos)
-            if not start:
-                break
-            end = data.find(BOX_END, start.end())
-            if end == -1:
-                # The block is split across reads. Emit everything before it and
-                # keep the rest until the tail arrives.
-                out.append(data[pos:start.start()])
-                self.held = data[start.start():]
-                if len(self.held) > HOLD_LIMIT:
-                    out.append(self.held)
-                    self.held = b""
-                return b"".join(out)
-            block = data[start.start():end]
-            parked = TRAILING_MOVES.search(block)
-            last_row = parked.start() if parked else len(block)
-            breaks = [m.start() for m in ROW_BREAK.finditer(block, 0, last_row)]
-            # close the block after ROWS_PINNED rows, or at its end if it is shorter
-            cut = breaks[ROWS_PINNED - 1] if len(breaks) >= ROWS_PINNED else last_row
-            out += [data[pos:start.start()], OPEN, block[:cut], CLOSE_B,
-                    b"\x1b]633;E;", command_name(block[:last_row]), BEL, block[cut:]]
-            pos = end
-        out.append(data[pos:])
+        for tok in TOKEN.findall(data[:end]):
+            out.append(self.step(tok))
+            out.append(tok)
         return b"".join(out)
 
     def drain(self):
         held, self.held = self.held, b""
         return held
+
+    def settle(self):
+        """Marks every finished, unmarked block; empty while a draw is half done."""
+        if self.held or self.drawing:
+            return b""
+        return b"".join(self.mark(b) for _, b in sorted(self.blocks.items())
+                        if b.sent and not b.marked)
+
+    def waiting(self):
+        return any(b.sent and not b.marked for b in self.blocks.values())
+
+    def mark(self, block):
+        block.marked = True
+        up = self.row - block.row
+        move = b"\x1b[%dA" % up if up > 0 else b"\x1b[%dB" % -up if up < 0 else b""
+        down = min(block.last, block.row + ROWS_PINNED - 1, self.height - 1) - block.row
+        return b"".join([b"\x1b7", move, b"\r", OPEN, b"\x1b[%dB" % down if down else b"",
+                         b"\x1b[999C", CLOSE_B, b"\x1b]633;E;", command_name(block.text()),
+                         BEL, b"\x1b8"])
+
+    def overwrite(self, row):
+        """Something else was drawn on `row`: a block starting there is gone."""
+        block = self.blocks.get(row)
+        if block and block is not self.drawing:
+            del self.blocks[row]
+            if block.marked:
+                self.ghosts[row] = block.text()
+
+    def step(self, tok):
+        """Updates the model for one token; returns bytes to send before it."""
+        if tok == b"\r":
+            self.col0 = True
+        elif tok == b"\n":
+            if self.row < self.height - 1:
+                self.row += 1
+                return b""
+            # the top row is about to scroll into history: mark its block first
+            top = self.blocks.get(0)
+            pre = (self.mark(top) if top and top.sent and not top.marked
+                   and top is not self.drawing else b"")
+            self.blocks = {r - 1: b for r, b in self.blocks.items() if r > 0}
+            self.ghosts = {r - 1: t for r, t in self.ghosts.items() if r > 0}
+            for b in self.blocks.values():
+                b.row -= 1
+                b.last -= 1
+                b.rows = {r - 1: t for r, t in b.rows.items()}
+            return pre
+        elif tok.startswith(b"\x1b["):
+            self.csi(tok)
+        elif tok.startswith(b"\x1b"):
+            pass
+        else:
+            self.text(tok)
+        return b""
+
+    def csi(self, tok):
+        final, params = tok[-1:], tok[2:-1]
+        nums = [int(p) if p.isdigit() else 0 for p in params.split(b";")]
+        n = max(1, nums[0])
+        if final == b"m":
+            if params.startswith((b"48;2;", b"48;5;")):
+                self.colours, self.bg = 1, True
+            elif params.startswith(b"38;") and self.colours == 1:
+                self.colours = 2
+                if self.row in self.blocks:   # recolouring a block in place
+                    self.blocks[self.row].sent = True
+            elif params.startswith(b"38;") and self.drawing:
+                self.drawing.sent = True
+            else:
+                self.colours = 0
+                if params in (b"49", b"0", b""):
+                    self.bg = False
+                    if self.drawing:
+                        self.finish()
+            return
+        self.colours = 0
+        if final == b"A":
+            self.row = max(0, self.row - n)
+        elif final == b"B":
+            self.row = min(self.height - 1, self.row + n)
+        elif final in b"CD":
+            self.col0 = False
+        elif final == b"G":
+            self.col0 = n == 1
+        elif final == b"H":
+            self.row, self.col0 = min(self.height, n) - 1, max(1, (nums + [0])[1]) == 1
+        elif final == b"K" and (nums[0] == 2 or self.col0):
+            self.overwrite(self.row)
+        elif final == b"J":
+            # ponytail: 1J (clear above) is treated like a full clear
+            first = self.row if nums[0] == 0 else 0
+            self.blocks = {r: b for r, b in self.blocks.items() if r < first}
+            self.ghosts = {r: t for r, t in self.ghosts.items() if r < first}
+
+    def text(self, tok):
+        starts = self.colours == 2 and tok.startswith(GLYPH)
+        self.colours = 0
+        if starts:
+            self.overwrite(self.row)
+            self.drawing = self.blocks[self.row] = Block(self.row)
+        if self.drawing:
+            if self.row != self.drawing.row:
+                self.overwrite(self.row)
+            self.drawing.rows[self.row] = self.drawing.rows.get(self.row, "") + tok.decode("utf-8", "replace")
+            self.drawing.last = max(self.drawing.last, self.row)
+        elif not (self.bg and self.row in self.blocks):
+            # (text on a block's background is Claude touching up that block,
+            # e.g. recolouring a queued message once its turn starts)
+            self.overwrite(self.row)
+        self.col0 = False
+
+    def finish(self):
+        block, self.drawing = self.drawing, None
+        # the same message drawn again where it already was keeps its mark
+        if self.ghosts.pop(block.row, None) == block.text():
+            block.marked = True
 
 
 # Hebrew letter -> the English key it sits on (standard Hebrew layout).
@@ -245,6 +383,52 @@ def write_all(fd, data):
             select.select([], [fd], [])
 
 
+CURSOR_REPORT = re.compile(rb"\x1b\[(\d+);\d+R")
+STATE_DIR = os.path.expanduser("~/.claude/terminal-state")
+
+
+def turn_running(tty_name):
+    """The tab-status add-on's record of this session: red while Claude works.
+    Without it (add-on missing, session not started) quiet alone decides."""
+    try:
+        with open(os.path.join(STATE_DIR, f"tty.{tty_name}.session")) as f:
+            session = f.read().strip()
+        with open(os.path.join(STATE_DIR, f"{session}.state")) as f:
+            return f.read().strip() == "red"
+    except (OSError, ValueError):
+        return False
+
+
+def child_tty(fd):
+    try:
+        libc = ctypes.CDLL(None)
+        libc.ptsname.restype = ctypes.c_char_p
+        return os.path.basename(libc.ptsname(fd).decode())
+    except (OSError, AttributeError, TypeError):
+        return ""
+
+
+def screen_height():
+    try:
+        return struct.unpack("HHHH", fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b"\0" * 8))[0] or 24
+    except OSError:
+        return 24
+
+
+def cursor_row(stdin_fd, height):
+    """Asks the terminal where the cursor is (stdin already raw); returns the
+    row from 0 and any keys typed meanwhile."""
+    write_all(sys.stdout.fileno(), b"\x1b[6n")
+    got, deadline = b"", time.monotonic() + 0.5
+    while time.monotonic() < deadline:
+        if select.select([stdin_fd], [], [], 0.05)[0]:
+            got += os.read(stdin_fd, 1024)
+            m = CURSOR_REPORT.search(got)
+            if m:
+                return int(m[1]) - 1, got[:m.start()] + got[m.end():]
+    return height - 1, got   # no answer: assume the bottom, where a shell prompt usually is
+
+
 def main():
     argv = ["claude"] + sys.argv[1:]
     real = os.environ.get("STICKY_CLAUDE_BIN") or "claude"
@@ -254,36 +438,59 @@ def main():
     if not sys.stdout.isatty() or not sys.stdin.isatty():
         os.execvp(real, argv)
 
+    stdin_fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(stdin_fd)
+    tty.setraw(stdin_fd)
+    row, typed = cursor_row(stdin_fd, screen_height())
+    marker = Marker(screen_height(), row)
+
+    size = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b"\0" * 8)
     pid, fd = pty.fork()
     if pid == 0:
+        fcntl.ioctl(0, termios.TIOCSWINSZ, size)   # Claude starts at the right size
         os.execvp(real, argv)
         os._exit(127)
+
+    tty_name = child_tty(fd)
+    asked = [False]   # a cursor report is on its way after a resize
 
     def sync_size(*_):
         try:
             size = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, b"\0" * 8)
             fcntl.ioctl(fd, termios.TIOCSWINSZ, size)
         except OSError:
-            pass
+            return
+        marker.resize(struct.unpack("HHHH", size)[0] or 24, marker.row)
+        os.write(sys.stdout.fileno(), b"\x1b[6n")
+        asked[0] = True
 
-    sync_size()
     signal.signal(signal.SIGWINCH, sync_size)
 
-    stdin_fd = sys.stdin.fileno()
-    saved = termios.tcgetattr(stdin_fd)
-    marker = Marker()
     slash = None if os.environ.get("STICKY_HEBREW_SLASH") == "0" else SlashFix(hebrew_command_names())
+    last_out = time.monotonic()
     try:
-        tty.setraw(stdin_fd)
+        if typed:
+            write_all(fd, typed)
         while True:
             try:
                 readable, _, _ = select.select([stdin_fd, fd], [], [], 0.05)
             except InterruptedError:
                 continue
-            if not readable and marker.held:
-                write_all(sys.stdout.fileno(), marker.drain())
+            # Quiet is not enough mid-turn (Claude pauses, then rows move on),
+            # so wait for the turn to end; rows scrolling away are marked anyway.
+            if (not readable and time.monotonic() - last_out > QUIET
+                    and marker.waiting() and not turn_running(tty_name)):
+                settled = marker.settle()
+                if settled:
+                    write_all(sys.stdout.fileno(), settled)
             if stdin_fd in readable:
                 data = os.read(stdin_fd, 65536)
+                if asked[0]:
+                    m = CURSOR_REPORT.search(data)
+                    if m:
+                        asked[0] = False
+                        marker.resize(marker.height, int(m[1]) - 1)
+                        data = data[:m.start()] + data[m.end():]
                 if data:
                     data = english_shortcuts(data)
                     write_all(fd, slash.feed(data) if slash else data)
@@ -294,6 +501,7 @@ def main():
                     break
                 if not data:
                     break
+                last_out = time.monotonic()
                 write_all(sys.stdout.fileno(), marker.feed(data))
     finally:
         termios.tcsetattr(stdin_fd, termios.TCSAFLUSH, saved)
@@ -307,7 +515,10 @@ def main():
 
 if __name__ == "__main__":
     if "--filter" in sys.argv[1:2]:
-        # Transform a recorded stream on stdin — used by selftest.sh.
-        sys.stdout.buffer.write(Marker().feed(sys.stdin.buffer.read()))
+        # Transform a recorded stream on stdin — used by selftest.sh:
+        # --filter HEIGHT START_ROW
+        height, row = (int(a) for a in sys.argv[2:4])
+        m = Marker(height, row)
+        sys.stdout.buffer.write(m.feed(sys.stdin.buffer.read()) + m.settle())
     else:
         main()

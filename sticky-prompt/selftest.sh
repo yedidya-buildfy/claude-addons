@@ -3,7 +3,7 @@
 # Run: ./selftest.sh
 cd "$(dirname "$0")" || exit 1
 exec python3 - <<'PY'
-import importlib.machinery, importlib.util, sys
+import importlib.machinery, importlib.util, re, sys
 
 spec = importlib.util.spec_from_loader(
     "sticky", importlib.machinery.SourceFileLoader("sticky", "./sticky-claude"))
@@ -11,13 +11,6 @@ sticky = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sticky)
 
 BEL = b"\a"
-# Byte-for-byte how Claude 2.1 draws a submitted two-row message (light theme).
-BOX = (b"\x1b[?2026h\x1b[?25l\x1b[33D\x1b[6B\r\x1b[8A"
-       b"\x1b[48;2;240;240;240m\x1b[38;2;175;175;175m\xe2\x9d\xaf "
-       b"\x1b[38;2;0;0;0mfirst row of the message\x1b[39m \r\x1b[1B"
-       b"  \x1b[38;2;0;0;0msecond row\x1b[39m      \r\x1b[2C\x1b[1B"
-       b"\x1b[49m\x1b[K\r\x1b[1Bspinner")
-
 fail = []
 
 
@@ -26,59 +19,83 @@ def check(label, condition):
         fail.append(label)
 
 
-out = sticky.Marker().feed(BOX)
+def box(text):
+    """A sent message the way Claude 2.1 draws it: background, grey glyph,
+    then the text in its own colour."""
+    return (b"\x1b[48;2;55;55;55m\x1b[38;2;153;153;153m" + "❯ ".encode()
+            + b"\x1b[38;2;255;255;255m" + text.encode()
+            + b"\x1b[39m   \r\x1b[1B\x1b[49m\x1b[K")
 
-check("previous command is closed first",
-      b"\x1b]633;D;0\a\x1b]633;A\a\x1b[48;2;240" in out)
-check("prompt-start sits before the block, not inside it",
-      out.index(b"\x1b]633;A") < out.index(b"\x1b[48;2;240"))
-check("command-start closes the final row before the cursor parks",
-      b"second row\x1b[39m      \x1b]633;B\a\x1b]633;C\a" in out)
-check("running mark comes before the background is turned off",
-      out.index(b"\x1b]633;C") < out.index(b"\x1b[49m"))
-check("the whole message becomes the command name",
-      b"\x1b]633;E;first row of the message second row\a" in out)
-check("nothing but the marks is added",
-      sticky.ANSI.sub(b"", out).replace(b"\r", b"") ==
-      sticky.ANSI.sub(b"", BOX).replace(b"\r", b""))
 
-# a stream with no message in it must come out untouched
-check("untouched when there is no message",
-      sticky.Marker().feed(b"\x1b[2mjust output\x1b[0m\r\n") ==
-      b"\x1b[2mjust output\x1b[0m\r\n")
+def marks(out):
+    return out.count(b"\x1b]633;A\a")
 
-# the block may be split across two reads
-marker = sticky.Marker()
-split = len(BOX) - 30
-piece = marker.feed(BOX[:split]) + marker.feed(BOX[split:])
-check("block split across reads is still marked", piece == out)
-check("nothing is held back once the block is complete", marker.held == b"")
 
-# a run that stalls mid-block must not swallow the output
-marker = sticky.Marker()
-held = marker.feed(BOX[:split])
-check("incomplete block is held, not printed", b"\x1b[48;2;240" not in held)
-check("holding it back can be undone", marker.drain() + b"" == BOX[held.__len__():split])
+# drawn once, then quiet: one mark, stepping up to the block and back
+m = sticky.Marker(40, 10)
+out = m.feed(b"\r\x1b[5A" + box("hello there") + b"\r\x1b[1Bspinner")
+check("nothing is marked while the block is being drawn", marks(out) == 0)
+done = m.settle()
+check("settling marks the block once", marks(done) == 1)
+check("the mark goes to the block's row and comes back",
+      done.startswith(b"\x1b7\x1b[2A\r\x1b]633;D;0\a\x1b]633;A\a") and done.endswith(b"\x1b8"))
+check("the whole message becomes the command name", b"\x1b]633;E;hello there\a" in done)
+check("nothing but the marks is added", out == b"\r\x1b[5A" + box("hello there") + b"\r\x1b[1Bspinner")
+check("settling again adds nothing", m.settle() == b"")
 
-# a taller message: the block is closed after three rows, so exactly the first
-# three get pinned however long the message is
-ROW = b"  \x1b[38;2;0;0;0mrow %d\x1b[39m   \r\x1b[1B"
-TALL = (b"\x1b[48;2;240;240;240m\x1b[38;2;175;175;175m\xe2\x9d\xaf "
-        b"\x1b[38;2;0;0;0mrow 1\x1b[39m   \r\x1b[1B"
-        + b"".join(ROW % n for n in (2, 3, 4, 5))
-        + b"  \x1b[38;2;0;0;0mrow 6\x1b[39m   \r\x1b[2C\x1b[1B\x1b[49m\x1b[K")
-tall_out = sticky.Marker().feed(TALL)
-check("tall message is closed after the third row",
-      b"row 3\x1b[39m   \x1b]633;B\a\x1b]633;C\a" in tall_out)
-check("rows past the third are left alone",
-      b"\x1b]633;E;" in tall_out and b"row 4" in tall_out.split(b"\a")[-1])
-check("the command name is still the whole message",
-      b"\x1b]633;E;row 1 row 2 row 3 row 4 row 5 row 6\a" in tall_out)
+# moved while the turn runs: the old row now holds reply text
+m = sticky.Marker(40, 39)
+m.feed(b"\r\x1b[10A" + box("moving") + b"\r\x1b[8B")          # drawn at row 29
+m.feed(b"\r\x1b[10Areply text here\r\x1b[1B" + box("moving") + b"\r\x1b[7B")  # moved to 30, cursor 38
+done = m.settle()
+check("a moved message is marked once", marks(done) == 1)
+check("at the row it moved to", done.startswith(b"\x1b7\x1b[8A\r"))
 
-# escaping in the command name
-odd = BOX.replace(b"first row of the message", b"a;b\\c")
+# a queued message drawn above its hint is not marked
+m = sticky.Marker(40, 39)
+queued = b"\x1b[48;2;55;55;55m\x1b[38;2;153;153;153m" + "❯ ".encode() + b"queued one   \r\x1b[1B\x1b[49m"
+m.feed(b"\r\x1b[5A" + queued + b"\r\x1b[3B")
+check("queued message (all in the glyph's grey) is not marked", marks(m.settle()) == 0)
+# its turn starts: Claude recolours just the text, in place
+m.feed(b"\r\x1b[2C\x1b[4A\x1b[48;2;55;55;55m\x1b[38;2;255;255;255mqueued one\x1b[39m\x1b[49m\r\x1b[5B")
+check("marked once its turn starts", marks(m.settle()) == 1)
+
+# recoloured in place when its turn starts: still the same message
+m = sticky.Marker(40, 39)
+m.feed(b"\r\x1b[5A" + box("steer") + b"\r\x1b[3B")
+m.feed(b"\r\x1b[2C\x1b[4A\x1b[48;2;55;55;55m\x1b[38;2;255;255;255msteer\x1b[39m\x1b[49m\r\x1b[5B")
+check("a message recoloured in place keeps its block", marks(m.settle()) == 1)
+
+# scrolling off the top before it settled: marked just before it leaves
+m = sticky.Marker(5, 4)
+m.feed(b"\r\x1b[4A" + box("top row") + b"\r\x1b[3B")
+out = m.feed(b"\r\n")
+check("marked just before scrolling into history",
+      marks(out) == 1 and out.endswith(b"\x1b8\n"))
+check("and not again later", m.settle() == b"")
+
+# Hebrew is drawn reversed; the command name is in reading order
+check("Hebrew name in reading order",
+      sticky.command_name(["❯ השקבב תואקספ שולש קר"]) == "רק שלוש פסקאות בבקשה".encode())
+check("Latin inside Hebrew keeps its order",
+      sticky.command_name(["❯ api.py ןקת"]) == "תקן api.py".encode())
 check("semicolon and backslash escaped in the name",
-      b"\x1b]633;E;a\\x3bb\\x5cc second row\a" in sticky.Marker().feed(odd))
+      sticky.command_name(["❯ a;b\\c"]) == b"a\\x3bb\\x5cc")
+
+# a whole recorded session: a message, a steering message sent mid-turn, /exit.
+# The old wrapper set 13 marks on it. Mid-turn Claude reprints the whole
+# conversation below the history, so the first message is on screen twice and
+# each copy gets its mark; the steering message, queued and redrawn every
+# frame, gets exactly one.
+rec = open("fixtures/steering.raw", "rb").read()
+m = sticky.Marker(40, 0)
+out = m.feed(rec[:50000]) + m.feed(rec[50000:]) + m.settle()
+names = re.findall(rb"\x1b\]633;E;([^\a]*)\a", out)
+check("recorded session: one mark per message on screen", marks(out) == 4)
+check("recorded session: the steering message is marked once",
+      names.count("רק שלוש פסקאות בבקשה".encode()) == 1)
+check("recorded session: nothing but the marks is added",
+      re.sub(rb"\x1b7(?:\x1b\[\d+[AB])?\r\x1b\]633;D.*?\x1b8", b"", out, flags=re.S) == rec)
 
 # Hebrew keyboard on a slash command: typed key by key, as a terminal sends it
 def typed(keys, names=("מועצה",), fix=None):
