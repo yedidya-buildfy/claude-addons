@@ -110,18 +110,26 @@ export function promptRows(text: string, width: number): string[] {
   return out
 }
 
+const BLOCK = '#373737'
+
 export const register: Register = on => {
-  // A sent prompt in the transcript, right-aligned, its marker on the right.
+  // A sent prompt in the transcript: Claude's own highlighted block (background,
+  // grey `❯` first, text in its own colour), the Hebrew rows right-aligned in it.
+  // The sticky-prompt wrapper finds sent messages by exactly that shape, so it
+  // must stay: background, then the glyph at the row's start.
+  // ponytail: the dark theme's block colour; a light theme would want #f0f0f0
   on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
     if (e.surface !== 'terminal' || e.props.origin.kind !== 'composer' || !HEB.test(e.props.text)) return next(e)
     const { Box, Text } = $.ui.resolve(e)
     const rows = promptRows(e.props.text, (e.viewport?.columns ?? 80) - 6)
     return (
-      <Box flexDirection="column" width="100%">
+      <Box flexDirection="column" width="100%" backgroundColor={BLOCK}>
         {rows.map((r, j) => (
-          <Box key={`u${j}`} width="100%" justifyContent="flex-end">
-            <Text>{r || ' '}</Text>
-            <Text color="suggestion">{j ? '  ' : ' ❯'}</Text>
+          <Box key={`u${j}`} width="100%" backgroundColor={BLOCK}>
+            <Text color="subtle" backgroundColor={BLOCK}>{j ? '  ' : '❯ '}</Text>
+            <Box flexGrow={1} justifyContent="flex-end" backgroundColor={BLOCK}>
+              <Text color="text" backgroundColor={BLOCK}>{r || ' '}</Text>
+            </Box>
           </Box>
         ))}
       </Box>
