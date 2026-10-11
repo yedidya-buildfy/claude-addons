@@ -1,0 +1,8 @@
+# codex-rtl: Hebrew right-to-left inside Codex. Runs codex through dosu, a
+# bidirectional terminal wrapper. Claude is left alone on purpose: dosu
+# underlines its output. Falls back to plain codex when dosu is missing or
+# already running. One session without it: command codex
+codex() {
+  if [[ -n $DOSU ]] || ! command -v dosu >/dev/null 2>&1; then command codex "$@"
+  else CODEX_RTL_ARGS="${(j: :)${(q)@}}" DOSU_DISABLE_UPDATE_CHECK=1 dosu "$HOME/.claude/codex-rtl/launch.sh"; fi
+}

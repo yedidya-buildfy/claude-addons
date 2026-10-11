@@ -368,3 +368,29 @@ test("an updated VS Code extension is named at its new version in VS Code's list
   go(P, all(true));
   assert.ok(fs.statSync(listFile).mtimeMs > 0);
 });
+
+test("codex-rtl: off by default; on adds the codex function and launcher, off removes both", () => {
+  const { home, P } = sandbox();
+  const launcher = path.join(home, ".claude/codex-rtl/launch.sh");
+  const cfg = all(false);
+  go(P, cfg);
+  assert.doesNotMatch(fs.readFileSync(path.join(home, ".zshrc"), "utf8"), /codex-rtl/);
+  cfg.enabled["codex-rtl"] = true;
+  go(P, cfg);
+  const z = fs.readFileSync(path.join(home, ".zshrc"), "utf8");
+  assert.match(z, /^codex\(\) \{$/m);
+  assert.match(z, /dosu "\$HOME\/\.claude\/codex-rtl\/launch\.sh"/);
+  assert.ok(fs.existsSync(launcher));
+  cfg.enabled["codex-rtl"] = false;
+  go(P, cfg);
+  assert.doesNotMatch(fs.readFileSync(path.join(home, ".zshrc"), "utf8"), /codex-rtl/);
+  assert.ok(!fs.existsSync(launcher));
+});
+
+test("codex-rtl: the launcher runs codex with the quoted arguments it was given", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-rtl-"));
+  fs.writeFileSync(path.join(dir, "codex"), '#!/bin/sh\nfor a in "$@"; do echo "[$a]"; done\n', { mode: 0o755 });
+  const out = execSync(`/bin/zsh -c 'set -- "hello world" --flag; CODEX_RTL_ARGS="\${(j: :)\${(q)@}}" ${path.join(repo, "codex-rtl/launch.sh")}'`,
+    { env: { ...process.env, PATH: `${dir}:${process.env.PATH}` }, encoding: "utf8" });
+  assert.equal(out, "[hello world]\n[--flag]\n");
+});

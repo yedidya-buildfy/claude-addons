@@ -1,0 +1,30 @@
+{
+  "id": "codex-rtl",
+  "order": 70,
+  "default": false,
+  "title": "עברית מימין לשמאל ב‑Codex",
+  "summary": "הפקודה codex נפתחת דרך dosu, עטיפת טרמינל דו‑כיוונית, כך שעברית בתוך Codex מוצגת בכיוון הנכון.",
+  "detect": {
+    "shellContains": "claude-addons: codex-rtl"
+  },
+  "files": [
+    {
+      "from": "launch.sh",
+      "to": "~/.claude/codex-rtl/launch.sh",
+      "mode": "755"
+    }
+  ],
+  "shell": "zshrc.snippet",
+  "run": {
+    "cmd": "command -v dosu >/dev/null 2>&1 || { command -v brew >/dev/null 2>&1 && brew install rustnegar/dosu/dosu; } || echo 'dosu is not installed: install Homebrew, or see https://github.com/RustNegar/dosu'; exit 0",
+    "when": "changed"
+  },
+  "group": "טרמינל",
+  "details": [
+    "הפקודה codex נפתחת בתוך dosu (ריפו RustNegar/dosu, רישיון MIT): עטיפת טרמינל שמסדרת טקסט דו‑כיווני, ולכן עברית ב‑Codex יוצאת בסדר הנכון.",
+    "dosu מותקן דרך Homebrew בהפעלה הראשונה. אם הוא חסר, codex ממשיך לעבוד כרגיל, בלי העטיפה.",
+    "רק Codex. קלוד לא נפתח דרך dosu, כי dosu מקווה את הפלט שלו.",
+    "טרמינל חד‑פעמי בלי העטיפה: command codex"
+  ],
+  "howToCheck": "פתח טרמינל חדש, הרץ codex וכתוב משפט בעברית עם מילה באנגלית: האותיות והסדר צריכים לצאת נכון."
+}

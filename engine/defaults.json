@@ -13,7 +13,8 @@
     "multi-model": "if-installed",
     "phone-alerts": false,
     "agent-locks": true,
-    "auto-claude": true
+    "auto-claude": true,
+    "codex-rtl": false
   },
   "settings": {
     "auto-claude": {
