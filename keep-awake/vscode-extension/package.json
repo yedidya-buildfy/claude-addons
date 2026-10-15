@@ -1,0 +1,27 @@
+{
+  "name": "keep-awake",
+  "displayName": "Claude Keep Awake",
+  "description": "Three clickable keep-awake buttons in VS Code's bottom bar.",
+  "version": "1.2.0",
+  "publisher": "claude-addons",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "keepAwake.flip",
+        "title": "Flip a keep-awake button",
+        "category": "Claude"
+      }
+    ]
+  }
+}

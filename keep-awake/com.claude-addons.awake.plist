@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- claude-addons keep-awake: every 15s and at login, line the Mac's sleep setting up with
+     ~/.claude/awake/state.json. At login this also undoes a setting left on by a crash. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.claude-addons.awake</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string><string>-lc</string>
+    <string>export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"; exec node "$HOME/.claude/scripts/awake" tick</string>
+  </array>
+  <key>StartInterval</key><integer>15</integer>
+  <key>RunAtLoad</key><true/>
+  <!-- ☕ hands a short caffeinate to the OS each tick; launchd must not kill it when the tick exits -->
+  <key>AbandonProcessGroup</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>/dev/null</string>
+</dict>
+</plist>

@@ -1,0 +1,63 @@
+{
+  "id": "keep-awake",
+  "order": 57,
+  "default": true,
+  "title": "המחשב ער גם עם מכסה סגורה",
+  "summary": "שלושה כפתורים בשורה התחתונה של VS Code, משותפים לכל החלונות: ער, ער עם מכסה סגורה עד שקלוד מסיים, וער עם מכסה סגורה עד שמכבים.",
+  "detect": {
+    "file": "~/.claude/scripts/awake"
+  },
+  "files": [
+    {
+      "from": "awake.mjs",
+      "to": "~/.claude/scripts/awake",
+      "mode": "755"
+    },
+    {
+      "from": "com.claude-addons.awake.plist",
+      "to": "~/Library/LaunchAgents/com.claude-addons.awake.plist"
+    },
+    {
+      "from": "vscode-extension/package.json",
+      "to": "~/.vscode/extensions/claude-keep-awake/package.json",
+      "when": "vscode"
+    },
+    {
+      "from": "vscode-extension/extension.js",
+      "to": "~/.vscode/extensions/claude-keep-awake/extension.js",
+      "when": "vscode"
+    }
+  ],
+  "dirs": [
+    "~/.claude/awake"
+  ],
+  "ownsCommands": "\\.claude/scripts/awake( |$)",
+  "run": {
+    "cmd": "[ \"$(uname)\" = Darwin ] || exit 0; launchctl bootout gui/$(id -u)/com.claude-addons.awake 2>/dev/null; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude-addons.awake.plist",
+    "when": "changed"
+  },
+  "group": "טרמינל",
+  "details": [
+    "בזמן שקלוד עובד הוא כבר מונע מהמחשב להירדם מעצמו — אבל לא כשסוגרים את המכסה. התוסף מוסיף את זה, וגם מצב ער קבוע.",
+    "☕ awake — ער עם מכסה פתוחה עד שמכבים. 💻 lid · till done — ער גם עם מכסה סגורה עד שקלוד מסיים בכל הטרמינלים (אפשר להדליק לפני שנותנים פקודה). 📌 lid · always — ער עם מכסה סגורה עד שמכבים. לחיצה שנייה מכבה. מחוץ ל‑VS Code: awake on | lid | pin | off.",
+    "מצב אחד משותף לכל החלונות; משימת רקע אחת בודקת כל 15 שניות ומיישרת את המחשב לפיו.",
+    "הגנות למצבי המכסה הסגורה: חוזר לשינה רגילה אחרי 12 שעות, או על סוללה מתחת ל‑20%, עם התראה. טרמינל שקורס לא משאיר את המחשב ער, והפעלה מחדש מנקה הגדרה שנשארה.",
+    "פעם אחת בלבד: awake setup — חלון סיסמה של המק שמתיר רק את ההגדרה הזו, בלי סיסמה בהמשך.",
+    "לפני הסרת התוסף: awake off. למה זה כבה לבד: tail ~/.claude/awake/awake.log"
+  ],
+  "legend": [
+    [
+      "⬛",
+      "כפתור אפור — כבוי"
+    ],
+    [
+      "🟨",
+      "● ☕ או ● 💻 — דולק; ⏳ ליד 💻 = מחכה שקלוד יתחיל לעבוד"
+    ],
+    [
+      "🟥",
+      "● 📌 — ער עם מכסה סגורה עד שמכבים, עם הזמן שעבר; או ⚠ — ביקשת אבל זה לא פעיל"
+    ]
+  ],
+  "howToCheck": "אחרי Reload Window: שלושה כפתורים אפורים בשורה התחתונה. לחיצה על ☕ awake צובעת אותו, ובחלון VS Code אחר הוא נצבע תוך שנייה. לחיצה שנייה מחזירה לאפור."
+}
