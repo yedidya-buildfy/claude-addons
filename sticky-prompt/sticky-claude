@@ -387,6 +387,21 @@ CURSOR_REPORT = re.compile(rb"\x1b\[(\d+);\d+R")
 STATE_DIR = os.path.expanduser("~/.claude/terminal-state")
 
 
+def keep_raw(fd):
+    """Put our terminal back in raw mode if someone switched it back.
+
+    The shell that launched us can restore its own echoing mode a moment after
+    we went raw — it happens when a resize lands while Claude starts, which a
+    terminal relayed through VibeTunnel does almost every time. The terminal's
+    answers to Claude's startup queries then echo as `^[[?1;2c` garbage and
+    reach Claude's input box as typed text."""
+    try:
+        if termios.tcgetattr(fd)[3] & (termios.ECHO | termios.ICANON):
+            tty.setraw(fd)
+    except termios.error:
+        pass
+
+
 def turn_running(tty_name):
     """The tab-status add-on's record of this session: red while Claude works.
     Without it (add-on missing, session not started) quiet alone decides."""
@@ -467,13 +482,16 @@ def main():
     signal.signal(signal.SIGWINCH, sync_size)
 
     slash = None if os.environ.get("STICKY_HEBREW_SLASH") == "0" else SlashFix(hebrew_command_names())
-    last_out = time.monotonic()
+    last_out = started = time.monotonic()
     try:
         if typed:
             write_all(fd, typed)
         while True:
+            keep_raw(stdin_fd)
+            # The shell's late mode reset comes in the first seconds; look often then.
+            wait = 0.005 if time.monotonic() - started < 3 else 0.05
             try:
-                readable, _, _ = select.select([stdin_fd, fd], [], [], 0.05)
+                readable, _, _ = select.select([stdin_fd, fd], [], [], wait)
             except InterruptedError:
                 continue
             # Quiet is not enough mid-turn (Claude pauses, then rows move on),
