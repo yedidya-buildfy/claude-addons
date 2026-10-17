@@ -1,7 +1,7 @@
 ---
 name: design-in-browser
 description: Redesign a page or component by building a standalone interactive HTML mockup on the project's real design system, opening it in the browser, iterating on 2-3 variants in tabs, letting the user pick, and only then porting the chosen design to the framework (React/Vue/etc). Use when the user wants to explore or redesign the look of a UI before touching real code. Trigger on /design-in-browser, "design in browser", "let's design X somewhere else", "show me design options", "mockup the design", "explore the design", "עיצוב בדפדפן", "נצא לעצב את הדף", "תראה לי אופציות עיצוב".
-when_to_use: Whenever the user wants to redesign/shape/explore the visual design of a page or component and see options in the browser before any real code change. Not for tiny tweaks to existing UI (just edit directly) or backend work. Also fires on the slash command /design-in-browser.
+when_to_use: Whenever the user wants to redesign/shape/explore the visual design of a page or component and see options in the browser before any real code change. For a whole app or several screens/flows, hand off to design-app-map. Not for tiny tweaks to existing UI (just edit directly) or backend work. Also fires on the slash command /design-in-browser.
 disable-model-invocation: false
 ---
 
@@ -9,6 +9,10 @@ disable-model-invocation: false
 
 Design in a throwaway HTML mockup first, implement in the real framework second.
 Do **not** touch real app code during the design phase. Works in any project.
+
+**Whole app or several screens/flows?** (a new app, "all the screens", a tab plus its flows, a navigation change)
+→ use the **design-app-map** skill instead: it applies these same rules to a clickable tree of every screen in a
+phone frame, with options per screen and a Decisions list. This skill stays for one page or component.
 
 ## The loop
 
