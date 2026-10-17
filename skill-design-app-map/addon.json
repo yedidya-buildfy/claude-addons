@@ -1,0 +1,23 @@
+{
+  "id": "skill-design-app-map",
+  "order": 31,
+  "default": true,
+  "title": "מפת אפליקציה בדפדפן",
+  "summary": "עיצוב של כל האפליקציה כעץ מסכים בדפדפן: כל מסך רץ בתוך אייפון, יש אפשרויות לבחירה ורשימת החלטות שהופכת לתוכנית.",
+  "detect": {
+    "file": "~/.claude/skills/design-app-map/SKILL.md"
+  },
+  "files": [
+    { "from": "SKILL.md", "to": "~/.claude/skills/design-app-map/SKILL.md" },
+    { "from": "template/app-map.html", "to": "~/.claude/skills/design-app-map/template/app-map.html" },
+    { "from": "template/screens.js", "to": "~/.claude/skills/design-app-map/template/screens.js" },
+    { "from": "scripts/check.sh", "to": "~/.claude/skills/design-app-map/scripts/check.sh" }
+  ],
+  "group": "סקילים",
+  "details": [
+    "משתמש בסקיל עיצוב בדפדפן ולא מחליף אותו: במקום דף אחד עם לשוניות, קלוד בונה מפה של כל האפליקציה כעץ מסכים.",
+    "לחיצה על מסך פותחת אותו בתוך אייפון, ואפשר לנווט בו כמו באפליקציה אמיתית.",
+    "לכל מסך יש 2–3 אפשרויות. כשבוחרים, האפשרויות האחרות נמחקות, וההחלטה נרשמת בתצוגת \"Decisions\", שהיא תוכנית הבנייה."
+  ],
+  "howToCheck": "כתוב לקלוד: \"/design-app-map\" ואחריו תיאור קצר של האפליקציה."
+}
