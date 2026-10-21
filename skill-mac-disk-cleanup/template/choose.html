@@ -1,0 +1,162 @@
+<title>ניקוי המחשב — בחירה</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* layout: sticky summary bar on top, grouped rows below, each row = name+size, explanation, 3-way square segmented choice */
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --fg:#15181e; --mut:#5c6472; --line:#dde1e7;
+  --accent:#e0602c; --del:#c0392b; --keep:#1f8a4c; --info:#3b6fd8; --soft:#eef0f3;
+  --ui:"Heebo",system-ui,sans-serif; --num:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#14161a; --panel:#1c1f25; --fg:#e7e9ed; --mut:#99a0ac; --line:#2c3039; --del:#f06a5a; --keep:#4cc47e; --info:#7aa2f7; --soft:#23272f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14161a; --panel:#1c1f25; --fg:#e7e9ed; --mut:#99a0ac; --line:#2c3039; --del:#f06a5a; --keep:#4cc47e; --info:#7aa2f7; --soft:#23272f; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--ui);font-size:15px;direction:rtl;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 40px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:980px;margin:0 auto}
+header{padding-top:24px}
+h1{font-size:25px;font-weight:800;margin:0;text-wrap:balance}
+.sub{color:var(--mut);margin:6px 0 0;max-width:70ch;line-height:1.6}
+.n{font-family:var(--num);direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:12px 0;border-bottom:1px solid var(--line);margin-top:14px;display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.stat{display:flex;gap:6px;align-items:baseline}
+.stat b{font-size:18px}
+.stat.d b{color:var(--del)} .stat.k b{color:var(--keep)} .stat.i b{color:var(--info)}
+.bar .sp{flex:1}
+button{font:inherit;cursor:pointer}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:7px 12px;border-radius:4px;font-weight:500}
+.btn.main{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:focus-visible,.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.toast{color:var(--keep);font-size:13px}
+section.g{margin-top:26px}
+.gh{display:flex;justify-content:space-between;align-items:baseline;gap:10px;border-bottom:2px solid var(--fg);padding-bottom:6px}
+.gh h2{font-size:18px;margin:0}
+.gh p{margin:4px 0 0;color:var(--mut);font-size:13.5px;max-width:70ch}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;padding:12px 0;border-bottom:1px solid var(--line)}
+.row.c-d{background:color-mix(in srgb,var(--del) 7%,transparent)}
+.row.c-k{background:color-mix(in srgb,var(--keep) 6%,transparent)}
+.row.c-i{background:color-mix(in srgb,var(--info) 7%,transparent)}
+.top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;min-width:0}
+.nm{font-weight:700}
+.gb{color:var(--mut);font-size:14px}
+.rec{font-size:11.5px;font-weight:700;padding:1px 6px;border:1px solid currentColor;border-radius:3px}
+.rec.d{color:var(--del)} .rec.k{color:var(--keep)} .rec.q{color:var(--mut)}
+.txt{grid-column:1/2;color:var(--mut);font-size:13.5px;line-height:1.6;min-width:0}
+.txt em{font-style:normal;color:var(--fg)}
+.seg{grid-row:1/3;grid-column:2;display:flex;align-self:center;border:1px solid var(--line);border-radius:4px;overflow:hidden;height:max-content}
+.seg button{border:0;background:var(--panel);color:var(--mut);padding:7px 10px;font-size:13px;border-inline-start:1px solid var(--line)}
+.seg button:first-child{border-inline-start:0}
+.seg button[aria-pressed="true"].d{background:var(--del);color:#fff}
+.seg button[aria-pressed="true"].k{background:var(--keep);color:#fff}
+.seg button[aria-pressed="true"].i{background:var(--info);color:#fff}
+@media (max-width:620px){.seg{grid-row:auto;grid-column:1/-1;justify-self:start}.row{grid-template-columns:minmax(0,1fr)}}
+.chart{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:20px;align-items:center;margin-top:18px}
+.chart.sm{grid-template-columns:minmax(0,130px) minmax(0,1fr);margin-top:12px}
+@media (max-width:560px){.chart{grid-template-columns:minmax(0,1fr)}.chart svg{max-width:220px;margin:0 auto}.chart.sm svg{max-width:150px}}
+.chart svg{width:100%;height:auto;display:block}
+.chart svg text{fill:var(--fg);font-family:var(--num);font-weight:500}
+.chart svg text.s{fill:var(--mut);font-family:var(--ui);font-weight:400}
+.leg{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13.5px;list-style:none;margin:0;padding:0}
+.leg li{display:flex;gap:6px;align-items:center}
+.leg i,.sw{width:11px;height:11px;border-radius:2px;display:inline-block;flex:none}
+.leg .n{color:var(--mut)}
+textarea{width:100%;min-height:160px;margin-top:10px;font-family:var(--num);font-size:12.5px;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:4px;padding:10px;box-sizing:border-box;direction:rtl}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>ניקוי המחשב — מה להשאיר ומה למחוק</h1>
+  <p class="sub">כרגע פנויים <span class="n">FREE_GB GB</span> <span class="n">TOTAL_GB GB</span>. לכל שורה: מה זה, מה קורה אם מוחקים, וההמלצה שלי. בוחרים להשאיר / למחוק / לפרט עוד, ובסוף לוחצים "העתק בחירות" ומדביקים לי בצ׳אט.</p>
+</header>
+
+<div class="bar">
+  <span class="stat d">למחוק <b class="n" id="sD">0</b> <span class="n">GB</span></span>
+  <span class="stat k">להשאיר <b class="n" id="sK">0</b></span>
+  <span class="stat i">לפרט <b class="n" id="sI">0</b></span>
+  <span class="sp"></span>
+  <button class="btn" id="fill" type="button">מלא לפי ההמלצות</button>
+  <button class="btn" id="clr" type="button">נקה</button>
+  <button class="btn main" id="copy" type="button">העתק בחירות</button>
+  <span class="toast" id="toast" hidden>הועתק</span>
+</div>
+<textarea id="out" readonly hidden aria-label="הבחירות להעתקה"></textarea>
+<div id="list"></div>
+
+</div>
+
+<script>
+// Replace TOTAL_GB / FREE_GB with real numbers.
+const TOTAL_GB=500, FREE_GB=100;
+// rec: d=delete, k=keep, q=your call
+// EXAMPLE DATA — replace with the real inventory. Row: [id, name, GB, what-it-is, if-deleted, rec d|k|q|i, path]
+const G=[
+["מטמונים","עותקים של דברים שהורדו. מחיקה לא שוברת כלום.",[
+ ["browsercache","מטמון דפדפן",2.1,"קבצים שהדפדפן שמר כדי לטעון אתרים מהר.","כלום — נוצר מחדש.","d","~/Library/Caches/Google"],
+ ["npmcache","מטמון npm",1.4,"חבילות JavaScript שהורדו.","התקנה הבאה איטית יותר פעם אחת.","d","~/.npm/_cacache"],
+]],
+["אפליקציות","",[
+ ["exampleapp","אפליקציה לדוגמה",1.2,"לא נפתחה מזמן.","כלום אם לא בשימוש.","q","/Applications/Example.app"],
+]],
+];
+const KEY="disk-choices-v1";let C={};try{C=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(C))}catch(e){}};
+const L={d:"למחוק",k:"להשאיר",i:"פרט עוד"},R={d:"מומלץ למחוק",k:"מומלץ להשאיר",q:"החלטה שלך",i:"צריך פירוט"};
+const PAL=["#e0602c","#3b6fd8","#1f9e8f","#8a5bd6","#d6a018","#c43f6b","#4f9a2f","#2fa3c9","#a0522d","#6b7a8f"];
+const OTHER="#9aa3b0";
+// donut: slices [{l,v,c}] -> svg string; small slices beyond top N merged by caller
+function donut(sl,center,sub){
+  const T=sl.reduce((s,x)=>s+x.v,0),R=92,r=60;let a=-Math.PI/2,p="";
+  const pt=(rad,t)=>[100+rad*Math.cos(t),100+rad*Math.sin(t)];
+  sl.forEach(x=>{if(x.v<=0)return;const b=a+x.v/T*Math.PI*2-1e-6,lg=b-a>Math.PI?1:0;
+    const [x0,y0]=pt(R,a),[x1,y1]=pt(R,b),[x2,y2]=pt(r,b),[x3,y3]=pt(r,a);
+    p+=`<path d="M${x0},${y0}A${R},${R} 0 ${lg} 1 ${x1},${y1}L${x2},${y2}A${r},${r} 0 ${lg} 0 ${x3},${y3}Z" fill="${x.c}" stroke="var(--bg)" stroke-width="1.2"><title>${x.l}: ${x.v.toFixed(1)} GB</title></path>`;a=b});
+  return `<svg viewBox="0 0 200 200" role="img" aria-label="${sub}">${p}<text x="100" y="100" text-anchor="middle" font-size="26">${center}</text><text class="s" x="100" y="122" text-anchor="middle" font-size="12">${sub}</text></svg>`;
+}
+const leg=sl=>`<ul class="leg">${sl.map(x=>`<li><i style="background:${x.c}"></i>${x.l} <span class="n">${x.v.toFixed(1)}</span></li>`).join("")}</ul>`;
+const list=document.getElementById("list");
+{const sl=G.map((g,i)=>({l:g[0],v:g[2].reduce((s,x)=>s+x[2],0),c:PAL[i%PAL.length]}));
+ sl.push({l:"פנוי",v:FREE_GB,c:"var(--line)"});
+ const d=document.createElement("div");d.className="chart";d.innerHTML=donut(sl,"TOTAL_GB","GB בדיסק")+leg(sl);list.appendChild(d);}
+G.forEach(([gname,gdesc,items])=>{
+  const sec=document.createElement("section");sec.className="g";
+  const tot=items.reduce((s,x)=>s+x[2],0);
+  sec.innerHTML=`<div class="gh"><div><h2>${gname}</h2>${gdesc?`<p>${gdesc}</p>`:""}</div><span class="n">${tot.toFixed(1)} GB</span></div>`;
+  // ponytail: top 7 slices colored, rest merged into "שאר" in grey
+  const srt=[...items].sort((a,b)=>b[2]-a[2]),col={};
+  srt.slice(0,7).forEach((x,i)=>col[x[0]]=PAL[i]);
+  const sl=srt.slice(0,7).map(x=>({l:x[1],v:x[2],c:col[x[0]]}));
+  const rest=srt.slice(7).reduce((s,x)=>s+x[2],0);if(rest>0.01)sl.push({l:"שאר",v:rest,c:OTHER});
+  const ch=document.createElement("div");ch.className="chart sm";ch.innerHTML=donut(sl,tot.toFixed(1),"GB")+leg(sl);sec.appendChild(ch);
+  items.forEach(([id,nm,gb,what,ifdel,rec])=>{
+    const r=document.createElement("div");r.className="row";r.dataset.id=id;
+    const rk=rec==="i"?"q":rec;
+    r.innerHTML=`<div class="top"><span class="sw" style="background:${col[id]||OTHER}"></span><span class="nm">${nm}</span><span class="gb n">${gb.toFixed(2)} GB</span><span class="rec ${rk}">${R[rec]}</span></div>
+      <div class="txt">${what}${ifdel&&ifdel!=="—"?`<br><em>אם מוחקים:</em> ${ifdel}`:""}</div>
+      <div class="seg" role="group" aria-label="בחירה עבור ${nm}">${["k","d","i"].map(c=>`<button type="button" class="${c}" data-c="${c}" aria-pressed="false">${L[c]}</button>`).join("")}</div>`;
+    r.querySelectorAll(".seg button").forEach(b=>b.onclick=()=>{C[id]=C[id]===b.dataset.c?undefined:b.dataset.c;if(!C[id])delete C[id];save();paint()});
+    sec.appendChild(r);
+  });
+  list.appendChild(sec);
+});
+const ALL=G.flatMap(g=>g[2]);
+function paint(){
+  let s={d:0,k:0,i:0};
+  document.querySelectorAll(".row").forEach(r=>{const c=C[r.dataset.id];r.className="row"+(c?" c-"+c:"");
+    r.querySelectorAll(".seg button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.c===c)))});
+  ALL.forEach(x=>{const c=C[x[0]];if(c==="d")s.d+=x[2];else if(c==="k")s.k++;else if(c==="i")s.i++});
+  sD.textContent=s.d.toFixed(1);sK.textContent=s.k;sI.textContent=s.i;
+}
+const sD=document.getElementById("sD"),sK=document.getElementById("sK"),sI=document.getElementById("sI");
+document.getElementById("fill").onclick=()=>{ALL.forEach(x=>{if(!C[x[0]])C[x[0]]=x[5]==="q"?undefined:x[5];if(!C[x[0]])delete C[x[0]]});save();paint()};
+document.getElementById("clr").onclick=()=>{C={};save();paint()};
+document.getElementById("copy").onclick=async()=>{
+  const by={d:[],k:[],i:[]};ALL.forEach(x=>{const c=C[x[0]];if(c)by[c].push(`- ${x[1]} (${x[2].toFixed(2)} GB) [${x[6]}]`)});
+  const none=ALL.filter(x=>!C[x[0]]).map(x=>`- ${x[1]}`);
+  const t=`בחירות ניקוי המחשב:\n\nלמחוק:\n${by.d.join("\n")||"-"}\n\nלפרט עוד:\n${by.i.join("\n")||"-"}\n\nלהשאיר:\n${by.k.join("\n")||"-"}\n\nלא סומן (להתעלם):\n${none.join("\n")||"-"}`;
+  const out=document.getElementById("out");out.value=t;out.hidden=false;
+  try{await navigator.clipboard.writeText(t);const ts=document.getElementById("toast");ts.hidden=false;setTimeout(()=>ts.hidden=true,2000)}catch(e){out.select()}
+};
+paint();
+</script>

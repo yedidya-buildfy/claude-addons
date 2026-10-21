@@ -1,0 +1,23 @@
+{
+  "id": "skill-mac-disk-cleanup",
+  "order": 34,
+  "default": true,
+  "title": "ניקוי מחשב",
+  "summary": "קלוד מודד מה תופס את הדיסק, מציג עוגה ודף בחירה בדפדפן, ומוחק בסבבים רק מה שסימנת.",
+  "detect": {
+    "file": "~/.claude/skills/mac-disk-cleanup/SKILL.md"
+  },
+  "files": [
+    { "from": "SKILL.md", "to": "~/.claude/skills/mac-disk-cleanup/SKILL.md" },
+    { "from": "scan.sh", "to": "~/.claude/skills/mac-disk-cleanup/scan.sh" },
+    { "from": "template/snapshot.html", "to": "~/.claude/skills/mac-disk-cleanup/template/snapshot.html" },
+    { "from": "template/choose.html", "to": "~/.claude/skills/mac-disk-cleanup/template/choose.html" }
+  ],
+  "group": "סקילים",
+  "details": [
+    "קלוד מודד את כל הדיסק ומפרסם עוגה עם פירוט לכל קטגוריה.",
+    "דף בחירה: לכל פריט כתוב מה הוא, מה קורה אם מוחקים, והמלצה. מסמנים להשאיר / למחוק / לפרט, ומעתיקים בחזרה לצ׳אט.",
+    "המחיקה בסבבים, עם מדידה אמיתית של מה שהתפנה. פרויקט בלי גיבוי עולה קודם לגיטהאב פרטי, סיסמאות נשמרות בצד, ותמונות נמחקות רק אחרי בדיקה שהן ב־iCloud."
+  ],
+  "howToCheck": "כתוב לקלוד: \"אין לי מקום במחשב, מה תופס את הדיסק?\""
+}

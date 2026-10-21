@@ -1,0 +1,113 @@
+<title>מה תופס את הדיסק</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* layout: donut on one side, ranked legend with drill-down on the other; stacks on phone */
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --fg:#16191f; --mut:#5d6573; --line:#dfe2e8; --accent:#e0602c;
+  --good:#1f8a4c; --warn:#b26a00; --bad:#c0392b;
+  --c1:#e0602c; --c2:#3b6fd8; --c3:#1f9e8f; --c4:#8a5bd6; --c5:#d6a018; --c6:#c43f6b;
+  --c7:#4f9a2f; --c8:#6b7a8f; --c9:#2fa3c9; --c10:#a0522d; --c11:#9aa3b0;
+  --ui:"Heebo",system-ui,sans-serif; --num:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#15171b; --panel:#1d2026; --fg:#e8eaee; --mut:#9aa1ad; --line:#2d313a; --good:#4cc47e; --warn:#e3a23a; --bad:#f06a5a; --c11:#5c6470; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#15171b; --panel:#1d2026; --fg:#e8eaee; --mut:#9aa1ad; --line:#2d313a; --good:#4cc47e; --warn:#e3a23a; --bad:#f06a5a; --c11:#5c6470; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--ui);font-size:15px;direction:rtl;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px}
+.wrap{max-width:1080px;margin:0 auto;display:grid;gap:22px}
+h1{font-size:26px;font-weight:800;margin:0;text-wrap:balance}
+.sub{color:var(--mut);margin:4px 0 0}
+.n{font-family:var(--num);direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+.bar{display:flex;height:14px;border-radius:3px;overflow:hidden;background:var(--line)}
+.bar span{display:block;height:100%}
+.barlbl{display:flex;justify-content:space-between;color:var(--mut);font-size:13px;margin-top:6px;flex-wrap:wrap;gap:8px}
+.grid{display:grid;grid-template-columns:minmax(0,380px) minmax(0,1fr);gap:28px;align-items:start}
+@media (max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}}
+.donut{position:relative;max-width:380px;width:100%;margin:0 auto}
+.donut svg{width:100%;height:auto;display:block}
+.donut path{cursor:pointer;transition:opacity .15s}
+.donut.dim path:not(.on){opacity:.25}
+.center{position:absolute;inset:0;display:grid;place-content:center;text-align:center;pointer-events:none;padding:22%}
+.center b{font-size:30px;font-weight:800}
+.center small{color:var(--mut);font-size:13px}
+ul{list-style:none;margin:0;padding:0}
+.row{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 8px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:3px}
+.row:hover,.row.on{background:var(--panel)}
+.row:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.sw{width:14px;height:14px;border-radius:2px}
+.name{font-weight:500;min-width:0}
+.tag{font-size:11px;font-weight:700;padding:1px 6px;border-radius:3px;margin-inline-start:6px;border:1px solid currentColor;letter-spacing:.02em}
+.tag.free,.tag.done{color:var(--good)} .tag.maybe,.tag.wait{color:var(--warn)} .tag.keep{color:var(--bad)}
+.det .gone{color:var(--good)} .det .gone span:first-child::before{content:"✓ "}
+.gb{font-size:15px}
+.det{grid-column:2 / 4;color:var(--mut);font-size:13.5px;line-height:1.6}
+.det div{display:flex;justify-content:space-between;gap:10px}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:16px 18px;line-height:1.7}
+.note h2{font-size:17px;margin:0 0 6px}
+.note p{margin:0;max-width:70ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>מה תופס את הדיסק במק</h1>
+    <p class="sub">נמדד ב־DATE · דיסק של <span class="n">TOTAL GB</span> · לחיצה על פרוסה או שורה פותחת פירוט</p>
+  </header>
+
+  <section>
+    <div class="bar" id="bar"></div>
+    <div class="barlbl"><span>תפוס <span class="n">USED GB</span></span><span>פנוי <span class="n">FREE GB</span> (PCT%) · בהתחלה היו <span class="n">START GB</span></span></div>
+  </section>
+
+  <section class="grid">
+    <div class="donut" id="donut"><svg viewBox="0 0 200 200" id="svg" role="img" aria-label="עוגת שימוש בדיסק"></svg>
+      <div class="center"><b class="n" id="cGb">USED</b><small id="cName">GB תפוס</small></div></div>
+    <ul id="list"></ul>
+  </section>
+
+  <section class="note">
+    <h2>פונו <span class="n">FREED GB</span>: מ־START ל־FREE פנויים</h2>
+    <p>NOTE — one or two sentences: what remains and the biggest safe options left.</p>
+  </section>
+</div>
+
+<script>
+// Replace TOTAL_GB / USED_GB and the TOTAL/USED/FREE/START/FREED/PCT/DATE/NOTE text placeholders.
+const TOTAL_GB=500, USED_GB=250;
+// EXAMPLE DATA — replace. Category: n name, gb, c color token, t tag (free|maybe|wait|keep|done|""), d sub-rows [label, GB] (negative GB = already deleted, shown with ✓)
+const D=[
+ {n:"macOS עצמו",gb:28,c:"--c11",t:"",d:[["מערכת ההפעלה",13],["קבצי אתחול",9],["זיכרון וירטואלי",6]]},
+ {n:"אפליקציות",gb:20,c:"--c9",t:"",d:[["Xcode",4],["שאר",16]]},
+ {n:"מטמונים",gb:3,c:"--c7",t:"done",d:[["נשאר",3],["כבר נמחק",-10]]},
+];
+D.sort((a,b)=>b.gb-a.gb);
+const tot=D.reduce((s,x)=>s+x.gb,0);
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const svg=document.getElementById("svg"),list=document.getElementById("list"),donut=document.getElementById("donut");
+const cGb=document.getElementById("cGb"),cName=document.getElementById("cName");
+const R=92,r=58,cx=100,cy=100;let a0=-Math.PI/2,sel=-1;
+const pt=(rad,a)=>[cx+rad*Math.cos(a),cy+rad*Math.sin(a)];
+D.forEach((x,i)=>{
+  const a1=a0+x.gb/tot*Math.PI*2,lg=a1-a0>Math.PI?1:0;
+  const [x0,y0]=pt(R,a0),[x1,y1]=pt(R,a1),[x2,y2]=pt(r,a1),[x3,y3]=pt(r,a0);
+  const p=document.createElementNS("http://www.w3.org/2000/svg","path");
+  p.setAttribute("d",`M${x0},${y0}A${R},${R} 0 ${lg} 1 ${x1},${y1}L${x2},${y2}A${r},${r} 0 ${lg} 0 ${x3},${y3}Z`);
+  p.setAttribute("fill",`var(${x.c})`);p.setAttribute("stroke","var(--bg)");p.setAttribute("stroke-width","1.2");
+  p.onclick=()=>pick(i);svg.appendChild(p);x.p=p;a0=a1;
+  const li=document.createElement("li");li.className="row";li.tabIndex=0;
+  const T={free:["free","בטוח למחיקה"],maybe:["maybe","לבדוק"],wait:["wait","ממתין לסגירה"],ask:["maybe","מחכה לאישורך"],keep:["keep","יש בלי גיבוי"],done:["done","נוקה"]}[x.t];const tag=T?`<span class="tag ${T[0]}">${T[1]}</span>`:"";
+  li.innerHTML=`<span class="sw" style="background:var(${x.c})"></span><span class="name">${x.n}${tag}</span><span class="gb n">${x.gb.toFixed(1)} GB</span>
+   <div class="det" hidden>${x.d.map(([k,v])=>`<div class="${v<0?'gone':''}"><span>${k}</span><span class="n">${Math.abs(v).toFixed(1)}</span></div>`).join("")}</div>`;
+  li.onclick=()=>pick(i);li.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();pick(i)}};
+  list.appendChild(li);x.li=li;
+});
+function pick(i){
+  sel=sel===i?-1:i;donut.classList.toggle("dim",sel>=0);
+  D.forEach((x,j)=>{x.p.classList.toggle("on",j===sel);x.li.classList.toggle("on",j===sel);x.li.querySelector(".det").hidden=j!==sel});
+  if(sel<0){cGb.textContent=String(USED_GB);cName.textContent="GB תפוס"}else{cGb.textContent=D[sel].gb.toFixed(1);cName.textContent=D[sel].n}
+}
+const bar=document.getElementById("bar");
+D.forEach(x=>{const s=document.createElement("span");s.style.width=(x.gb/TOTAL_GB*100*USED_GB/tot)+"%";s.style.background=`var(${x.c})`;bar.appendChild(s)});
+</script>
