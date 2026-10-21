@@ -53,34 +53,45 @@ ul{list-style:none;margin:0;padding:0}
 <div class="wrap">
   <header>
     <h1>מה תופס את הדיסק במק</h1>
-    <p class="sub">נמדד ב־DATE · דיסק של <span class="n">TOTAL GB</span> · לחיצה על פרוסה או שורה פותחת פירוט</p>
+    <p class="sub">נמדד ב־<span data-m="date"></span> · דיסק של <span class="n" data-m="total"></span> · לחיצה על פרוסה או שורה פותחת פירוט</p>
   </header>
 
   <section>
     <div class="bar" id="bar"></div>
-    <div class="barlbl"><span>תפוס <span class="n">USED GB</span></span><span>פנוי <span class="n">FREE GB</span> (PCT%) · בהתחלה היו <span class="n">START GB</span></span></div>
+    <div class="barlbl"><span>תפוס <span class="n" data-m="used"></span></span><span>פנוי <span class="n" data-m="free"></span> · בהתחלה היו <span class="n" data-m="start"></span></span></div>
   </section>
 
   <section class="grid">
     <div class="donut" id="donut"><svg viewBox="0 0 200 200" id="svg" role="img" aria-label="עוגת שימוש בדיסק"></svg>
-      <div class="center"><b class="n" id="cGb">USED</b><small id="cName">GB תפוס</small></div></div>
+      <div class="center"><b class="n" id="cGb"></b><small id="cName">GB תפוס</small></div></div>
     <ul id="list"></ul>
   </section>
 
   <section class="note">
-    <h2>פונו <span class="n">FREED GB</span>: מ־START ל־FREE פנויים</h2>
-    <p>NOTE — one or two sentences: what remains and the biggest safe options left.</p>
+    <h2 id="headline"></h2>
+    <p data-m="note"></p>
   </section>
 </div>
 
 <script>
-// Replace TOTAL_GB / USED_GB and the TOTAL/USED/FREE/START/FREED/PCT/DATE/NOTE text placeholders.
-const TOTAL_GB=500, USED_GB=250;
-// EXAMPLE DATA — replace. Category: n name, gb, c color token, t tag (free|maybe|wait|keep|done|""), d sub-rows [label, GB] (negative GB = already deleted, shown with ✓)
+// ===== FILL THESE =====
+const META={date:"21.10.2026",total:494,free:250,start:40,note:"מה שנשאר הוא בעיקר מה שבחרת לשמור. הכי גדולים שאפשר עוד לפנות בלי לאבד מידע: הקלטות שאפשר להוריד שוב (21) ומודלים של סטודיו תמונות (16)."};
+const TOTAL_GB=META.total, USED_GB=META.total-META.free;
+// D: categories. n name, gb, c color token (--c1..--c11), t tag: free|maybe|wait|keep|done|"" ,
+// d sub-rows [label, GB]; a NEGATIVE GB = already deleted in this cleanup (shown with a green check).
+// EXAMPLE DATA (anonymized, shows the full experience) — replace with the real measurement.
 const D=[
- {n:"macOS עצמו",gb:28,c:"--c11",t:"",d:[["מערכת ההפעלה",13],["קבצי אתחול",9],["זיכרון וירטואלי",6]]},
- {n:"אפליקציות",gb:20,c:"--c9",t:"",d:[["Xcode",4],["שאר",16]]},
- {n:"מטמונים",gb:3,c:"--c7",t:"done",d:[["נשאר",3],["כבר נמחק",-10]]},
+ {n:"macOS עצמו",gb:28.4,c:"--c11",t:"",d:[["מערכת ההפעלה",12.6],["קבצי אתחול",9.1],["זיכרון וירטואלי (מתרוקן בהפעלה מחדש)",5.4],["מחיצת שחזור",1.3]]},
+ {n:"קבצי מערכת ותוספים",gb:33.8,c:"--c8",t:"",d:[["מערכת iOS לסימולטור",7.9],["ספריות מערכת",7.6],["קבצים זמניים ויומנים",7.2],["Homebrew",4.6],["מודלי Apple Intelligence (נעולים)",3.4],["כבר נמחק: שארית עדכון macOS",-3.3]]},
+ {n:"נתונים והקלטות",gb:33.6,c:"--c5",t:"maybe",d:[["הקלטות שהורדו מהענן (אפשר להוריד שוב)",21.2],["הקלטות מקומיות",5.9],["תוצאות הרצות",5.8]]},
+ {n:"כלי פיתוח",gb:23.6,c:"--c2",t:"",d:[["עוזר קוד — היסטוריה ותוכנה",6.4],["כלי צריבה לבקרים",4.0],["Claude Code",3.3],["מטמונים",3.2],["שאר",6.7],["כבר נמחק: מטמון npx",-3.0],["כבר נמחק: גרסאות ישנות של תוספי VS Code",-1.8]]},
+ {n:"אפליקציות",gb:23.5,c:"--c9",t:"",d:[["Xcode",3.9],["Chrome",2.8],["עורך וידאו",2.1],["שאר",14.7],["כבר נמחק: 3 אפליקציות שלא בשימוש",-4.0]]},
+ {n:"נתוני אפליקציות",gb:19.4,c:"--c4",t:"",d:[["כרום — נתוני אתרים ופרופילים",9.1],["אייפון מדומה",1.8],["שאר",8.5],["כבר נמחק: מדיה של וואטסאפ",-9.0],["כבר נמחק: 4 אייפונים מדומים",-14.8]]},
+ {n:"סטודיו תמונות",gb:18.4,c:"--c10",t:"maybe",d:[["מודלים",16.4],["התוכנה",2.0]]},
+ {n:"פרויקטים",gb:17.0,c:"--c3",t:"",d:[["הפרויקט הנוכחי",3.6],["שאר הפרויקטים",13.4],["כבר נמחק: קבצי בנייה של אתרים ישנים",-18.7],["כבר הועלה לגיטהאב ונמחק: פרויקט ישן",-4.3]]},
+ {n:"קבצי עבודה של סשנים פתוחים",gb:9.7,c:"--c1",t:"wait",d:[["סשן פתוח א",4.9],["סשן פתוח ב",4.8],["כבר נמחק: סשנים סגורים",-7.5]]},
+ {n:"מסמכים והורדות",gb:7.4,c:"--c6",t:"",d:[["תוצרי משימות של עוזר קוד",6.5],["מסמכים והורדות",0.9]]},
+ {n:"שטח מערכת שלא ניתן לפרט",gb:29.6,c:"--c11",t:"",d:[["מבני הדיסק וקבצים מוגנים",29.6]]},
 ];
 D.sort((a,b)=>b.gb-a.gb);
 const tot=D.reduce((s,x)=>s+x.gb,0);
@@ -109,5 +120,8 @@ function pick(i){
   if(sel<0){cGb.textContent=String(USED_GB);cName.textContent="GB תפוס"}else{cGb.textContent=D[sel].gb.toFixed(1);cName.textContent=D[sel].n}
 }
 const bar=document.getElementById("bar");
+document.querySelectorAll("[data-m]").forEach(e=>{const v=META[e.dataset.m];e.textContent=typeof v==="number"?v+" GB":v});
+document.querySelector('[data-m="used"]').textContent=USED_GB+" GB";cGb.textContent=USED_GB;
+document.getElementById("headline").textContent="פונו "+(META.free-META.start)+" GB: מ־"+META.start+" ל־"+META.free+" פנויים";
 D.forEach(x=>{const s=document.createElement("span");s.style.width=(x.gb/TOTAL_GB*100*USED_GB/tot)+"%";s.style.background=`var(${x.c})`;bar.appendChild(s)});
 </script>

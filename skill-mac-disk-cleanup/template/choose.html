@@ -68,7 +68,7 @@ textarea{width:100%;min-height:160px;margin-top:10px;font-family:var(--num);font
 <div class="wrap">
 <header>
   <h1>ניקוי המחשב — מה להשאיר ומה למחוק</h1>
-  <p class="sub">כרגע פנויים <span class="n">FREE_GB GB</span> <span class="n">TOTAL_GB GB</span>. לכל שורה: מה זה, מה קורה אם מוחקים, וההמלצה שלי. בוחרים להשאיר / למחוק / לפרט עוד, ובסוף לוחצים "העתק בחירות" ומדביקים לי בצ׳אט.</p>
+  <p class="sub">כרגע פנויים <span class="n" data-m="free"></span> מתוך <span class="n" data-m="total"></span> (בהתחלה היו <span class="n" data-m="start"></span>). כאן מפורט כל מה שתופס מקום. לכל שורה: מה זה, מה קורה אם מוחקים, וההמלצה שלי. בוחרים להשאיר / למחוק / לפרט עוד, ובסוף לוחצים "העתק בחירות" ומדביקים לי בצ׳אט.</p>
 </header>
 
 <div class="bar">
@@ -83,23 +83,53 @@ textarea{width:100%;min-height:160px;margin-top:10px;font-family:var(--num);font
 </div>
 <textarea id="out" readonly hidden aria-label="הבחירות להעתקה"></textarea>
 <div id="list"></div>
+<section class="g" id="cmdsec" hidden><div class="gh"><div><h2>פקודות שדורשות סיסמה</h2><p>להעתיק כל שורה בנפרד, להדביק בטרמינל, Enter, ולהקליד את סיסמת המחשב (לא מופיע כלום בזמן ההקלדה — זה תקין).</p></div></div>
+<textarea id="cmds" readonly style="min-height:110px;direction:ltr" aria-label="פקודות"></textarea></section>
 
 </div>
 
 <script>
-// Replace TOTAL_GB / FREE_GB with real numbers.
-const TOTAL_GB=500, FREE_GB=100;
-// rec: d=delete, k=keep, q=your call
-// EXAMPLE DATA — replace with the real inventory. Row: [id, name, GB, what-it-is, if-deleted, rec d|k|q|i, path]
+// ===== FILL THESE =====
+// META: numbers in GB; cmds = sudo commands the user must run (one per line), [] hides the section.
+const META={total:494,free:250,start:40,cmds:["sudo rm -rf \"/System/Volumes/Data/macOS Install Data\""]};
+const TOTAL_GB=META.total, FREE_GB=META.free;
+// G: groups -> rows. Row: [id, name, GB, what-it-is, what-happens-if-deleted, rec, path-or-command]
+// rec: d = recommend delete, k = recommend keep, q = user's call, i = needs more detail.
+// EXAMPLE DATA (anonymized, shows the full experience) — replace with the real inventory.
 const G=[
-["מטמונים","עותקים של דברים שהורדו. מחיקה לא שוברת כלום.",[
- ["browsercache","מטמון דפדפן",2.1,"קבצים שהדפדפן שמר כדי לטעון אתרים מהר.","כלום — נוצר מחדש.","d","~/Library/Caches/Google"],
- ["npmcache","מטמון npm",1.4,"חבילות JavaScript שהורדו.","התקנה הבאה איטית יותר פעם אחת.","d","~/.npm/_cacache"],
+["מטמונים כלליים","עותקים של דברים שהורדו מהאינטרנט כדי לא להוריד שוב. מחיקה לא שוברת כלום — רק הפעם הבאה איטית יותר.",[
+ ["puppeteer","דפדפני בדיקה שהורדו",3.5,"גרסאות כרום שסוכנים מורידים כדי לצלם ולבדוק אתרים.","יורד שוב לבד כשצריך.","d","~/.cache/puppeteer"],
+ ["uvc","מטמון חבילות פייתון",0.6,"חבילות פייתון שהורדו.","התקנה הבאה איטית יותר פעם אחת.","d","~/.cache/uv"],
+ ["hf","מודלי בינה מלאכותית (HuggingFace)",0.8,"מודלים שפרויקט כלשהו משתמש בהם.","יורד שוב בהרצה הבאה (לוקח זמן).","k","~/.cache/huggingface"],
+ ["cachesmall","שאר המטמונים הקטנים",2.1,"דפדפן, כלי בדיקות ועוד.","כלום — נוצרים מחדש.","d","~/Library/Caches/*"],
 ]],
-["אפליקציות","",[
- ["exampleapp","אפליקציה לדוגמה",1.2,"לא נפתחה מזמן.","כלום אם לא בשימוש.","q","/Applications/Example.app"],
+["npm — חבילות JavaScript","שני סוגים: מטמון (זבל) וכלים שהותקנו לכל המחשב (תוכנות).",[
+ ["npx","מטמון npx",3.0,"בכל פעם שסוכן מריץ כלי חד־פעמי, הכלי נשמר כאן לתמיד.","כלום — יורד שוב כשצריך.","d","~/.npm/_npx"],
+ ["globaltool","כלי גלובלי שלא בשימוש",2.8,"הותקן פעם; לא נמצא פרויקט שמשתמש בו.","אם לא משתמש — כלום.","q","~/.npm-global/lib/node_modules/<tool>"],
+]],
+["אפליקציות — רשימה מלאה","מה שמותקן. 'נפתח לאחרונה' מופיע רק כשהמק רשם את זה.",[
+ ["xcode","Xcode",3.9,"צריך לאייפון מדומה ולבניית אפליקציות.","בלי זה אין סימולטור.","k","/Applications/Xcode.app"],
+ ["chrome","Google Chrome",2.8,"הדפדפן הראשי. נפתח היום.","—","k","/Applications/Google Chrome.app"],
+ ["videoeditor","עורך וידאו",2.1,"לא נפתח מזמן.","כלום אם לא עורך וידאו.","q","/Applications/<Editor>.app"],
+ ["oldeditor","עורך קוד ישן",1.0,"אפליקציה + נתונים. לא נפתח חודשים.","כלום אם לא בשימוש.","d","/Applications/<Editor>.app ~/Library/Application Support/<Editor>"],
+]],
+["נתוני אפליקציות","מחיקת 'מטמון' בטוחה; מחיקת כל התיקייה = האפליקציה נפתחת כמו חדשה (התנתקות, הגדרות מתאפסות).",[
+ ["chromedata","כרום — נתוני אתרים ופרופילים",9.2,"אתרים ששומרים עותק מקומי + פרופילים.","ניקוי דרך הגדרות כרום; התחברות מחדש לאתרים.","q","כרום › הגדרות"],
+ ["chromeai","כרום — מודל AI מקומי",4.2,"כרום מוריד אותו לתכונות כמו 'עזור לי לכתוב'.","מכבים בהגדרות והוא נמחק.","d","כרום › הגדרות › AI"],
+ ["whatsapp","וואטסאפ — תמונות וסרטונים",9.0,"מדיה שהורדה מצ'אטים.","ההודעות נשארות; המדיה יורדת שוב מהטלפון כשפותחים.","q","~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/Message/Media"],
+]],
+["פרויקטים","'למחוק' על פרויקט בלי גיבוי = קודם עולה לגיטהאב (פרטי) ורק אז נמחק; הסיסמאות שלו נשמרות בצד.",[
+ ["buildfiles","קבצי בנייה של פרויקטים ישנים",18.7,"ספריות חבילות וקבצי בנייה — נבנים מחדש לבד.","בנייה הבאה איטית יותר פעם אחת.","d","**/node_modules **/.next"],
+ ["oldproject","פרויקט ישן בלי גיבוי",5.0,"לא בגיטהאב, יש שינויים שלא נשמרו.","יעלה לגיטהאב ואז יימחק.","q","~/Desktop/<project>"],
+ ["current","הפרויקט הנוכחי",3.6,"—","—","k","~/Desktop/<current>"],
+]],
+["מערכת — קבצי אפל","חלק נמחק בפקודת סיסמה, חלק נעול על ידי המערכת.",[
+ ["installdata","שארית של עדכון macOS",3.3,"קבצי התקנה שנשארו אחרי שהעדכון הסתיים.","כלום — העדכון כבר הותקן.","d","sudo rm -rf \"/System/Volumes/Data/macOS Install Data\""],
+ ["applemodels","מודלי Apple Intelligence — נעול",5.5,"המערכת משתמשת בהם ונועלת אותם.","אי אפשר בלי לכבות הגנות. לא כדאי.","k","—"],
+ ["os","מערכת ההפעלה",23.0,"—","—","k","—"],
 ]],
 ];
+// bump KEY when rows change
 const KEY="disk-choices-v1";let C={};try{C=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(C))}catch(e){}};
 const L={d:"למחוק",k:"להשאיר",i:"פרט עוד"},R={d:"מומלץ למחוק",k:"מומלץ להשאיר",q:"החלטה שלך",i:"צריך פירוט"};
@@ -118,7 +148,7 @@ const leg=sl=>`<ul class="leg">${sl.map(x=>`<li><i style="background:${x.c}"></i
 const list=document.getElementById("list");
 {const sl=G.map((g,i)=>({l:g[0],v:g[2].reduce((s,x)=>s+x[2],0),c:PAL[i%PAL.length]}));
  sl.push({l:"פנוי",v:FREE_GB,c:"var(--line)"});
- const d=document.createElement("div");d.className="chart";d.innerHTML=donut(sl,"TOTAL_GB","GB בדיסק")+leg(sl);list.appendChild(d);}
+ const d=document.createElement("div");d.className="chart";d.innerHTML=donut(sl,String(TOTAL_GB),"GB בדיסק")+leg(sl);list.appendChild(d);}
 G.forEach(([gname,gdesc,items])=>{
   const sec=document.createElement("section");sec.className="g";
   const tot=items.reduce((s,x)=>s+x[2],0);
@@ -159,4 +189,6 @@ document.getElementById("copy").onclick=async()=>{
   try{await navigator.clipboard.writeText(t);const ts=document.getElementById("toast");ts.hidden=false;setTimeout(()=>ts.hidden=true,2000)}catch(e){out.select()}
 };
 paint();
+document.querySelectorAll("[data-m]").forEach(e=>e.textContent=META[e.dataset.m]+" GB");
+if(META.cmds.length){document.getElementById("cmdsec").hidden=false;document.getElementById("cmds").value=META.cmds.join("\n")}
 </script>
