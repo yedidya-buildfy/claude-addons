@@ -441,10 +441,9 @@ function isValidOkSnapshot(snapshot) {
  * Antigravity CLI (`agy`) is the only thing that knows these numbers, and it
  * hands them over through its own status-line callback, which invokes
  * `capture-antigravity` (the sole writer of this cache) whenever the user has
- * the client open. Launching the client from here was tried and removed —
- * outside the user's own terminal it stalls on sign-in and never reaches the
- * callback, so the spawn bought nothing and risked leaving stray sign-in
- * processes behind. This collector therefore starts no process at all.
+ * the client open. A plain spawn without a terminal stalls before the
+ * callback, so when the cache is old we start it under a pseudo-terminal
+ * (probeAntigravity below) and let the callback write the cache.
  *
  * A prior valid snapshot is preserved untouched (the renderer decides whether
  * it is still meaningful, from the windows' own reset times); with no such
@@ -453,8 +452,47 @@ function isValidOkSnapshot(snapshot) {
  */
 async function fetchGoogle({ claudeDir = resolveClaudeDir() } = {}) {
   const prior = readProviderSnapshot(claudeDir, 'google');
+  const fresh = isValidOkSnapshot(prior) && Date.now() - prior.fetchedAt < GOOGLE_PROBE_EVERY_MS;
+  if (!fresh) probeAntigravity();
   if (isValidOkSnapshot(prior)) return PRESERVE_PROVIDER_CACHE;
   return { status: 'unavailable', windows: [], reason: 'antigravity-no-callback' };
+}
+
+// When nobody has had `agy` open lately, briefly start it ourselves so its
+// status-line callback (which runs capture-antigravity) reports the quota.
+// It refuses to start its UI without a terminal, so it gets a pseudo-terminal
+// from python's stdlib pty; once signed in the quota arrives within seconds,
+// and the probe is killed after GOOGLE_PROBE_RUN_S either way. Runs from an
+// empty temp folder so it never touches a project, at most once per
+// GOOGLE_PROBE_EVERY_MS across every session.
+const GOOGLE_PROBE_EVERY_MS = 15 * 60_000;
+const GOOGLE_PROBE_RUN_S = 25;
+const PTY_PROBE_PY = [
+  'import os,pty,select,signal,sys,time',
+  'pid,fd=pty.fork()',
+  'if pid==0: os.execvp(sys.argv[1],[sys.argv[1]])',
+  'end=time.time()+float(sys.argv[2])',
+  'while time.time()<end:',
+  '  r,_,_=select.select([fd],[],[],1)',
+  '  if r:',
+  '    try: os.read(fd,65536)',
+  '    except OSError: break',
+  'os.kill(pid,signal.SIGKILL)',
+].join('\n');
+
+function probeAntigravity() {
+  try {
+    const lock = path.join(os.tmpdir(), 'provider-usage-agy-probe.lock');
+    try { if (Date.now() - fs.statSync(lock).mtimeMs < GOOGLE_PROBE_EVERY_MS) return; } catch (_) {}
+    fs.writeFileSync(lock, String(process.pid));
+    const cwd = path.join(os.tmpdir(), 'provider-usage-agy-probe');
+    fs.mkdirSync(cwd, { recursive: true });
+    const child = spawn('python3', ['-c', PTY_PROBE_PY, 'agy', String(GOOGLE_PROBE_RUN_S)], {
+      cwd, detached: true, stdio: 'ignore',
+    });
+    child.on('error', () => {});
+    child.unref();
+  } catch (_) {}
 }
 
 // --- Grok: local usage-log reader --------------------------------------
