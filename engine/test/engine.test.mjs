@@ -394,3 +394,19 @@ test("codex-rtl: the launcher runs codex with the quoted arguments it was given"
     { env: { ...process.env, PATH: `${dir}:${process.env.PATH}` }, encoding: "utf8" });
   assert.equal(out, "[hello world]\n[--flag]\n");
 });
+
+test("notch-stats: off for a machine that never chose; on installs the app and its login item, off removes them", () => {
+  const { home, P } = sandbox();
+  const app = path.join(home, "Applications/NotchStats.app/Contents/MacOS/NotchStats");
+  const agent = path.join(home, "Library/LaunchAgents/com.claude-addons.notchstats.plist");
+  const cfg = { version: 1, enabled: {}, settings: {} };
+  go(P, cfg);
+  assert.ok(!fs.existsSync(app));
+  cfg.enabled["notch-stats"] = true;
+  go(P, cfg);
+  assert.ok(fs.existsSync(app) && fs.existsSync(agent));
+  assert.equal(fs.statSync(app).mode & 0o777, 0o755);
+  cfg.enabled["notch-stats"] = false;
+  go(P, cfg);
+  assert.ok(!fs.existsSync(app) && !fs.existsSync(agent));
+});

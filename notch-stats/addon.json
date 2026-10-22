@@ -1,0 +1,35 @@
+{
+  "id": "notch-stats",
+  "order": 58,
+  "default": false,
+  "title": "מוניטור מערכת באזור המצלמה",
+  "summary": "ליד אזור המצלמה בראש המסך: עומס מעבד ומעבד גרפי. מעבר עם העכבר פותח גרפים עם היסטוריה של 24 שעות למעבד, מעבד גרפי, זיכרון, טמפרטורה ודיסק, ומי משתמש בכל אחד.",
+  "files": [
+    {
+      "from": "dist/NotchStats",
+      "to": "~/Applications/NotchStats.app/Contents/MacOS/NotchStats",
+      "mode": "755"
+    },
+    {
+      "from": "Info.plist",
+      "to": "~/Applications/NotchStats.app/Contents/Info.plist"
+    },
+    {
+      "from": "com.claude-addons.notchstats.plist",
+      "to": "~/Library/LaunchAgents/com.claude-addons.notchstats.plist"
+    }
+  ],
+  "run": {
+    "cmd": "[ \"$(uname)\" = Darwin ] && [ \"$(uname -m)\" = arm64 ] || exit 0; launchctl bootout gui/$(id -u)/com.claude-addons.notchstats 2>/dev/null; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude-addons.notchstats.plist",
+    "when": "changed"
+  },
+  "group": "מערכת",
+  "details": [
+    "מצב סגור: אחוז המעבד משמאל לאזור המצלמה, אחוז המעבד הגרפי מימין, עם גרף קטן של 40 השניות האחרונות. מעל 90% נצבע אדום.",
+    "מעבר עם העכבר פותח חלונית: חמישה כרטיסים (מעבד, מעבד גרפי, זיכרון, טמפרטורה, דיסק), גרף היסטוריה של 10 דקות, שעה או 24 שעות, ולחיצה על כרטיס מחליפה את הגרף.",
+    "מעבד: כמה ליבות עסוקות ומפת חום של כל ליבה לאורך זמן. מעבד גרפי ומעבד: עוגה של מי משתמש. זיכרון: פירוט כמו במוניטור הפעילות (אפליקציות, נעול, דחוס, מטמון, פנוי) וזיכרון החלפה. טמפרטורה: ליבות, מעבד גרפי, כונן וסוללה. דיסק: קריאה וכתיבה לאורך זמן, ומה תופס את המקום לפי תיקיות (נמדד כל 6 שעות ברקע).",
+    "קל: פחות מ‑0.5% מהמעבד, בלי הרשאות מנהל. ההיסטוריה נשמרת ב‑~/Library/Application Support/NotchStats.",
+    "כיבוי בדף הזה סוגר את האפליקציה תוך כמה שניות. מחשבי Apple Silicon בלבד."
+  ],
+  "howToCheck": "אחרי ההדלקה מופיעים שני אחוזים ליד אזור המצלמה בראש המסך. מעבר עם העכבר עליהם פותח את החלונית."
+}
