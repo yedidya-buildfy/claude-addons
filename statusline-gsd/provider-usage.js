@@ -482,10 +482,12 @@ const PTY_PROBE_PY = [
   'os.kill(pid,signal.SIGKILL)',
 ].join('\n');
 
-function probeAntigravity() {
+function probeAntigravity({ force = false } = {}) {
   try {
     const lock = path.join(os.tmpdir(), 'provider-usage-agy-probe.lock');
-    try { if (Date.now() - fs.statSync(lock).mtimeMs < GOOGLE_PROBE_EVERY_MS) return; } catch (_) {}
+    // `force` (ccx usage, run by hand) still won't stack a probe on one that is running.
+    const window = force ? GOOGLE_PROBE_RUN_S * 1000 : GOOGLE_PROBE_EVERY_MS;
+    try { if (Date.now() - fs.statSync(lock).mtimeMs < window) return; } catch (_) {}
     fs.writeFileSync(lock, String(process.pid));
     const cwd = path.join(os.tmpdir(), 'provider-usage-agy-probe');
     fs.mkdirSync(cwd, { recursive: true });
@@ -753,7 +755,10 @@ async function main() {
     // next callback.
     if (!isPlainObject(data) || !isPlainObject(data.quota)) return;
     const normalized = normalizeAntigravityQuota(data.quota);
-    const account = [data.plan_tier, data.email].filter((s) => typeof s === 'string' && s).join(' · ');
+    let account = [data.plan_tier, data.email].filter((s) => typeof s === 'string' && s).join(' · ');
+    // Early callbacks carry the email but not the plan yet; keep the plan we already know.
+    const prior = readProviderSnapshot(resolveClaudeDir(), 'google')?.account;
+    if (!data.plan_tier && typeof prior === 'string' && data.email && prior.endsWith(data.email)) account = prior;
     if (account) normalized.account = account;
     writeSnapshot('google', normalized, resolveClaudeDir());
     return;
@@ -783,6 +788,7 @@ module.exports = {
   fetchCodex,
   normalizeAntigravityQuota,
   fetchGoogle,
+  probeAntigravity,
   // Exposed only so tests can exercise the process/protocol layer against a
   // stub `codex` binary with a short timeout, without waiting out the real
   // 10s default or spawning the real CLI.

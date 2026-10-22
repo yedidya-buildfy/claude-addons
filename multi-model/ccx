@@ -58,6 +58,7 @@ ccx — Claude Code on your other subscriptions
                              --login can use a different account
   ccx on | off | mode        whether plain `claude` uses the other providers
   ccx --status               proxy + per-provider login status
+  ccx usage                  every provider's plan limits, refreshed
   ccx --update               update the proxy, restart it
   ccx --restart              restart the proxy and the request cleaner
   ccx ... -- ARGS            everything after -- is passed to claude
@@ -219,6 +220,7 @@ while [ $# -gt 0 ]; do
     --agents)  CMD=agents; shift ;;
     council)   CMD=council; shift; COUNCIL_ARGS=("$@"); break ;;
     --status)  CMD=status; shift ;;
+    usage|--usage) CMD=usage; shift ;;
     update|--update) CMD=update; shift ;;
     --restart) CMD=restart; shift ;;
     --logout)  CMD=logout; shift
@@ -233,6 +235,9 @@ while [ $# -gt 0 ]; do
 done
 
 case "$CMD" in
+  usage)
+    exec node "$SCRIPT_DIR/ccx-usage.js"
+    ;;
   mode)
     if [ -n "${MODES:-}" ]; then
       printf '%s\n' "$MODES" > "$MODE_FILE"
