@@ -146,6 +146,8 @@ function buildSafeSnapshot(provider, snapshot) {
     if (typeof snapshot.reason !== 'string') return reject('invalid-reason');
     safe.reason = snapshot.reason;
   }
+  // Which subscription the numbers belong to ("Google AI Pro · me@x.com").
+  if (typeof snapshot.account === 'string' && snapshot.account.length <= 120) safe.account = snapshot.account;
   return safe;
 }
 
@@ -751,6 +753,8 @@ async function main() {
     // next callback.
     if (!isPlainObject(data) || !isPlainObject(data.quota)) return;
     const normalized = normalizeAntigravityQuota(data.quota);
+    const account = [data.plan_tier, data.email].filter((s) => typeof s === 'string' && s).join(' · ');
+    if (account) normalized.account = account;
     writeSnapshot('google', normalized, resolveClaudeDir());
     return;
   }

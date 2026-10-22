@@ -440,6 +440,13 @@ function selectProviderWindows(provider, modelName, windows) {
     const want = /gemini/i.test(modelName || '') ? 'gemini' : '3p';
     const pooled = windows.filter((w) => windowPool(w) === want);
     if (pooled.length) source = pooled;
+    // Some models carry their own bucket on top of the shared one
+    // (e.g. 'gemini-argon-wtu-weekly'): use the session model's own bucket
+    // first, and never show another model's.
+    const words = new Set(String(modelName || '').toLowerCase().split(/[^a-z]+/).filter((s) => s.length > 2 && s !== 'gemini'));
+    const own = (w) => String(w.id || '').toLowerCase().split('-').some((s) => words.has(s));
+    const specific = (w) => String(w.id || '').split('-').length > 2;
+    source = [...source.filter((w) => specific(w) && own(w)), ...source.filter((w) => !specific(w))];
   }
   const byLabel = new Map();
   for (const w of source) {
@@ -519,6 +526,7 @@ function formatProviderUsage(data, claudeDir, now = Date.now()) {
   // nothing extra — see formatResetCredits.
   const resetsSeg = formatResetCredits(snapshot.resetCredits);
   if (resetsSeg) parts.push(resetsSeg);
+  if (typeof snapshot.account === 'string' && snapshot.account) parts.push(`\x1b[2m${snapshot.account}\x1b[0m`);
 
   // Stale-but-not-expired data still renders (cheaper than flashing
   // "unavailable" every refresh interval) but is visibly marked as such.
