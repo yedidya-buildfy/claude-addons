@@ -92,8 +92,8 @@ FAMILY_WINDOWS = (
     ("haiku", 200_000),
     ("gemini", 1_048_576),
     ("grok", 500_000),
-    ("gpt", 921_000),
-    ("codex", 921_000),
+    ("gpt", 872_000),
+    ("codex", 872_000),
     ("claude", 1_000_000),
 )
 
@@ -155,7 +155,8 @@ def is_haiku(m):
 
 
 def codex_subscription_windows():
-    """Return Codex model maxima plus the current main-line fallback."""
+    """Codex's own published limits, refreshed by the Codex CLI itself:
+    slug -> (hard input window, percent of it that is safe to fill)."""
     path = os.path.expanduser("~/.codex/models_cache.json")
     try:
         models = json.load(open(path)).get("models", [])
@@ -164,10 +165,18 @@ def codex_subscription_windows():
     exact = {}
     for model in models:
         slug = model.get("slug")
-        maximum = model.get("max_context_window")
+        maximum = model.get("max_context_window") or model.get("context_window")
         if slug and maximum:
-            exact[slug.lower()] = int(maximum)
+            pct = model.get("effective_context_window_percent") or 95
+            exact[slug.lower()] = (int(maximum), int(pct))
     return exact, exact.get("gpt-reserve")
+
+
+def codex_limits(mid):
+    slug = plain_id(mid)
+    slug = {v: k for k, v in CLIENT_ALIASES.items()}.get(slug, slug).lower()
+    exact, fallback = codex_subscription_windows()
+    return exact.get(slug) or fallback
 
 
 def model_slug(name):
@@ -175,12 +184,11 @@ def model_slug(name):
 
 
 def subscription_window(provider, name, mid, proxy_window):
-    low = (name + " " + mid).lower()
-    if "astra" in low:
-        return 1_050_000
     if provider == "ChatGPT":
-        # Preserve standard 921k window for GPT models, never downgrade to 872k
-        return max(proxy_window or 0, 921_000)
+        # Codex publishes each model's real input ceiling; the proxy does not.
+        limits = codex_limits(mid)
+        if limits:
+            return limits[0]
     return proxy_window
 
 
@@ -442,6 +450,21 @@ def main():
         win = guessed_window(m) if m else None
         if win:
             print(int(win))
+        return
+
+    if mode == "compact":
+        # Per-model auto-compact windows for settings.modelSettings. Claude Code
+        # only knows 200k / 1M for these ids, so anything in between would never
+        # compact before the provider rejects the request.
+        out = {}
+        for m in models:
+            win = guessed_window(m)
+            if not win or win <= 200_000 or win >= 1_000_000:
+                continue
+            limits = codex_limits(m["id"]) if m.get("provider") == "ChatGPT" else None
+            pct = limits[1] if limits else 95
+            out[listed_id(m).replace("[1m]", "")] = max(100_000, win * pct // 100)
+        print(json.dumps(out))
         return
 
     if mode == "upgrade":

@@ -420,6 +420,21 @@ json.dump(d,open(sys.argv[1],'w'),indent=2)
   # 200k. The picker rows are the ids with that suffix already attached.
   CCX_PICKER="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" picker || true)"
 
+  # Models whose real window sits between 200k and 1M (Codex, Grok) get their
+  # own auto-compact window, or a [1m] session grows past the provider's limit
+  # and every turn fails with "exceeds the context window". Applies on /model too.
+  local compact
+  compact="$(printf '%s' "$CATALOGUE_JSON" | python3 "$MODELS_PY" compact || true)"
+  [ -n "$compact" ] && python3 -c "
+import json,sys
+try: d=json.load(open(sys.argv[1]))
+except Exception: d={}
+ms=d.setdefault('modelSettings',{})
+for mid,win in json.loads(sys.argv[2]).items():
+    ms.setdefault(mid,{})['autoCompactWindow']=win
+json.dump(d,open(sys.argv[1],'w'),indent=2)
+" "$SETTINGS" "$compact"
+
   export ANTHROPIC_BASE_URL="$BASE"
   export ANTHROPIC_AUTH_TOKEN="$KEY"
   # The hybrid picker row uses Claude Code's built-in opusplan handoff: the
