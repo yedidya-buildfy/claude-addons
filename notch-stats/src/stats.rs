@@ -40,6 +40,8 @@ pub struct Point {
     pub temp: [f32; 2], // CPU, GPU °C
     #[serde(default)]
     pub disk: [f32; 2], // read, write MB/s (all processes)
+    #[serde(default)]
+    pub wifi: [f32; 2], // signal dBm, link rate Mb/s (0, 0 = not on Wi-Fi)
 }
 
 impl Point {
@@ -55,6 +57,8 @@ impl Point {
         self.temp[1] += o.temp[1];
         self.disk[0] += o.disk[0];
         self.disk[1] += o.disk[1];
+        self.wifi[0] += o.wifi[0];
+        self.wifi[1] += o.wifi[1];
         self.cores.resize(o.cores.len().max(self.cores.len()), 0.0);
         for (a, b) in self.cores.iter_mut().zip(&o.cores) {
             *a += b;
@@ -62,7 +66,7 @@ impl Point {
     }
 
     fn scaled(mut self, k: f32) -> Point {
-        self.v.iter_mut().chain(self.mem.iter_mut()).chain(self.cores.iter_mut()).chain(self.temp.iter_mut()).chain(self.disk.iter_mut()).chain([&mut self.swap]).for_each(|x| *x *= k);
+        self.v.iter_mut().chain(self.mem.iter_mut()).chain(self.cores.iter_mut()).chain(self.temp.iter_mut()).chain(self.disk.iter_mut()).chain(self.wifi.iter_mut()).chain([&mut self.swap]).for_each(|x| *x *= k);
         self
     }
 }
@@ -97,6 +101,7 @@ pub struct Now {
     pub disk_free: f32,
     pub disk_total: f32,
     pub e_cores: usize,
+    pub wifi: [f32; 2],
 }
 
 #[derive(Default)]
@@ -108,6 +113,10 @@ pub struct Shared {
     /// What takes the disk: (folder, GB), biggest first, and when it was measured (unix s).
     pub folders: Vec<(String, f32)>,
     pub folders_at: u64,
+    /// Speed tests, oldest first (7 days); `net_busy` while one runs, `net_now` asks for one right away.
+    pub net: Vec<crate::net::Test>,
+    pub net_busy: bool,
+    pub net_now: bool,
     cur: Accum,
 }
 
@@ -184,7 +193,7 @@ fn unix_min() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() / 60
 }
 
-fn unix_secs() -> u64 {
+pub fn unix_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
@@ -243,9 +252,14 @@ fn load_folders() -> (u64, Vec<(String, f32)>) {
     std::fs::read(folders_file()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
-fn history_file() -> PathBuf {
+/// Where everything NotchStats keeps lives (history, speed tests, the shelf).
+pub fn data_dir() -> PathBuf {
     let home = std::env::var_os("HOME").unwrap_or_default();
-    PathBuf::from(home).join("Library/Application Support/NotchStats/history.json")
+    PathBuf::from(home).join("Library/Application Support/NotchStats")
+}
+
+fn history_file() -> PathBuf {
+    data_dir().join("history.json")
 }
 
 fn save(minutes: &VecDeque<Minute>) {
@@ -290,7 +304,8 @@ fn top_of(m: HashMap<String, f32>) -> Vec<(String, f32)> {
 
 pub fn start(ctx: eframe::egui::Context) -> Arc<Mutex<Shared>> {
     let (folders_at, folders) = load_folders();
-    let shared = Arc::new(Mutex::new(Shared { minutes: load(), folders, folders_at, ..Default::default() }));
+    let shared = Arc::new(Mutex::new(Shared { minutes: load(), folders, folders_at, net: crate::net::load(), ..Default::default() }));
+    crate::net::start(shared.clone(), ctx.clone());
     let out = shared.clone();
     let scan_into = shared.clone();
     std::thread::Builder::new()
@@ -341,6 +356,7 @@ pub fn start(ctx: eframe::egui::Context) -> Arc<Mutex<Shared>> {
                 let (util, gpu_mem, by_pid) = gpu.sample();
                 let mem = memory();
                 let temps = crate::temp::summarize(&sensors.read());
+                let wifi = crate::net::wifi();
                 let gpu_time: f32 = by_pid.values().sum::<f32>().max(1e-6);
 
                 let mut apps: [HashMap<String, f32>; 3] = Default::default();
@@ -379,6 +395,7 @@ pub fn start(ctx: eframe::egui::Context) -> Arc<Mutex<Shared>> {
                     disk_free: disk.map_or(0.0, |d| d.available_space() as f32 / 1e9),
                     disk_total: disk.map_or(0.0, |d| d.total_space() as f32 / 1e9),
                     e_cores,
+                    wifi,
                 };
                 let point = Point {
                     v: [now.cpu, now.gpu, 100.0 * ram_used / ram_total.max(1.0)],
@@ -387,6 +404,7 @@ pub fn start(ctx: eframe::egui::Context) -> Arc<Mutex<Shared>> {
                     swap: mem.swap,
                     temp: [temps.cpu, temps.gpu],
                     disk: io,
+                    wifi,
                 };
                 shared.lock().unwrap().push(now, point, apps.map(top_of));
                 ctx.request_repaint();
@@ -587,7 +605,7 @@ mod tests {
     fn minute_rolls_up_and_tops_average() {
         let mut s = Shared::default();
         let now = Now { cpu: 50.0, ram_total: 32.0, ram_used: 16.0, ..Default::default() };
-        let pt = Point { v: [50.0, 0.0, 50.0], mem: [8.0, 4.0, 4.0, 2.0], cores: vec![20.0, 80.0], swap: 1.0, temp: [60.0, 50.0], disk: [1.0, 2.0] };
+        let pt = Point { v: [50.0, 0.0, 50.0], mem: [8.0, 4.0, 4.0, 2.0], cores: vec![20.0, 80.0], swap: 1.0, temp: [60.0, 50.0], disk: [1.0, 2.0], wifi: [-55.0, 400.0] };
         let tops: Tops = [vec![("A".into(), 30.0)], vec![], vec![("A".into(), 2.0)]];
         s.push(now, pt.clone(), tops.clone());
         s.push(now, pt, tops);

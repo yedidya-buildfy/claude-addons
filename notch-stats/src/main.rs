@@ -1,8 +1,14 @@
-//! NotchStats: a live CPU / GPU / RAM / temperature / disk monitor that lives in the MacBook notch.
+//! NotchStats: a live CPU / GPU / RAM / temperature / disk / internet monitor that lives in the MacBook notch.
 //! Collapsed it hugs the notch (CPU left, GPU right); hover it and it opens into history graphs
-//! and "who is using it" donuts.
+//! and "who is using it" donuts. It also holds a shelf: files dropped on it stay for 3 days.
 
+mod keys;
 mod mac;
+mod net;
+mod net_view;
+mod shelf;
+mod shelf_mac;
+mod shelf_view;
 mod stats;
 mod temp;
 
@@ -22,15 +28,17 @@ const BG: Color32 = Color32::BLACK;
 const CARD: Color32 = Color32::from_rgb(22, 22, 25);
 const DIM: Color32 = Color32::from_rgb(130, 130, 140);
 const FAINT: Color32 = Color32::from_rgb(44, 44, 50);
-const ACCENT: [Color32; 5] = [
+const ACCENT: [Color32; 6] = [
     Color32::from_rgb(90, 200, 250),  // CPU
     Color32::from_rgb(191, 90, 242),  // GPU
     Color32::from_rgb(48, 209, 88),   // RAM
     Color32::from_rgb(255, 99, 71),   // temperature
     Color32::from_rgb(255, 159, 10),  // disk
+    net_view::DOWN,                   // internet
 ];
 const TEMP: usize = 3;
 const DISK: usize = 4;
+const NET: usize = 5;
 const SWAP: Color32 = Color32::from_rgb(255, 69, 58);
 const READ: Color32 = Color32::from_rgb(100, 210, 255);
 const WRITE: Color32 = Color32::from_rgb(255, 159, 10);
@@ -42,7 +50,7 @@ const SLICES: [Color32; 5] = [
     Color32::from_rgb(48, 209, 88),
 ];
 const RANGES: [(&str, u64); 3] = [("10m", 10), ("1h", 60), ("24h", 1440)];
-const NAMES: [&str; 5] = ["CPU", "GPU", "Memory", "Temperature", "Disk"];
+const NAMES: [&str; 6] = ["CPU", "GPU", "Memory", "Temperature", "Disk", "Internet"];
 const MEM_PARTS: [&str; 4] = ["App", "Wired", "Compr.", "Cached"];
 const MEM_HELP: [&str; 4] = ["App memory", "Wired (kept by macOS)", "Compressed", "Cached files (reclaimable)"];
 const MEM_COLORS: [Color32; 4] = [
@@ -60,6 +68,10 @@ struct App {
     range: usize,
     passthrough: bool,
     set_up: bool,
+    shelf: shelf_view::Shelf,
+    show_shelf: bool,
+    cmd_v: Arc<AtomicBool>,
+    test_now: bool,
 }
 
 fn main() -> eframe::Result {
@@ -96,15 +108,20 @@ fn main() -> eframe::Result {
             if !pinned {
                 mac::watch_hover(cc.egui_ctx.clone(), open.clone(), geo.screen_w, collapsed, vec2(EW, EH + 8.0));
             }
+            let cmd_v = keys::listen(open.clone(), cc.egui_ctx.clone());
             Ok(Box::new(App {
                 shared: stats::start(cc.egui_ctx.clone()),
                 open,
                 geo,
                 // NOTCH_STATS_PIN=gpu / =memory also picks what is shown
-                metric: match std::env::var("NOTCH_STATS_PIN").as_deref() { Ok("gpu") => GPU, Ok("memory") => RAM, Ok("temp") => TEMP, Ok("disk") => DISK, _ => CPU },
+                metric: match std::env::var("NOTCH_STATS_PIN").as_deref() { Ok("gpu") => GPU, Ok("memory") => RAM, Ok("temp") => TEMP, Ok("disk") => DISK, Ok("net") => NET, _ => CPU },
                 range: 0,
                 passthrough: true,
                 set_up: false,
+                shelf: shelf_view::Shelf::new(),
+                cmd_v,
+                show_shelf: std::env::var("NOTCH_STATS_PIN").as_deref() == Ok("shelf"),
+                test_now: false,
             }))
         }),
     )
@@ -153,6 +170,19 @@ impl eframe::App for App {
         // little concave "ears" so the panel flows out of the screen edge like the notch does
         ears(&p, panel, lerp(6.0, 12.0, t));
 
+        // the shelf: a drag over the open panel shows it, a drop fills it, and it hides again once empty
+        self.shelf.refresh();
+        let dragging_in = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        if self.cmd_v.swap(false, Ordering::Relaxed) {
+            self.shelf.paste();
+            self.show_shelf = true;
+        }
+        if self.shelf.take_drops(&ctx) || dragging_in {
+            self.show_shelf = true;
+        } else if self.shelf.items.is_empty() {
+            self.show_shelf = false;
+        }
+
         let shared = self.shared.clone();
         let s = shared.lock().unwrap();
         if t < 0.5 {
@@ -160,7 +190,11 @@ impl eframe::App for App {
         }
         if t > 0.55 {
             let a = (t - 0.55) / 0.45;
-            self.expanded(ui, &p, panel, &s, a);
+            self.expanded(ui, &p, panel, &s, dragging_in, a);
+        }
+        drop(s);
+        if std::mem::take(&mut self.test_now) {
+            shared.lock().unwrap().net_now = true;
         }
     }
 }
@@ -212,16 +246,26 @@ impl App {
         }
     }
 
-    fn expanded(&mut self, ui: &mut egui::Ui, p: &egui::Painter, panel: Rect, s: &Shared, a: f32) {
+    fn expanded(&mut self, ui: &mut egui::Ui, p: &egui::Painter, panel: Rect, s: &Shared, dragging_in: bool, a: f32) {
         let inner = panel.shrink2(vec2(PAD, 0.0));
         let white = alpha(Color32::WHITE, a);
 
         // top strip, beside the notch: live state on the left, range on the right
         let strip_y = panel.top() + self.geo.bar_h / 2.0;
         p.circle_filled(pos2(inner.left() + 4.0, strip_y), 3.5, alpha(ACCENT[RAM], a));
-        p.text(pos2(inner.left() + 14.0, strip_y), Align2::LEFT_CENTER, "Live", FontId::proportional(12.0), alpha(DIM, a));
+        let live = p.text(pos2(inner.left() + 14.0, strip_y), Align2::LEFT_CENTER, "Live", FontId::proportional(12.0), alpha(DIM, a));
+        if !self.shelf.items.is_empty() || dragging_in {
+            self.view_switch(ui, p, pos2(live.right() + 14.0, strip_y), a);
+        }
+        let top = panel.top() + self.geo.bar_h + 10.0;
+        if self.show_shelf {
+            let b = Rect::from_min_max(pos2(inner.left(), top), pos2(inner.right(), panel.bottom() - 18.0));
+            self.shelf.draw(ui, p, b, dragging_in, a);
+            return;
+        }
+        let ranges = if self.metric == NET { net_view::RANGES } else { RANGES };
         let mut x = inner.right();
-        for i in (0..RANGES.len()).rev() {
+        for i in (0..ranges.len()).rev() {
             let r = Rect::from_min_size(pos2(x - 40.0, strip_y - 11.0), vec2(40.0, 22.0));
             x -= 44.0;
             let resp = ui.interact(r, ui.scope_id().with(("range", i)), Sense::click());
@@ -231,21 +275,22 @@ impl App {
             let on = self.range == i;
             let fill = if on { Color32::from_gray(48) } else if resp.hovered() { Color32::from_gray(28) } else { Color32::TRANSPARENT };
             p.rect_filled(r, 6.0, alpha(fill, a));
-            p.text(r.center(), Align2::CENTER_CENTER, RANGES[i].0, FontId::proportional(12.0), alpha(if on { Color32::WHITE } else { DIM }, a));
+            p.text(r.center(), Align2::CENTER_CENTER, ranges[i].0, FontId::proportional(12.0), alpha(if on { Color32::WHITE } else { DIM }, a));
         }
 
         // cards
-        let top = panel.top() + self.geo.bar_h + 10.0;
         let gap = 10.0;
-        let cw = (inner.width() - 4.0 * gap) / 5.0;
+        let cw = (inner.width() - 5.0 * gap) / 6.0;
         let n = s.now;
         let cores = s.secs.back().map_or(0, |x| x.cores.len());
-        let cards: [(usize, String, String, f32); 5] = [
+        let (net_big, net_small) = net_view::card(s);
+        let cards: [(usize, String, String, f32); 6] = [
             (CPU, format!("{:.0}%", n.cpu), format!("{:.1} of {} cores", n.cpu * cores as f32 / 100.0, cores), n.cpu),
             (GPU, format!("{:.0}%", n.gpu), format!("{:.1} GB in use", n.gpu_mem), n.gpu),
             (RAM, format!("{:.1} GB", n.ram_used), format!("of {:.0} · swap {:.1}", n.ram_total, n.swap), 100.0 * n.ram_used / n.ram_total.max(1.0)),
             (TEMP, format!("{:.0}°", n.temps.cpu), format!("GPU {:.0}° · SSD {:.0}°", n.temps.gpu, n.temps.ssd), n.temps.cpu),
             (DISK, format!("{:.0} GB", n.disk_free), format!("free of {:.0} GB", n.disk_total), 100.0 * (1.0 - n.disk_free / n.disk_total.max(1.0))),
+            (NET, net_big, net_small, 0.0),
         ];
         for (i, (m, big, small, pct)) in cards.into_iter().enumerate() {
             let r = Rect::from_min_size(pos2(inner.left() + i as f32 * (cw + gap), top), vec2(cw, 78.0));
@@ -259,11 +304,15 @@ impl App {
             if sel {
                 p.rect_stroke(r, 14.0, Stroke::new(1.5, alpha(c, a * 0.9)), egui::StrokeKind::Inside);
             }
-            let label = ["CPU", "GPU", "MEMORY", "TEMP", "DISK"][m];
+            let label = ["CPU", "GPU", "MEMORY", "TEMP", "DISK", "NET"][m];
             p.text(r.left_top() + vec2(12.0, 10.0), Align2::LEFT_TOP, label, FontId::proportional(11.0), alpha(DIM, a));
             p.text(r.left_top() + vec2(12.0, 26.0), Align2::LEFT_TOP, big, FontId::proportional(22.0), white);
             p.text(r.left_bottom() + vec2(12.0, -10.0), Align2::LEFT_BOTTOM, small, FontId::proportional(11.0), alpha(DIM, a));
-            if m != DISK {
+            if m == NET {
+                let (vals, top) = net_view::spark(s);
+                let sr = Rect::from_min_max(pos2(r.right() - 52.0, r.top() + 9.0), pos2(r.right() - 10.0, r.top() + 25.0));
+                area(p, sr, &vals, top, alpha(c, a), false);
+            } else if m != DISK {
                 let vals: Vec<f32> = s.secs.iter().rev().take(60).rev().map(|x| value(x, m)).collect();
                 let sr = Rect::from_min_max(pos2(r.right() - 52.0, r.top() + 9.0), pos2(r.right() - 10.0, r.top() + 25.0));
                 area(p, sr, &vals, 100.0, alpha(c, a), false);
@@ -284,6 +333,11 @@ impl App {
         p.rect_filled(pie_box, 14.0, alpha(CARD, a));
 
         let m = self.metric;
+        if m == NET {
+            net_view::chart(ui, p, chart_box, s, net_view::RANGES[self.range], a);
+            self.test_now |= net_view::panel(ui, p, pie_box, s, net_view::RANGES[self.range], a);
+            return;
+        }
         let (rname, mins) = RANGES[self.range];
         let c = ACCENT[m];
         let hist = s.history(mins);
@@ -432,6 +486,28 @@ impl App {
                 p.text(pos2(pie_box.right() - 12.0, ly), Align2::RIGHT_TOP, format!("{v:.0}%"), FontId::proportional(12.0), alpha(DIM, a));
                 ly += 21.0;
             }
+        }
+    }
+}
+
+impl App {
+    /// "Stats | Shelf · N" beside "Live": shown only while the shelf holds something (or a file is dragged over).
+    fn view_switch(&mut self, ui: &mut egui::Ui, p: &egui::Painter, at: Pos2, a: f32) {
+        let mut x = at.x;
+        let n = self.shelf.items.len();
+        let labels = [("Stats".to_string(), false), (if n > 0 { format!("Shelf · {n}") } else { "Shelf".into() }, true)];
+        for (label, shelf) in labels {
+            let w = if shelf { 74.0 } else { 50.0 };
+            let r = Rect::from_min_size(pos2(x, at.y - 11.0), vec2(w, 22.0));
+            x += w + 4.0;
+            let resp = ui.interact(r, ui.scope_id().with(("view", shelf)), Sense::click());
+            if resp.clicked() {
+                self.show_shelf = shelf;
+            }
+            let on = self.show_shelf == shelf;
+            let fill = if on { Color32::from_gray(48) } else if resp.hovered() { Color32::from_gray(28) } else { Color32::TRANSPARENT };
+            p.rect_filled(r, 6.0, alpha(fill, a));
+            p.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), alpha(if on { Color32::WHITE } else { DIM }, a));
         }
     }
 }

@@ -11,21 +11,21 @@ use std::time::{Duration, Instant};
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-struct CGPoint {
-    x: f64,
-    y: f64,
+pub struct CGPoint {
+    pub x: f64,
+    pub y: f64,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-struct CGSize {
-    w: f64,
-    h: f64,
+pub struct CGSize {
+    pub w: f64,
+    pub h: f64,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-struct CGRect {
-    origin: CGPoint,
-    size: CGSize,
+pub struct CGRect {
+    pub origin: CGPoint,
+    pub size: CGSize,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
