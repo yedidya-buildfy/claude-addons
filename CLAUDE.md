@@ -58,6 +58,16 @@ The multi-model runtime has four responsibilities:
 
 Provider auth and runtime state live only under the user's home directory. The remembered model catalogue must stay outside the provider auth directory because the proxy parses every JSON file in the auth directory as credentials.
 
+## One home
+
+| Thing | One home |
+|---|---|
+| Live statusline token prices, model aliases, context tiers, cache-write rules and dollar formatting | `statusline-gsd/model-prices.js` |
+| Public price source and refresh schedule | Same module: LiteLLM's public provider catalogue, daily while visible; hourly retries after failure |
+| Session and agent totals | `statusline-gsd/gsd-statusline.js`; cached totals are invalidated by a price/alias fingerprint |
+
+Known duplicate: council budget estimates in `multi-model/ccx_council_core.py` still use the older static `ccx-council-prices.json`, short-context rates and their own calculation. They are not the live statusline. Native Claude prices in the statusline module are an explicit offline fallback; downloaded exact-model rates take priority. Never add another manual CCX price list.
+
 ## Reliability invariants
 
 - Both local services bind only to `127.0.0.1`.

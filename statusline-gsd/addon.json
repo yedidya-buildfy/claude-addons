@@ -17,6 +17,10 @@
       "to": "~/.claude/provider-usage.js"
     },
     {
+      "from": "model-prices.js",
+      "to": "~/.claude/model-prices.js"
+    },
+    {
       "from": "usage-fetch.sh",
       "to": "~/.claude/scripts/usage-fetch.sh",
       "mode": "755"

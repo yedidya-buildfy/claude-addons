@@ -8,6 +8,21 @@ const path = require('path');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'subagents-selftest-'));
 process.env.CLAUDE_CONFIG_DIR = dir;
+fs.mkdirSync(path.join(dir, 'cache'));
+fs.writeFileSync(path.join(dir, 'cache', 'model-prices.json'), JSON.stringify({
+  updated: Date.now(),
+  models: {
+    'gpt-6.1-sol': { input_cost_per_token: 0.000002, cache_read_input_token_cost: 0.0000001, output_cost_per_token: 0.00001,
+      input_cost_per_token_above_272k_tokens: 0.000004, cache_read_input_token_cost_above_272k_tokens: 0.0000002, output_cost_per_token_above_272k_tokens: 0.000015 },
+    'gemini-3.1-pro-preview': { input_cost_per_token: 0.000002, cache_read_input_token_cost: 0.0000002, output_cost_per_token: 0.000012,
+      input_cost_per_token_above_200k_tokens: 0.000004, cache_read_input_token_cost_above_200k_tokens: 0.0000004, output_cost_per_token_above_200k_tokens: 0.000018 },
+    'gemini-4-argon': { input_cost_per_token: 0.000002, cache_read_input_token_cost: 0.0000001, output_cost_per_token: 0.00001 },
+  },
+}));
+fs.writeFileSync(path.join(dir, 'ccx-catalogue.json'), JSON.stringify([
+  { id: 'claude-gemini-pro', raw_id: 'claude-gemini-pro', name: 'Gemini 3.1 Pro' },
+  { id: 'gemini-4-argon-high', raw_id: 'claude-fable-5-dd-hgih-nogra-4-inimeg', name: 'Gemini 4 Argon' },
+]));
 const s = require('./gsd-statusline.js');
 const plain = t => t.replace(/\x1b\[[\d;]*m/g, '');
 const write = (file, lines) => {
@@ -70,7 +85,13 @@ assert.strictEqual(tot.read, 4 * 100_000);
 assert.strictEqual(tot.start, Date.parse(t0));
 const opusCost = (10 * 4 + 500 * 20 + 100_000 * 0.2 + 1000 * 8) / 1e6;
 assert.ok(Math.abs(s.usageCost('claude-opus-5-5', u) - opusCost) < 1e-12);
-assert.strictEqual(s.usageCost('gpt-6', u), 0, 'unpriced model adds no dollars');
+assert.ok(Math.abs(s.usageCost('gpt-6.1-sol[1m]', u) - 0.01702) < 1e-12, 'CCX GPT: fresh input, cached input and output use their own rates');
+assert.ok(Math.abs(s.usageCost('gpt-6.1-sol', { ...u, cache_read_input_tokens: 300_000 }) - 0.07154) < 1e-12, 'GPT long-context tier includes cached input');
+assert.ok(Math.abs(s.usageCost('claude-gemini-pro', u) - 0.02802) < 1e-12, 'Gemini alias resolves through the live model catalogue');
+assert.ok(Math.abs(s.usageCost('gemini-3.1-pro-preview', { ...u, cache_read_input_tokens: 200_000 }) - 0.09304) < 1e-12, 'Gemini long-context tier');
+assert.ok(Math.abs(s.usageCost('gemini-4-argon-high', u) - 0.01702) < 1e-12, 'Gemini effort suffix is not a different price');
+assert.ok(Math.abs(s.usageCost('claude-fable-5-dd-hgih-nogra-4-inimeg', u) - 0.01702) < 1e-12, 'disguised Gemini must not be charged as Fable');
+assert.strictEqual(s.usageCost('unknown-future-model', u), null, 'unpriced is unknown, not free');
 assert.strictEqual(s.usageCost('claude-opus-5-5', { ...u, speed: 'fast' }), 2 * opusCost);
 // incremental: a new reply is picked up, nothing is counted twice
 fs.appendFileSync(cur, JSON.stringify(reply('m4', 'claude-opus-5-5', u, new Date().toISOString())) + '\n');
@@ -80,6 +101,28 @@ const line = plain(s.formatSessionTotals(tot, now));
 assert.ok(/^\$0\.\d\d · 2h 0m · 406K tokens \(reread 400K · new 4K · written 2K\)$/.test(line), line);
 assert.strictEqual(s.formatSessionTotals(null), '');
 assert.strictEqual(s.readSessionTotals(path.join(dir, 'none.jsonl'), cc).start, 0);
+
+// Old zero-dollar caches are rebuilt, including subagents, without new replies.
+const ccx = path.join(proj, 'ccx.jsonl');
+write(ccx, [reply('gpt1', 'gpt-6.1-sol', u, t0), reply('gpt1', 'gpt-6.1-sol', u, t0)]);
+write(path.join(proj, 'ccx', 'subagents', 'agent-gem.jsonl'), [reply('gem1', 'claude-gemini-pro', u, t0)]);
+const oldCache = path.join(cc, 'cache', 'session-totals-ccx.json');
+fs.writeFileSync(oldCache, JSON.stringify({ v: 2, offsets: { [ccx]: fs.statSync(ccx).size }, totals: { cost: 0 } }));
+const ccxTotals = s.readSessionTotals(ccx, cc);
+assert.ok(Math.abs(ccxTotals.cost - 0.04504) < 1e-12, 'historical GPT + Gemini usage is repriced once');
+assert.ok(Math.abs(ccxTotals.perFile['agent-gem'].cost - 0.02802) < 1e-12, 'agent uses the same price rule');
+assert.strictEqual(s.readSessionTotals(ccx, cc).cost, ccxTotals.cost, 'redraw does not double count');
+const cached = JSON.parse(fs.readFileSync(oldCache));
+cached.pricing = 'outdated-prices';
+cached.totals.cost = 0;
+fs.writeFileSync(oldCache, JSON.stringify(cached));
+assert.strictEqual(s.readSessionTotals(ccx, cc).cost, ccxTotals.cost, 'changed prices invalidate cached totals');
+fs.appendFileSync(ccx, JSON.stringify(reply('unknown', 'unknown-future-model', u, t0)) + '\n');
+assert.ok(plain(s.formatSessionTotals(s.readSessionTotals(ccx, cc), now)).startsWith('$0.05+?'), 'partial prices are visibly incomplete');
+assert.ok(plain(s.formatSessionTotals({ ...ccxTotals, cost: 0, unpriced: 1 }, now)).startsWith('$—'), 'missing price never looks free');
+for (const [cost, dollars] of [[999, '$999'], [1000, '$1000'], [12345, '$12345'], [1234567, '$1234567']]) {
+  assert.ok(plain(s.formatSessionTotals({ ...tot, cost }, now)).startsWith(`${dollars} ·`), 'dollar totals are never capped or truncated at three digits');
+}
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log('subagents selftest: ok');

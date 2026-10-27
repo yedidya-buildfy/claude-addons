@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { usageCost, formatCost, pricingVersion, refreshPricingInBackground } = require('./model-prices');
 const { providerCachePath, readProviderSnapshot, sanitizeWindows } = require('./provider-usage');
 
 // isPlainObject/sanitizeResetCredits below mirror the same-named validation
@@ -715,6 +716,7 @@ function runStatusline() {
     // Second line: the whole conversation so far — $ · time · tokens.
     let totals = '';
     try {
+      refreshPricingInBackground();
       totals = formatSessionTotals(readSessionTotals(data.transcript_path, claudeDir));
     } catch (e) {}
 
@@ -1476,7 +1478,7 @@ function formatAgentRow(task, { columns = 100, now = Date.now(), settings = {}, 
   const endAt = running ? now : (tail.lastAt || now);
   const time = task.startTime ? formatDuration(endAt - task.startTime).padStart(AGENT_TIME_W) : ''.padStart(AGENT_TIME_W);
   const spent = tail.spent;
-  const cost = (spent ? (spent.cost >= 100 ? `$${Math.round(spent.cost)}` : `$${spent.cost.toFixed(2)}`) : '').padStart(AGENT_COST_W);
+  const cost = (spent ? formatCost(spent.cost, spent.unpriced) : '').padStart(AGENT_COST_W);
   const tok = (spent ? `${formatTokenCount(spent.tokens)} tok` : '').padStart(AGENT_TOK_W);
   const fixed = 2 + AGENT_MODEL_W + 1 + 10 + 1 + 4 + 1 + AGENT_SIZE_W + 1 + AGENT_TIME_W + AGENT_COST_W + AGENT_TOK_W;
   const nameW = Math.max(10, Math.min(36, columns - fixed - 2));
@@ -1532,35 +1534,8 @@ function runAgentRows() {
 // Claude Code writes one line per content block, each repeating the usage.
 // Read incrementally: a cache keeps each file's offset and the running sums.
 
-// $ per million tokens: [input, output, cache read]. Cache writes are 1.25×
-// input (5 min) or 2× (1 hour). Checked 2026-09-28 against Anthropic's list.
-// ponytail: a model not listed here (e.g. GPT/Gemini via CCX) adds tokens but
-// no dollars.
-const MODEL_PRICES = [
-  [/fable-5-1|mythos-5-1/, [10, 50, 0.25]],
-  [/fable|mythos/, [10, 50, 1]],
-  [/opus-5-5/, [4, 20, 0.2]],
-  [/opus-4-1|opus-4(?!-\d)|opus-4-2025/, [15, 75, 1.5]],
-  [/opus/, [5, 25, 0.5]],
-  [/sonnet-5/, [2, 10, 0.2]],
-  [/sonnet/, [3, 15, 0.3]],
-  [/haiku-4/, [1, 5, 0.1]],
-  [/haiku/, [0.8, 4, 0.08]],
-];
-
-function usageCost(model, u) {
-  const hit = MODEL_PRICES.find(([re]) => re.test(model || ''));
-  if (!hit) return 0;
-  const [inP, outP, readP] = hit[1];
-  const cw = u.cache_creation_input_tokens || 0;
-  const cw1h = Math.min(cw, u.cache_creation?.ephemeral_1h_input_tokens || 0);
-  const cost = (u.input_tokens || 0) * inP + (u.output_tokens || 0) * outP
-    + (u.cache_read_input_tokens || 0) * readP + (cw - cw1h) * inP * 1.25 + cw1h * inP * 2;
-  return (u.speed === 'fast' ? 2 : 1) * cost / 1e6;
-}
-
 function emptyTotals() {
-  return { input: 0, write: 0, read: 0, output: 0, cost: 0, start: 0 };
+  return { input: 0, write: 0, read: 0, output: 0, cost: 0, unpriced: 0, start: 0 };
 }
 
 // Fold new lines of one transcript into the totals. `st` = {seen, foreign}.
@@ -1590,9 +1565,11 @@ function addTranscriptLines(text, totals, st, ownSession, fileTotals = { tokens:
     totals.read += u.cache_read_input_tokens || 0;
     totals.output += u.output_tokens || 0;
     const cost = usageCost(m.model, u);
-    totals.cost += cost;
+    totals.cost += cost ?? 0;
+    totals.unpriced += cost === null ? 1 : 0;
     fileTotals.tokens += (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.output_tokens || 0);
-    fileTotals.cost += cost;
+    fileTotals.cost += cost ?? 0;
+    fileTotals.unpriced = (fileTotals.unpriced || 0) + (cost === null ? 1 : 0);
   }
 }
 
@@ -1616,7 +1593,7 @@ function readSessionTotals(transcriptPath, claudeDir) {
   const cachePath = sessionTotalsCachePath(claudeDir, session);
   let c;
   try { c = JSON.parse(fs.readFileSync(cachePath, 'utf8')); } catch (e) {}
-  if (!c || c.v !== 2) c = { v: 2, offsets: {}, totals: emptyTotals(), seen: {}, foreign: {}, perFile: {} };
+  if (!c || c.v !== 3 || c.pricing !== pricingVersion) c = { v: 3, pricing: pricingVersion, offsets: {}, totals: emptyTotals(), seen: {}, foreign: {}, perFile: {} };
   const projectDir = path.dirname(transcriptPath);
   let changed = false;
   // The current transcript last, so copied lines are already `seen`.
@@ -1665,7 +1642,7 @@ function formatTokenCount(n) {
 function formatSessionTotals(t, now = Date.now()) {
   if (!t || !t.start) return '';
   const total = t.input + t.write + t.read + t.output;
-  const dollars = t.cost >= 100 ? `$${Math.round(t.cost)}` : `$${t.cost.toFixed(2)}`;
+  const dollars = formatCost(t.cost, t.unpriced);
   return `\x1b[1;33m${dollars}\x1b[0m \x1b[2m·\x1b[0m \x1b[36m${formatDuration(now - t.start)}\x1b[0m`
     + ` \x1b[2m·\x1b[0m \x1b[1m${formatTokenCount(total)} tokens\x1b[0m`
     + ` \x1b[2m(reread ${formatTokenCount(t.read)} · new ${formatTokenCount(t.input + t.write)} · written ${formatTokenCount(t.output)})\x1b[0m`;
