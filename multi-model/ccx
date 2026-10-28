@@ -179,6 +179,13 @@ launch_claude() {
   if [ $has_skip -eq 0 ]; then
     set -- --dangerously-skip-permissions "$@"
   fi
+  # Owner's rule (28.10.2026): inside a multi-model session every model hands
+  # work to subagents of its OWN provider — Claude to Claude, ChatGPT to
+  # ChatGPT, Gemini to Gemini — unless the user names another model. Only when
+  # the proxy is on (plain Claude Code needs no such note).
+  if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+    set -- --append-system-prompt "Subagents in this multi-model session: run every subagent on the same provider as your own model (Claude models use Claude subagents, ChatGPT models use ChatGPT subagents, Gemini models use Gemini subagents), unless the user explicitly names a different model or provider." "$@"
+  fi
   if [ -x "$HOME/.claude/scripts/sticky-claude" ]; then
     "$HOME/.claude/scripts/sticky-claude" "$@"
   else
