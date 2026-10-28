@@ -14,7 +14,7 @@ const MODES = new Set(["on", "lid", "pin", "off"]);
 
 const BUTTONS = [
   { mode: "on", label: "☕ awake", tip: "ער עם מכסה פתוחה, עד שמכבים" },
-  { mode: "lid", label: "💻 lid · till done", tip: "ער גם עם מכסה סגורה, עד שקלוד מסיים בכל הטרמינלים" },
+  { mode: "lid", label: "💻 lid · till done", tip: "ער גם עם מכסה סגורה, עד 5 דקות בלי שום עבודה (קלוד או משימות רקע)" },
   { mode: "pin", label: "📌 lid · always", tip: "ער גם עם מכסה סגורה, עד שמכבים (12 שעות לכל היותר)" },
 ];
 
