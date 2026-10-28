@@ -18,14 +18,15 @@ pub struct Shelf {
     thumbs: HashMap<PathBuf, Option<TextureHandle>>,
     read_at: Option<Instant>,
     copied: Option<(PathBuf, Instant)>,
-    picked: HashSet<PathBuf>, // ⌘/⇧-clicked tiles: dragging any of them drags them all
+    picked: HashSet<PathBuf>, // ⌘/⇧-clicked or boxed tiles: dragging any of them drags them all
+    boxing: Option<(egui::Pos2, HashSet<PathBuf>)>, // a selection box being drawn: where it started, what was picked before
 }
 
 impl Shelf {
     pub fn new() -> Shelf {
         let root = shelf::dir();
         let _ = std::fs::create_dir_all(&root);
-        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None, picked: HashSet::new() }
+        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None, picked: HashSet::new(), boxing: None }
     }
 
     /// Re-reads the shelf folder every second; that is also when 3-day-old items go and new screenshots
@@ -110,6 +111,9 @@ impl Shelf {
         let tile = |k: usize| Rect::from_min_size(pos2(grid.left() + (k % COLS) as f32 * (tw + GAP), grid.top() + (k / COLS) as f32 * (th + GAP)), vec2(tw, th));
 
         let items: Vec<Item> = self.items.iter().take(room).cloned().collect();
+        // empty space first, so the tiles on top keep their own clicks and drags
+        let bg = ui.interact(grid.expand(6.0), ui.scope_id().with("box"), Sense::click_and_drag());
+        self.select_box(ui, p, &bg, &items, &tile, a);
         for (k, item) in items.iter().enumerate() {
             self.tile(ui, p, tile(k), item, a);
         }
@@ -122,8 +126,33 @@ impl Shelf {
         if dragging_in {
             p.rect_stroke(grid.expand(6.0), 12.0, Stroke::new(2.0, alpha(DROP, a)), egui::StrokeKind::Outside);
         }
-        let hint = "drag a tile out to use it  ·  click = copy  ·  ⌘-click = pick several, drag one to take all  ·  × = remove";
+        let hint = "drag a tile out to use it  ·  click = copy  ·  drag a box or ⌘-click = pick several, drag one to take all  ·  × = remove";
         p.text(pos2(b.left() + 14.0, b.bottom() - 12.0), Align2::LEFT_BOTTOM, hint, FontId::proportional(11.0), alpha(DIM, a));
+    }
+
+    /// Desktop-style selection: drag on empty space draws a box and picks every tile it touches
+    /// (with ⌘/⇧ held it adds to what was picked); a click on empty space clears the pick.
+    fn select_box(&mut self, ui: &egui::Ui, p: &egui::Painter, bg: &egui::Response, items: &[Item], tile: &dyn Fn(usize) -> Rect, a: f32) {
+        let add = ui.input(|i| i.modifiers.command || i.modifiers.shift);
+        if bg.drag_started()
+            && let Some(at) = bg.interact_pointer_pos()
+        {
+            self.boxing = Some((at, if add { self.picked.clone() } else { HashSet::new() }));
+        }
+        if let (Some((from, before)), Some(to)) = (&self.boxing, bg.interact_pointer_pos().or(ui.ctx().pointer_latest_pos())) {
+            let area = Rect::from_two_pos(*from, to);
+            let mut picked = before.clone();
+            picked.extend(items.iter().enumerate().filter(|(k, _)| tile(*k).intersects(area)).map(|(_, i)| i.path.clone()));
+            self.picked = picked;
+            p.rect_filled(area, 2.0, alpha(Color32::from_rgba_unmultiplied(48, 209, 88, 30), a));
+            p.rect_stroke(area, 2.0, Stroke::new(1.0, alpha(DROP, a)), egui::StrokeKind::Inside);
+        }
+        if bg.drag_stopped() {
+            self.boxing = None;
+        }
+        if bg.clicked() && !add {
+            self.picked.clear();
+        }
     }
 
     fn tile(&mut self, ui: &mut egui::Ui, p: &egui::Painter, r: Rect, item: &Item, a: f32) {
