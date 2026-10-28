@@ -4,7 +4,7 @@ use crate::shelf::{self, Item};
 use crate::shelf_mac::{self, Pasted};
 use crate::{CARD, DIM, FAINT, alpha, short};
 use eframe::egui::{self, Align2, Color32, ColorImage, FontId, Rect, Sense, Shape, Stroke, TextureHandle, TextureOptions, pos2, vec2};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -18,24 +18,31 @@ pub struct Shelf {
     thumbs: HashMap<PathBuf, Option<TextureHandle>>,
     read_at: Option<Instant>,
     copied: Option<(PathBuf, Instant)>,
+    picked: HashSet<PathBuf>, // ⌘/⇧-clicked tiles: dragging any of them drags them all
 }
 
 impl Shelf {
     pub fn new() -> Shelf {
         let root = shelf::dir();
         let _ = std::fs::create_dir_all(&root);
-        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None }
+        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None, picked: HashSet::new() }
     }
 
-    /// Re-reads the shelf folder every few seconds; that is also when 3-day-old items go.
+    /// Re-reads the shelf folder every second; that is also when 3-day-old items go and new screenshots
+    /// (macOS saves them straight into the shelf folder) move in. The newest screenshot also goes on the
+    /// clipboard, so ⌘V right after taking one still pastes it.
     pub fn refresh(&mut self) {
-        if self.read_at.is_some_and(|t| t.elapsed() < Duration::from_secs(5)) {
+        if self.read_at.is_some_and(|t| t.elapsed() < Duration::from_secs(1)) {
             return;
+        }
+        if let Some(shot) = shelf::adopt_loose(&self.root).last() {
+            shelf_mac::copy(shot);
         }
         shelf::sweep(&self.root, crate::stats::unix_secs());
         self.items = shelf::list(&self.root);
         let items = &self.items;
         self.thumbs.retain(|p, _| items.iter().any(|i| &i.path == p));
+        self.picked.retain(|p| items.iter().any(|i| &i.path == p));
         self.read_at = Some(Instant::now());
     }
 
@@ -115,7 +122,7 @@ impl Shelf {
         if dragging_in {
             p.rect_stroke(grid.expand(6.0), 12.0, Stroke::new(2.0, alpha(DROP, a)), egui::StrokeKind::Outside);
         }
-        let hint = "drag a tile out to use it  ·  click = copy  ·  × = remove";
+        let hint = "drag a tile out to use it  ·  click = copy  ·  ⌘-click = pick several, drag one to take all  ·  × = remove";
         p.text(pos2(b.left() + 14.0, b.bottom() - 12.0), Align2::LEFT_BOTTOM, hint, FontId::proportional(11.0), alpha(DIM, a));
     }
 
@@ -142,6 +149,13 @@ impl Shelf {
         p.rect_filled(age.expand2(vec2(3.0, 1.0)), 3.0, alpha(Color32::from_black_alpha(150), a));
         p.text(r.right_top() + vec2(-8.0, 8.0), Align2::RIGHT_TOP, shelf::age(item.added), FontId::proportional(9.0), alpha(Color32::WHITE, a));
 
+        let picked = self.picked.contains(&item.path);
+        if picked {
+            p.rect_stroke(r, 10.0, Stroke::new(2.0, alpha(DROP, a)), egui::StrokeKind::Inside);
+            let dot = pos2(r.right() - 14.0, r.bottom() - 34.0);
+            p.circle_filled(dot, 8.0, alpha(DROP, a));
+            p.text(dot, Align2::CENTER_CENTER, "✓", FontId::proportional(11.0), alpha(Color32::BLACK, a));
+        }
         if hot {
             p.circle_filled(x.center(), 9.0, alpha(Color32::from_gray(if xr.hovered() { 120 } else { 80 }), a));
             p.text(x.center(), Align2::CENTER_CENTER, "×", FontId::proportional(13.0), alpha(Color32::WHITE, a));
@@ -162,8 +176,16 @@ impl Shelf {
             shelf::remove(item);
             self.changed();
         } else if resp.drag_started() {
-            shelf_mac::drag_out(&item.path, [r.left(), r.top(), r.width(), r.height()]);
+            // a picked tile takes every picked one along, fanned out a little from under the pointer
+            let paths: Vec<PathBuf> = if picked { self.items.iter().map(|i| i.path.clone()).filter(|p| self.picked.contains(p)).collect() } else { vec![item.path.clone()] };
+            let files: Vec<(PathBuf, [f32; 4])> = paths.into_iter().enumerate().map(|(k, p)| (p, [r.left() + 6.0 * k as f32, r.top() + 6.0 * k as f32, r.width(), r.height()])).collect();
+            shelf_mac::drag_out(&files);
+        } else if resp.clicked() && ui.input(|i| i.modifiers.command || i.modifiers.shift) {
+            if !self.picked.remove(&item.path) {
+                self.picked.insert(item.path.clone());
+            }
         } else if resp.clicked() {
+            self.picked.clear();
             shelf_mac::copy(&item.path);
             self.copied = Some((item.path.clone(), Instant::now()));
         }

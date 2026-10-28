@@ -222,9 +222,9 @@ define_class!(
     }
 );
 
-/// Starts a real macOS drag of `path` from where its tile is drawn (`tile` = x, y, w, h in window
-/// points, top-left origin); the app under the pointer receives the file when the mouse is let go.
-pub fn drag_out(path: &Path, tile: [f32; 4]) {
+/// Starts a real macOS drag of the given files, each from where its tile is drawn (`tile` = x, y, w, h
+/// in window points, top-left origin); the app under the pointer receives them all when the mouse is let go.
+pub fn drag_out(files: &[(PathBuf, [f32; 4])]) {
     autoreleasepool(|_| unsafe {
         let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
         let windows: *mut AnyObject = msg_send![app, windows];
@@ -238,13 +238,17 @@ pub fn drag_out(path: &Path, tile: [f32; 4]) {
         let view: *mut AnyObject = msg_send![win, contentView];
         let flipped: bool = msg_send![view, isFlipped];
         let bounds: CGRect = msg_send![view, bounds];
-        let [x, y, w, h] = tile.map(|v| v as f64);
-        let frame = CGRect { origin: CGPoint { x, y: if flipped { y } else { bounds.size.h - y - h } }, size: CGSize { w, h } };
-
-        let url: *mut AnyObject = msg_send![class!(NSURL), fileURLWithPath: ns(&path.to_string_lossy())];
-        let item: *mut AnyObject = msg_send![class!(NSDraggingItem), alloc];
-        let item: *mut AnyObject = msg_send![item, initWithPasteboardWriter: url];
-        let _: () = msg_send![item, setDraggingFrame: frame, contents: icon(path)];
+        let list: *mut AnyObject = msg_send![class!(NSMutableArray), array];
+        for (path, tile) in files {
+            let [x, y, w, h] = tile.map(|v| v as f64);
+            let frame = CGRect { origin: CGPoint { x, y: if flipped { y } else { bounds.size.h - y - h } }, size: CGSize { w, h } };
+            let url: *mut AnyObject = msg_send![class!(NSURL), fileURLWithPath: ns(&path.to_string_lossy())];
+            let item: *mut AnyObject = msg_send![class!(NSDraggingItem), alloc];
+            let item: *mut AnyObject = msg_send![item, initWithPasteboardWriter: url];
+            let _: () = msg_send![item, setDraggingFrame: frame, contents: icon(path)];
+            let _: () = msg_send![list, addObject: item];
+            let _: () = msg_send![item, release];
+        }
 
         // egui has already eaten the real mouse event; AppKit only needs one that says "left button, dragging, here"
         let at: CGPoint = msg_send![win, mouseLocationOutsideOfEventStream];
@@ -253,14 +257,11 @@ pub fn drag_out(path: &Path, tile: [f32; 4]) {
         let number: isize = msg_send![win, windowNumber];
         let event: *mut AnyObject = msg_send![class!(NSEvent), mouseEventWithType: 6usize /* left mouse dragged */, location: at, modifierFlags: 0usize, timestamp: uptime, windowNumber: number, context: std::ptr::null_mut::<AnyObject>(), eventNumber: 0isize, clickCount: 1isize, pressure: 1.0f32];
         if event.is_null() {
-            let _: () = msg_send![item, release];
             return;
         }
         // ponytail: one tiny source object per drag is never freed; AppKit holds it only weakly
         let source: *mut AnyObject = msg_send![DragSource::class(), new];
-        let items: *mut AnyObject = msg_send![class!(NSArray), arrayWithObject: item];
-        let _: *mut AnyObject = msg_send![view, beginDraggingSessionWithItems: items, event: event, source: source];
-        let _: () = msg_send![item, release];
+        let _: *mut AnyObject = msg_send![view, beginDraggingSessionWithItems: list, event: event, source: source];
     })
 }
 

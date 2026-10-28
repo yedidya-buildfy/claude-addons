@@ -61,6 +61,27 @@ pub fn add_bytes(root: &Path, name: &str, bytes: &[u8]) -> bool {
     new_slot(root).is_ok_and(|slot| std::fs::write(slot.join(name), bytes).is_ok())
 }
 
+/// Loose files in the shelf folder itself (macOS writes screenshots there) each move into their own
+/// slot, so they show up like anything dropped in. Hidden files are skipped: macOS writes a screenshot
+/// as ".Screenshot…" first and renames it only when it is complete. Returns where they landed.
+pub fn adopt_loose(root: &Path) -> Vec<PathBuf> {
+    let loose: Vec<PathBuf> = std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()) && !e.file_name().to_string_lossy().starts_with('.'))
+        .map(|e| e.path())
+        .collect();
+    loose
+        .into_iter()
+        .filter_map(|f| {
+            let slot = new_slot(root).ok()?;
+            let to = slot.join(f.file_name()?);
+            std::fs::rename(&f, &to).map(|_| to).map_err(|_| std::fs::remove_dir_all(&slot)).ok()
+        })
+        .collect()
+}
+
 pub fn remove(item: &Item) {
     if let Some(slot) = item.path.parent() {
         let _ = std::fs::remove_dir_all(slot);
@@ -118,6 +139,21 @@ mod tests {
         assert!(list(&root).is_empty(), "older than 3 days goes");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_file(&src);
+    }
+
+    #[test]
+    fn loose_files_move_into_their_own_slot() {
+        let root = temp_root("loose");
+        std::fs::write(root.join("Screenshot 1.png"), b"a").unwrap();
+        std::fs::write(root.join(".Screenshot 2.png"), b"half written").unwrap();
+        let moved = adopt_loose(&root);
+        assert_eq!(moved.len(), 1);
+        let items = list(&root);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path.file_name().unwrap(), "Screenshot 1.png");
+        assert!(root.join(".Screenshot 2.png").exists(), "files still being written stay put");
+        assert!(adopt_loose(&root).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
