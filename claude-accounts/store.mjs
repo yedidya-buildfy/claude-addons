@@ -56,7 +56,14 @@ const slotKey = (provider, email) => (provider === "claude" ? email : `${provide
 
 /** Index rows: { provider, email, name, plan, last: { windows, at } }. Old format = list of Claude emails. */
 export function loadIndex() {
-  return readJson(INDEX, []).map((r) => (typeof r === "string" ? { provider: "claude", email: r } : r));
+  // one row per account even if two runs (the notch and a terminal) wrote at once
+  const rows = new Map();
+  for (const r of readJson(INDEX, [])) {
+    const row = typeof r === "string" ? { provider: "claude", email: r } : r;
+    const key = `${row.provider}:${row.email}`;
+    rows.set(key, { ...row, ...rows.get(key) });
+  }
+  return [...rows.values()];
 }
 
 export function updateIndex(provider, email, fields) {
