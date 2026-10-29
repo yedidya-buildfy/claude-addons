@@ -14,7 +14,10 @@ export function readItem(service, account) {
   try {
     const args = ["find-generic-password", "-s", service, "-w"];
     if (account) args.splice(1, 0, "-a", account);
-    return execFileSync("security", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const out = execFileSync("security", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    // `security -w` prints the value as hex when it holds non-ASCII bytes (a Hebrew name, say);
+    // our values are JSON, which never starts with a hex digit
+    return /^([0-9a-f]{2})+$/i.test(out) ? Buffer.from(out, "hex").toString("utf8") : out;
   } catch {
     return null;
   }
