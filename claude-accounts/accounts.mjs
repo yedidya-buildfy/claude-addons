@@ -86,7 +86,8 @@ async function list() {
   const order = (r) => PROVIDERS.indexOf(byId[r.provider]) * 2 + (r.active ? 0 : 1);
   return rows
     .sort((a, b) => order(a) - order(b))
-    .map((r) => ({ ...r, price: priceOf(r.provider, r.plan), best: best[r.provider] === r.email }));
+    // the star only means something when a tool has more than one account to pick from
+    .map((r, _, all) => ({ ...r, price: priceOf(r.provider, r.plan), best: best[r.provider] === r.email && all.filter((o) => o.provider === r.provider).length > 1 }));
 }
 
 function use(provider, email) {
