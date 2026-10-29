@@ -142,6 +142,32 @@ pub fn copy(path: &Path) {
     })
 }
 
+/// The bundle id of the app in front ("com.apple.finder" for Finder).
+pub fn front_app() -> Option<String> {
+    autoreleasepool(|_| unsafe {
+        let ws: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
+        let app: *mut AnyObject = msg_send![ws, frontmostApplication];
+        if app.is_null() { None } else { text(msg_send![app, bundleIdentifier]) }
+    })
+}
+
+/// Closes the Downloads window AirDrop opens in Finder and brings `app` back to the front.
+/// The first time, macOS asks once to let NotchStats control Finder.
+pub fn send_finder_back(app: &str) {
+    let script = format!(
+        r#"tell application "Finder"
+  set d to (path to downloads folder) as text
+  repeat with w in (get every Finder window)
+    try
+      if ((target of w) as text) is d then close w
+    end try
+  end repeat
+end tell
+tell application id "{app}" to activate"#
+    );
+    std::thread::spawn(move || std::process::Command::new("/usr/bin/osascript").arg("-e").arg(script).status());
+}
+
 #[link(name = "ImageIO", kind = "framework")]
 unsafe extern "C" {
     fn CGImageSourceCreateWithURL(url: *const c_void, options: *const c_void) -> *mut c_void;

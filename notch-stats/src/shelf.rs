@@ -72,14 +72,38 @@ pub fn adopt_loose(root: &Path) -> Vec<PathBuf> {
         .filter(|e| e.file_type().is_ok_and(|t| t.is_file()) && !e.file_name().to_string_lossy().starts_with('.'))
         .map(|e| e.path())
         .collect();
-    loose
+    loose.iter().filter_map(|f| move_in(root, f)).collect()
+}
+
+/// Moves a file or folder into a fresh slot; where it landed.
+fn move_in(root: &Path, f: &Path) -> Option<PathBuf> {
+    let slot = new_slot(root).ok()?;
+    let to = slot.join(f.file_name()?);
+    std::fs::rename(f, &to).map(|_| to).map_err(|_| std::fs::remove_dir_all(&slot)).ok()
+}
+
+/// What AirDrop just received into Downloads moves onto the shelf instead. AirDrop tags what it
+/// receives as coming from "sharingd"; only things that landed in the last 30 s are looked at, so
+/// older downloads stay where they are. Returns where they landed.
+pub fn adopt_airdrops(root: &Path, downloads: &Path, now: u64) -> Vec<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+    let fresh: Vec<PathBuf> = std::fs::read_dir(downloads)
         .into_iter()
-        .filter_map(|f| {
-            let slot = new_slot(root).ok()?;
-            let to = slot.join(f.file_name()?);
-            std::fs::rename(&f, &to).map(|_| to).map_err(|_| std::fs::remove_dir_all(&slot)).ok()
-        })
-        .collect()
+        .flatten()
+        .flatten()
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+        .filter(|e| e.metadata().is_ok_and(|m| now.saturating_sub(m.ctime().max(0) as u64) < 30))
+        .map(|e| e.path())
+        .collect();
+    fresh.iter().filter(|f| from_airdrop(f)).filter_map(|f| move_in(root, f)).collect()
+}
+
+fn from_airdrop(f: &Path) -> bool {
+    std::process::Command::new("/usr/bin/xattr")
+        .args(["-p", "com.apple.quarantine"])
+        .arg(f)
+        .output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).split(';').nth(2) == Some("sharingd"))
 }
 
 pub fn remove(item: &Item) {
@@ -154,6 +178,29 @@ mod tests {
         assert!(root.join(".Screenshot 2.png").exists(), "files still being written stay put");
         assert!(adopt_loose(&root).is_empty());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn only_fresh_airdrops_leave_downloads() {
+        let root = temp_root("airdrop");
+        let downloads = root.with_extension("downloads");
+        let _ = std::fs::remove_dir_all(&downloads);
+        std::fs::create_dir_all(&downloads).unwrap();
+        let tag = |name: &str, agent: &str| {
+            let f = downloads.join(name);
+            std::fs::write(&f, b"x").unwrap();
+            let q = format!("0081;6ae36223;{agent};");
+            assert!(std::process::Command::new("/usr/bin/xattr").args(["-w", "com.apple.quarantine", &q]).arg(&f).status().unwrap().success());
+        };
+        tag("From phone.heic", "sharingd");
+        tag("From Chrome.pdf", "Chrome");
+        assert!(adopt_airdrops(&root, &downloads, unix_secs() + 120).is_empty(), "old AirDrops stay in Downloads");
+        let moved = adopt_airdrops(&root, &downloads, unix_secs());
+        assert_eq!(moved.len(), 1);
+        assert_eq!(list(&root)[0].path.file_name().unwrap(), "From phone.heic");
+        assert!(downloads.join("From Chrome.pdf").exists());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&downloads);
     }
 
     #[test]

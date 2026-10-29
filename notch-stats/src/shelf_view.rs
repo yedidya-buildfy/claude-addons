@@ -20,13 +20,15 @@ pub struct Shelf {
     copied: Option<(PathBuf, Instant)>,
     picked: HashSet<PathBuf>, // ⌘/⇧-clicked or boxed tiles: dragging any of them drags them all
     boxing: Option<(egui::Pos2, HashSet<PathBuf>)>, // a selection box being drawn: where it started, what was picked before
+    last_app: Option<(String, Instant)>, // the last app in front other than Finder, and when it was
+    hush: Option<(String, Instant)>,     // after an AirDrop: the app to return to if Finder jumps up, until when
 }
 
 impl Shelf {
     pub fn new() -> Shelf {
         let root = shelf::dir();
         let _ = std::fs::create_dir_all(&root);
-        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None, picked: HashSet::new(), boxing: None }
+        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None, picked: HashSet::new(), boxing: None, last_app: None, hush: None }
     }
 
     /// Re-reads the shelf folder every second; that is also when 3-day-old items go and new screenshots
@@ -39,12 +41,37 @@ impl Shelf {
         if let Some(shot) = shelf::adopt_loose(&self.root).last() {
             shelf_mac::copy(shot);
         }
+        self.airdrops();
         shelf::sweep(&self.root, crate::stats::unix_secs());
         self.items = shelf::list(&self.root);
         let items = &self.items;
         self.thumbs.retain(|p, _| items.iter().any(|i| &i.path == p));
         self.picked.retain(|p| items.iter().any(|i| &i.path == p));
         self.read_at = Some(Instant::now());
+    }
+
+    /// AirDrop saves into Downloads and pops Finder up on it; the files go on the shelf instead and,
+    /// for a few seconds, Finder jumping in front is undone so the window you were in stays in front.
+    /// If you were already working in Finder it is left alone.
+    fn airdrops(&mut self) {
+        let front = shelf_mac::front_app();
+        let finder = front.as_deref() == Some("com.apple.finder");
+        if let Some(app) = front.filter(|_| !finder) {
+            self.last_app = Some((app, Instant::now()));
+        }
+        let downloads = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Downloads")).unwrap_or_default();
+        if !shelf::adopt_airdrops(&self.root, &downloads, crate::stats::unix_secs()).is_empty() {
+            if let Some((app, seen)) = &self.last_app {
+                if seen.elapsed() < Duration::from_secs(4) {
+                    self.hush = Some((app.clone(), Instant::now() + Duration::from_secs(6)));
+                }
+            }
+        }
+        match &self.hush {
+            Some((_, until)) if Instant::now() > *until => self.hush = None,
+            Some((app, _)) if finder => shelf_mac::send_finder_back(app),
+            _ => {}
+        }
     }
 
     fn changed(&mut self) {
