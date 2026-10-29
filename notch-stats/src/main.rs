@@ -2,6 +2,7 @@
 //! Collapsed it hugs the notch (CPU left, GPU right); hover it and it opens into history graphs
 //! and "who is using it" donuts. It also holds a shelf: files dropped on it stay for 3 days.
 
+mod ai_view;
 mod keys;
 mod mac;
 mod net;
@@ -60,6 +61,13 @@ const MEM_COLORS: [Color32; 4] = [
     Color32::from_rgb(100, 210, 255),
 ];
 
+#[derive(Clone, Copy, PartialEq)]
+enum View {
+    Stats,
+    Ai,
+    Shelf,
+}
+
 struct App {
     shared: Arc<Mutex<Shared>>,
     open: Arc<AtomicBool>,
@@ -69,7 +77,8 @@ struct App {
     passthrough: bool,
     set_up: bool,
     shelf: shelf_view::Shelf,
-    show_shelf: bool,
+    view: View,
+    ai: ai_view::Ai,
     cmd_v: Arc<AtomicBool>,
     test_now: bool,
 }
@@ -120,7 +129,8 @@ fn main() -> eframe::Result {
                 set_up: false,
                 shelf: shelf_view::Shelf::new(),
                 cmd_v,
-                show_shelf: std::env::var("NOTCH_STATS_PIN").as_deref() == Ok("shelf"),
+                view: match std::env::var("NOTCH_STATS_PIN").as_deref() { Ok("shelf") => View::Shelf, Ok("ai") => View::Ai, _ => View::Stats },
+                ai: ai_view::Ai::start(cc.egui_ctx.clone()),
                 test_now: false,
             }))
         }),
@@ -175,12 +185,12 @@ impl eframe::App for App {
         let dragging_in = ctx.input(|i| !i.raw.hovered_files.is_empty());
         if self.cmd_v.swap(false, Ordering::Relaxed) {
             self.shelf.paste();
-            self.show_shelf = true;
+            self.view = View::Shelf;
         }
         if self.shelf.take_drops(&ctx) || dragging_in {
-            self.show_shelf = true;
-        } else if self.shelf.items.is_empty() {
-            self.show_shelf = false;
+            self.view = View::Shelf;
+        } else if self.shelf.items.is_empty() && self.view == View::Shelf {
+            self.view = View::Stats;
         }
 
         let shared = self.shared.clone();
@@ -254,14 +264,13 @@ impl App {
         let strip_y = panel.top() + self.geo.bar_h / 2.0;
         p.circle_filled(pos2(inner.left() + 4.0, strip_y), 3.5, alpha(ACCENT[RAM], a));
         let live = p.text(pos2(inner.left() + 14.0, strip_y), Align2::LEFT_CENTER, "Live", FontId::proportional(12.0), alpha(DIM, a));
-        if !self.shelf.items.is_empty() || dragging_in {
-            self.view_switch(ui, p, pos2(live.right() + 14.0, strip_y), a);
-        }
+        self.view_switch(ui, p, pos2(live.right() + 14.0, strip_y), dragging_in, a);
         let top = panel.top() + self.geo.bar_h + 10.0;
-        if self.show_shelf {
-            let b = Rect::from_min_max(pos2(inner.left(), top), pos2(inner.right(), panel.bottom() - 18.0));
-            self.shelf.draw(ui, p, b, dragging_in, a);
-            return;
+        let b = Rect::from_min_max(pos2(inner.left(), top), pos2(inner.right(), panel.bottom() - 18.0));
+        match self.view {
+            View::Shelf => return self.shelf.draw(ui, p, b, dragging_in, a),
+            View::Ai => return self.ai.draw(ui, p, b, a),
+            View::Stats => {}
         }
         let ranges = if self.metric == NET { net_view::RANGES } else { RANGES };
         let mut x = inner.right();
@@ -491,20 +500,22 @@ impl App {
 }
 
 impl App {
-    /// "Stats | Shelf · N" beside "Live": shown only while the shelf holds something (or a file is dragged over).
-    fn view_switch(&mut self, ui: &mut egui::Ui, p: &egui::Painter, at: Pos2, a: f32) {
+    /// "Stats | AI | Shelf · N" beside "Live"; Shelf only while it holds something (or a file is dragged over).
+    fn view_switch(&mut self, ui: &mut egui::Ui, p: &egui::Painter, at: Pos2, dragging_in: bool, a: f32) {
         let mut x = at.x;
         let n = self.shelf.items.len();
-        let labels = [("Stats".to_string(), false), (if n > 0 { format!("Shelf · {n}") } else { "Shelf".into() }, true)];
-        for (label, shelf) in labels {
-            let w = if shelf { 74.0 } else { 50.0 };
+        let mut labels = vec![("Stats".to_string(), View::Stats, 50.0), ("AI".to_string(), View::Ai, 40.0)];
+        if n > 0 || dragging_in {
+            labels.push((if n > 0 { format!("Shelf · {n}") } else { "Shelf".into() }, View::Shelf, 74.0));
+        }
+        for (label, view, w) in labels {
             let r = Rect::from_min_size(pos2(x, at.y - 11.0), vec2(w, 22.0));
             x += w + 4.0;
-            let resp = ui.interact(r, ui.scope_id().with(("view", shelf)), Sense::click());
+            let resp = ui.interact(r, ui.scope_id().with(("view", view as u8)), Sense::click());
             if resp.clicked() {
-                self.show_shelf = shelf;
+                self.view = view;
             }
-            let on = self.show_shelf == shelf;
+            let on = self.view == view;
             let fill = if on { Color32::from_gray(48) } else if resp.hovered() { Color32::from_gray(28) } else { Color32::TRANSPARENT };
             p.rect_filled(r, 6.0, alpha(fill, a));
             p.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), alpha(if on { Color32::WHITE } else { DIM }, a));
