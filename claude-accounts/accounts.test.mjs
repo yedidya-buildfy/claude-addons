@@ -46,3 +46,16 @@ test("reads a JWT's claims; junk gives {}", () => {
   assert.equal(jwtClaims(jwt).email, "a@b");
   assert.deepEqual(jwtClaims("nope"), {});
 });
+
+test("a Keychain value printed as hex (non-ASCII inside) reads back as the original text", async () => {
+  const { readItem } = await import("./store.mjs");
+  const svc = `claude-accounts-selftest-${process.pid}`;
+  const { execFileSync } = await import("node:child_process");
+  const text = JSON.stringify({ name: "ידידיה" });
+  execFileSync("security", ["add-generic-password", "-U", "-a", "t", "-s", svc, "-X", Buffer.from(text).toString("hex")]);
+  try {
+    assert.equal(readItem(svc, "t"), text);
+  } finally {
+    execFileSync("security", ["delete-generic-password", "-a", "t", "-s", svc], { stdio: "ignore" });
+  }
+});

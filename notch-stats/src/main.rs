@@ -148,6 +148,11 @@ fn fonts(ctx: &egui::Context) {
             f.families.entry(family).or_default().insert(0, name.into());
         }
     }
+    // fallback for Hebrew letters (an account holder's name); SF has none
+    if let Ok(bytes) = std::fs::read("/System/Library/Fonts/SFHebrew.ttf") {
+        f.font_data.insert("sf-hebrew".into(), Arc::new(egui::FontData::from_owned(bytes)));
+        f.families.entry(FontFamily::Proportional).or_default().push("sf-hebrew".into());
+    }
     ctx.set_fonts(f);
 }
 

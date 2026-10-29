@@ -194,7 +194,7 @@ fn line(ui: &mut egui::Ui, p: &egui::Painter, r: Rect, acc: &Account, busy: bool
     p.text(pos2(x, mid), Align2::LEFT_CENTER, tool, f(12.0), alpha(col, a));
     x += 52.0;
     let user = acc.email.split('@').next().unwrap_or("");
-    let who = if acc.name.is_empty() { user.to_string() } else { format!("{} · {user}", acc.name) };
+    let who = if acc.name.is_empty() { user.to_string() } else { format!("{} · {user}", visual(&acc.name)) };
     p.text(pos2(x, mid), Align2::LEFT_CENTER, crate::short(&who, 24), f(12.0), white);
     x += 176.0;
     let plan = match acc.price { Some(v) => format!("{} · ${v:.0}", acc.plan), None => acc.plan.clone() };
@@ -259,6 +259,13 @@ fn details(acc: &Account) -> String {
     t
 }
 
+/// egui lays text out left to right only: a Hebrew name is turned around so it reads right.
+// ponytail: whole-string flip, right for a name in one script; mixed Hebrew + Latin would need real bidi
+fn visual(s: &str) -> String {
+    let hebrew = |c: char| ('\u{0590}'..='\u{05FF}').contains(&c);
+    if s.chars().any(hebrew) && !s.chars().any(|c| c.is_ascii_alphabetic()) { s.chars().rev().collect() } else { s.into() }
+}
+
 fn ago(s: u64) -> String {
     if s < 60 { "just now".into() } else if s < 5400 { format!("{} min ago", s / 60) } else { format!("{} h ago", s / 3600) }
 }
@@ -282,6 +289,12 @@ mod tests {
         assert_eq!(l.accounts[0].windows[0].pct, 11.0);
         assert_eq!(l.accounts[0].price, Some(200.0));
         assert!(l.accounts[1].price.is_none() && l.accounts[1].best);
+    }
+
+    #[test]
+    fn hebrew_names_read_right() {
+        assert_eq!(visual("ידידיה"), "הידידי");
+        assert_eq!(visual("Israel"), "Israel");
     }
 
     #[test]
