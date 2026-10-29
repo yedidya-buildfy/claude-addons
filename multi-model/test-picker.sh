@@ -237,7 +237,7 @@ W=$(echo "$FAKE" | python3 ccx-models.py window claude-haiku-4-5-20251001)
 # When the provider omits a size, the family default is used so /model still
 # opens a large window instead of Claude Code's 200k guess.
 W=$(echo "$FAKE" | python3 ccx-models.py window gpt-5.5)
-[ "$W" = 921000 ] && say 1 "an unreported GPT size falls back to the family window" || say 0 "GPT family window wrong: '$W'"
+[ "$W" = 872000 ] && say 1 "an unreported GPT size falls back to the family window (Codex publishes 872k for every model)" || say 0 "GPT family window wrong: '$W'"
 W=$(echo "$FAKE" | python3 ccx-models.py window not-a-model)
 [ -z "$W" ] && say 1 "an unknown model sets nothing" || say 0 "unknown model leaked: '$W'"
 W=$(echo "$FAKE" | python3 ccx-models.py window --max)
