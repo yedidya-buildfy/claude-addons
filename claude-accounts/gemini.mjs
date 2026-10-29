@@ -10,7 +10,8 @@ const LIVE = path.join(HOME, ".gemini", "antigravity-cli", "antigravity-oauth-to
 const MAIN = { "5h": "gemini-5h", wk: "gemini-weekly" };
 
 export const id = "gemini";
-export const loginCommand = `"${HOME}/.local/bin/agy"`;
+// the Antigravity CLI signs in only inside a terminal
+export const loginInTerminal = `"${HOME}/.local/bin/agy"`;
 
 export function live() {
   const tok = readJson(LIVE, null);

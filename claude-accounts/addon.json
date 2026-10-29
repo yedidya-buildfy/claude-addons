@@ -4,21 +4,40 @@
   "default": false,
   "title": "כל מנויי ה־AI",
   "summary": "קלוד, קודקס וג'מיני: זוכר כל חשבון שהתחברת אליו במחשב הזה, מציג לכל אחד תוכנית, מחיר וניצול 5 שעות ושבוע בשורה אחת, ומעביר כלי לחשבון אחר בלחיצה (מהלשונית AI במוניטור באזור המצלמה).",
-  "detect": { "file": "~/.claude/claude-accounts/accounts.mjs" },
+  "detect": {
+    "file": "~/.claude/claude-accounts/accounts.mjs"
+  },
   "files": [
-    { "from": "accounts.mjs", "to": "~/.claude/claude-accounts/accounts.mjs", "mode": "755" },
-    { "from": "store.mjs", "to": "~/.claude/claude-accounts/store.mjs" },
-    { "from": "claude.mjs", "to": "~/.claude/claude-accounts/claude.mjs" },
-    { "from": "codex.mjs", "to": "~/.claude/claude-accounts/codex.mjs" },
-    { "from": "gemini.mjs", "to": "~/.claude/claude-accounts/gemini.mjs" }
+    {
+      "from": "accounts.mjs",
+      "to": "~/.claude/claude-accounts/accounts.mjs",
+      "mode": "755"
+    },
+    {
+      "from": "store.mjs",
+      "to": "~/.claude/claude-accounts/store.mjs"
+    },
+    {
+      "from": "claude.mjs",
+      "to": "~/.claude/claude-accounts/claude.mjs"
+    },
+    {
+      "from": "codex.mjs",
+      "to": "~/.claude/claude-accounts/codex.mjs"
+    },
+    {
+      "from": "gemini.mjs",
+      "to": "~/.claude/claude-accounts/gemini.mjs"
+    }
   ],
   "group": "קלוד",
   "details": [
-    "חשבון נוסף: הכפתורים ‎+ Claude / + Codex / + Gemini פותחים טרמינל להתחברות. החשבון הנוכחי נשמר לפני כן, והחדש מופיע ברשימה בעדכון הבא.",
+    "חשבון נוסף: ‎+ Claude ו־‎+ Codex פותחים ישר את דף האישור בדפדפן (בלי טרמינל); מאשרים עם החשבון החדש והוא מופיע ברשימה. ‎+ Gemini עדיין פותח טרמינל, כי הכלי שלו מתחבר רק שם. החשבון הנוכחי נשמר לפני כן.",
     "כל התחברות אחרת נקלטת גם היא: הרשימה זוכרת לבד במה כל כלי מחובר. בקלוד לא להשתמש ב־‎/logout, שמנתק את החשבון הקודם.",
     "ההתחברויות נשמרות במחזיק המפתחות של המק, פריט לכל חשבון.",
     "המעבר משפיע על כל סשן חדש של אותו כלי. סשנים פתוחים ממשיכים על החשבון הקודם עד שפותחים אותם מחדש.",
     "ג'מיני: את הניצול אפשר לקרוא רק כשהחשבון מחובר, ולכן חשבון שלא בשימוש מציג את המספרים האחרונים שנראו, בצבע עמום.",
+    "קודקס: ↻ ומספר = כמה איפוסי מגבלה חד־פעמיים נשארו בתוכנית (מעבר עם העכבר מראה מתי הבא פג). לקלוד אין דבר כזה, רק זמן איפוס קבוע לכל חלון.",
     "קודקס וג'מיני נקראים דרך תוסף שורת הסטטוס; בלעדיו השורות שלהם בלי ניצול.",
     "המחירים הם מחירי מחירון חודשיים בדולרים. ★ = החשבון עם הכי הרבה מקום פנוי באותו כלי.",
     "גם בטרמינל: ‎~/.claude/claude-accounts/accounts.mjs list | use <tool> <email> | add <tool>."

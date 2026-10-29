@@ -13,7 +13,8 @@ const CONFIG = path.join(HOME, ".claude.json");
 const STATUS_CACHE = path.join(HOME, ".claude", "cache", "claude-usage.json");
 
 export const id = "claude";
-export const loginCommand = "claude auth login";
+// opens the browser itself and waits for the approval there; no terminal needed
+export const login = ["claude", "auth", "login", "--claudeai"];
 
 /** "default_claude_max_20x" → "Max 20x"; falls back to the subscription name. */
 export function planName(oauth) {

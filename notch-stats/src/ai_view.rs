@@ -30,6 +30,14 @@ pub struct Window {
     resets: u64,
 }
 
+/// Codex's one-off limit resets: how many are left, and when the next one expires (unix s).
+#[derive(Deserialize, Clone, Copy, Default)]
+pub struct ResetsLeft {
+    count: u32,
+    #[serde(rename = "nextExpires")]
+    next_expires: u64,
+}
+
 #[derive(Deserialize, Clone, Default)]
 pub struct Account {
     provider: String,
@@ -40,6 +48,8 @@ pub struct Account {
     active: bool,
     best: bool,
     windows: Vec<Window>,
+    #[serde(rename = "resetsLeft")]
+    resets_left: Option<ResetsLeft>,
     at: u64, // ms since 1970 when the numbers were read; 0 = never
     error: Option<String>,
 }
@@ -156,7 +166,7 @@ impl Ai {
             for (id, name, col) in TOOLS {
                 let r = Rect::from_min_size(pos2(x, b.bottom() - 24.0), vec2(84.0, 24.0));
                 x += 90.0;
-                let resp = ui.interact(r, ui.scope_id().with(("add", id)), Sense::click()).on_hover_text(format!("Opens a Terminal to sign in to one more {name} account"));
+                let resp = ui.interact(r, ui.scope_id().with(("add", id)), Sense::click()).on_hover_text(format!("Sign in to one more {name} account"));
                 p.rect_filled(r, 7.0, alpha(Color32::from_gray(if resp.hovered() { 48 } else { 30 }), a));
                 p.text(r.center(), Align2::CENTER_CENTER, format!("+ {name}"), FontId::proportional(12.0), alpha(col, a));
                 if resp.clicked() && !s.busy {
@@ -194,7 +204,7 @@ fn line(ui: &mut egui::Ui, p: &egui::Painter, r: Rect, acc: &Account, busy: bool
     p.text(pos2(x, mid), Align2::LEFT_CENTER, tool, f(12.0), alpha(col, a));
     x += 52.0;
     let user = acc.email.split('@').next().unwrap_or("");
-    let who = if acc.name.is_empty() { user.to_string() } else { format!("{} · {user}", visual(&acc.name)) };
+    let who = if acc.name.is_empty() { user.to_string() } else { format!("{} · {user}", acc.name) };
     p.text(pos2(x, mid), Align2::LEFT_CENTER, crate::short(&who, 24), f(12.0), white);
     x += 176.0;
     let plan = match acc.price { Some(v) => format!("{} · ${v:.0}", acc.plan), None => acc.plan.clone() };
@@ -228,6 +238,9 @@ fn line(ui: &mut egui::Ui, p: &egui::Painter, r: Rect, acc: &Account, busy: bool
     if acc.best {
         p.text(pos2(btn.left() - 10.0, mid), Align2::RIGHT_CENTER, "★", f(13.0), alpha(GOOD, a));
     }
+    if let Some(rl) = acc.resets_left {
+        p.text(pos2(btn.left() - 28.0, mid), Align2::RIGHT_CENTER, format!("↻ {}", rl.count), f(12.0), alpha(if rl.count > 0 { col } else { DIM }, a));
+    }
     if acc.active {
         p.text(btn.center(), Align2::CENTER_CENTER, "In use", f(11.0), alpha(GOOD, a));
         return false;
@@ -247,6 +260,12 @@ fn details(acc: &Account) -> String {
             t += &format!("\n{} {:.0}% · resets in {}", if w.label == "5h" { "5 hours" } else { "Week" }, w.pct, span(w.resets - now));
         }
     }
+    if let Some(rl) = acc.resets_left {
+        t += &format!("\n↻ {} limit resets left", rl.count);
+        if rl.next_expires > now {
+            t += &format!(" · next one expires in {}", span(rl.next_expires - now));
+        }
+    }
     if acc.at > 0 {
         t += &format!("\nread {}", ago(now.saturating_sub(acc.at / 1000)));
     }
@@ -257,13 +276,6 @@ fn details(acc: &Account) -> String {
         t += "\n★ most room left of your accounts for this tool";
     }
     t
-}
-
-/// egui lays text out left to right only: a Hebrew name is turned around so it reads right.
-// ponytail: whole-string flip, right for a name in one script; mixed Hebrew + Latin would need real bidi
-fn visual(s: &str) -> String {
-    let hebrew = |c: char| ('\u{0590}'..='\u{05FF}').contains(&c);
-    if s.chars().any(hebrew) && !s.chars().any(|c| c.is_ascii_alphabetic()) { s.chars().rev().collect() } else { s.into() }
 }
 
 fn ago(s: u64) -> String {
@@ -283,18 +295,14 @@ mod tests {
     #[test]
     fn reads_the_script_output() {
         let j = r#"{"accounts":[{"provider":"codex","email":"a@b","name":"","plan":"Pro","price":200,"active":true,"best":false,
-            "windows":[{"label":"wk","pct":11,"resets":100}],"at":1,"error":null},
+            "windows":[{"label":"wk","pct":11,"resets":100}],"resetsLeft":{"count":2,"nextExpires":5},"at":1,"error":null},
             {"provider":"gemini","email":"c@d","name":"","plan":"","price":null,"active":false,"best":true,"windows":[],"at":0,"error":"not signed in"}]}"#;
         let l: List = serde_json::from_str(j).unwrap();
         assert_eq!(l.accounts[0].windows[0].pct, 11.0);
         assert_eq!(l.accounts[0].price, Some(200.0));
         assert!(l.accounts[1].price.is_none() && l.accounts[1].best);
-    }
-
-    #[test]
-    fn hebrew_names_read_right() {
-        assert_eq!(visual("ידידיה"), "הידידי");
-        assert_eq!(visual("Israel"), "Israel");
+        assert_eq!(l.accounts[0].resets_left.unwrap().count, 2);
+        assert!(l.accounts[1].resets_left.is_none());
     }
 
     #[test]

@@ -20,7 +20,7 @@
     }
   ],
   "run": {
-    "cmd": "[ \"$(uname)\" = Darwin ] && [ \"$(uname -m)\" = arm64 ] || exit 0; mkdir -p \"$HOME/Library/Application Support/NotchStats/shelf\"; defaults write com.apple.screencapture location \"$HOME/Library/Application Support/NotchStats/shelf\"; defaults write com.apple.screencapture target file; launchctl bootout gui/$(id -u)/com.claude-addons.notchstats 2>/dev/null; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude-addons.notchstats.plist",
+    "cmd": "[ \"$(uname)\" = Darwin ] && [ \"$(uname -m)\" = arm64 ] || exit 0; mkdir -p \"$HOME/Library/Application Support/NotchStats/shelf\"; defaults write com.apple.screencapture location \"$HOME/Library/Application Support/NotchStats/shelf\"; defaults write com.apple.screencapture target file; launchctl bootout gui/$(id -u)/com.claude-addons.notchstats 2>/dev/null; sleep 1; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude-addons.notchstats.plist || { sleep 2; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.claude-addons.notchstats.plist; }",
     "when": "changed"
   },
   "group": "מערכת",

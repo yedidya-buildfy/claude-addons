@@ -5,11 +5,13 @@
 //
 //   accounts.mjs list                     JSON: every remembered account, its plan, price and usage
 //   accounts.mjs use <provider> <email>   that tool's new sessions run on that account
-//   accounts.mjs add <provider>           opens a Terminal to sign in to one more account
+//   accounts.mjs add <provider>           sign in to one more account (browser; Gemini: a Terminal)
 //
 // A login made any other way is picked up too: the next `list` remembers whatever each tool is
 // signed in to. Secrets live in the macOS Keychain (see store.mjs), never in a file of ours.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import * as claude from "./claude.mjs";
 import * as codex from "./codex.mjs";
 import * as gemini from "./gemini.mjs";
@@ -61,7 +63,7 @@ function rememberAll() {
 
 async function row(r, active) {
   const p = byId[r.provider];
-  const out = { provider: r.provider, email: r.email, name: r.name ?? "", plan: r.plan ?? "", active: active[r.provider] === r.email, windows: [], at: 0, error: null };
+  const out = { provider: r.provider, email: r.email, name: r.name ?? "", plan: r.plan ?? "", active: active[r.provider] === r.email, windows: [], resetsLeft: null, at: 0, error: null };
   const secret = loadSecret(r.provider, r.email);
   if (!secret) return { ...out, error: "signed out" };
   try {
@@ -69,11 +71,12 @@ async function row(r, active) {
     if (u.secret) saveSecret(r.provider, r.email, u.secret); // refresh tokens are single-use: store it first
     const plan = u.plan || out.plan;
     const at = Math.floor(u.at ?? Date.now()); // whole ms: the notch view reads an integer
-    updateIndex(r.provider, r.email, { plan, last: { windows: u.windows, at } });
-    return { ...out, plan, windows: u.windows, at };
+    const resetsLeft = u.resetsLeft ?? null;
+    updateIndex(r.provider, r.email, { plan, last: { windows: u.windows, resetsLeft, at } });
+    return { ...out, plan, windows: u.windows, resetsLeft, at };
   } catch (e) {
     // keep showing the last numbers seen, with their age
-    return { ...out, windows: r.last?.windows ?? [], at: r.last?.at ?? 0, error: e.message };
+    return { ...out, windows: r.last?.windows ?? [], resetsLeft: r.last?.resetsLeft ?? null, at: r.last?.at ?? 0, error: e.message };
   }
 }
 
@@ -105,7 +108,13 @@ function add(provider) {
   if (!p) throw new Error(`unknown tool ${provider}`);
   rememberAll(); // the current login is safe before a new one replaces it
   p.prepareLogin?.();
-  const script = p.loginCommand.replace(/[\\"]/g, "\\$&");
+  if (p.login) {
+    // straight to the browser: the CLI waits in the background for the approval, at most 10 minutes
+    const log = fs.openSync(path.join(HOME, ".claude", "claude-accounts", `login-${provider}.log`), "w");
+    spawn("/usr/bin/perl", ["-e", "alarm 600; exec @ARGV", ...p.login], { detached: true, stdio: ["ignore", log, log] }).unref();
+    return;
+  }
+  const script = p.loginInTerminal.replace(/[\\"]/g, "\\$&");
   execFileSync("osascript", ["-e", `tell application "Terminal" to do script "${script}"`, "-e", 'tell application "Terminal" to activate']);
 }
 

@@ -10,7 +10,7 @@ const LIVE = path.join(CODEX_HOME, "auth.json");
 const SPARE_HOME = path.join(HOME, ".claude", "claude-accounts", "codex-home");
 
 export const id = "codex";
-export const loginCommand = `"${HOME}/.npm-global/bin/codex" login || command codex login`;
+export const login = [`${HOME}/.npm-global/bin/codex`, "login"];
 
 export function live() {
   const auth = readJson(LIVE, null);
@@ -38,7 +38,10 @@ export async function usage(secret, active) {
       if (after !== secret) next = after;
     }
     if (snap.status !== "ok") throw new Error(snap.reason === "codex-auth" ? "signed out" : snap.reason);
-    return { windows: snap.windows.map((w) => ({ label: w.label, pct: w.usedPercent, resets: w.resetsAt ?? 0 })), secret: next };
+    // Codex plans hand out a few one-off limit resets; Claude has nothing like it
+    const rc = snap.resetCredits;
+    const resetsLeft = rc ? { count: rc.availableCount, nextExpires: rc.nextExpiresAt ?? 0 } : null;
+    return { windows: snap.windows.map((w) => ({ label: w.label, pct: w.usedPercent, resets: w.resetsAt ?? 0 })), resetsLeft, secret: next };
   } finally {
     if (!active) {
       if (prev === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prev;
