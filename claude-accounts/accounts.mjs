@@ -15,10 +15,12 @@ import path from "node:path";
 import * as claude from "./claude.mjs";
 import * as codex from "./codex.mjs";
 import * as gemini from "./gemini.mjs";
-import { HOME, loadIndex, loadSecret, saveSecret, updateIndex } from "./store.mjs";
+import { HOME, loadIndex, loadSecret, readJson, saveSecret, updateIndex, writeJson } from "./store.mjs";
 
 const PROVIDERS = [claude, codex, gemini];
 const byId = Object.fromEntries(PROVIDERS.map((p) => [p.id, p]));
+// provider → the account the owner picked; null = a sign-in is under way, take whatever it brings
+const CHOSEN = `${HOME}/.claude/claude-accounts/chosen.json`;
 
 // launchd (the notch app) gives no shell PATH; the tools' own CLIs live here
 process.env.PATH = [`${HOME}/.local/bin`, `${HOME}/.npm-global/bin`, "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH].join(":");
@@ -46,20 +48,42 @@ export function recommend(rows) {
   return Object.fromEntries(Object.entries(best).map(([k, v]) => [k, v.email]));
 }
 
+/**
+ * The tool is signed in to `live`, the owner picked `chosen`: put the pick back ("restore") only when
+ * an account we already knew came back on its own (an open session writing its old login back).
+ * A brand-new account, or no pick yet, is taken as the owner's choice ("accept").
+ */
+export function keepChoice(chosen, live, known) {
+  return chosen && chosen !== live && known ? "restore" : "accept";
+}
+
 // ---- actions ----
 
-/** Remembers whatever each tool is signed in to now; returns provider → active email. */
+/** Remembers whatever each tool is signed in to now, keeping the owner's pick; returns provider → active email. */
 function rememberAll() {
   const active = {};
+  const chosen = readJson(CHOSEN, {});
+  const known = new Set(loadIndex().map((r) => `${r.provider}:${r.email}`));
   for (const p of PROVIDERS) {
     const l = p.live();
     if (!l) continue;
-    active[p.id] = l.email;
     const fields = Object.fromEntries(Object.entries({ name: l.name, plan: l.plan }).filter(([, v]) => v));
-    saveSecret(p.id, l.email, l.secret, fields);
+    saveSecret(p.id, l.email, l.secret, fields); // its newest login is worth keeping either way
+    const want = chosen[p.id];
+    const secret = keepChoice(want, l.email, known.has(`${p.id}:${l.email}`)) === "restore" && loadSecret(p.id, want);
+    if (secret) {
+      p.activate(secret);
+      active[p.id] = want;
+    } else {
+      active[p.id] = l.email;
+      chosen[p.id] = l.email;
+    }
   }
+  writeJson(CHOSEN, chosen);
   return active;
 }
+
+const choose = (provider, email) => writeJson(CHOSEN, { ...readJson(CHOSEN, {}), [provider]: email });
 
 async function row(r, active) {
   const p = byId[r.provider];
@@ -101,12 +125,14 @@ function use(provider, email) {
   const secret = loadSecret(provider, email);
   if (!secret) throw new Error(`no saved login for ${email}`);
   p.activate(secret);
+  choose(provider, email);
 }
 
 function add(provider) {
   const p = byId[provider];
   if (!p) throw new Error(`unknown tool ${provider}`);
   rememberAll(); // the current login is safe before a new one replaces it
+  choose(provider, null); // whatever this sign-in brings, even an account seen before, is the new pick
   p.prepareLogin?.();
   if (p.login) {
     // straight to the browser: the CLI waits in the background for the approval, at most 10 minutes

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { priceOf, recommend } from "./accounts.mjs";
+import { keepChoice, priceOf, recommend } from "./accounts.mjs";
 import { planName, withAccount } from "./claude.mjs";
 import { pickWindows } from "./gemini.mjs";
 import { jwtClaims } from "./store.mjs";
@@ -58,4 +58,12 @@ test("a Keychain value printed as hex (non-ASCII inside) reads back as the origi
   } finally {
     execFileSync("security", ["delete-generic-password", "-a", "t", "-s", svc], { stdio: "ignore" });
   }
+});
+
+test("the owner's pick survives an old login written back; a new sign-in becomes the pick", () => {
+  assert.equal(keepChoice("b", "a", true), "restore"); // an open session put a known account back
+  assert.equal(keepChoice("b", "c", false), "accept"); // a brand-new account was signed in
+  assert.equal(keepChoice("b", "b", true), "accept");
+  assert.equal(keepChoice(null, "a", true), "accept"); // sign-in under way, or never picked
+  assert.equal(keepChoice(undefined, "a", true), "accept");
 });
