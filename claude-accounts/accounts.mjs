@@ -68,7 +68,7 @@ async function row(r, active) {
     const u = await p.usage(secret, out.active, r.email);
     if (u.secret) saveSecret(r.provider, r.email, u.secret); // refresh tokens are single-use: store it first
     const plan = u.plan || out.plan;
-    const at = u.at ?? Date.now();
+    const at = Math.floor(u.at ?? Date.now()); // whole ms: the notch view reads an integer
     updateIndex(r.provider, r.email, { plan, last: { windows: u.windows, at } });
     return { ...out, plan, windows: u.windows, at };
   } catch (e) {
