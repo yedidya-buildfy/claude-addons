@@ -279,9 +279,16 @@ impl App {
 
         // top strip, beside the notch: live state on the left, range on the right
         let strip_y = panel.top() + self.geo.bar_h / 2.0;
-        p.circle_filled(pos2(inner.left() + 4.0, strip_y), 3.5, alpha(ACCENT[RAM], a));
-        let live = p.text(pos2(inner.left() + 14.0, strip_y), Align2::LEFT_CENTER, "Live", FontId::proportional(12.0), alpha(DIM, a));
-        self.view_switch(ui, p, pos2(live.right() + 14.0, strip_y), dragging_in, a);
+        // a running interruption takes the place of "Live": seen from every tab, a click ends it
+        let left = match self.log.running {
+            Some(start) => self.interruption_pill(ui, p, pos2(inner.left() - 6.0, strip_y), start, a),
+            None => {
+                p.circle_filled(pos2(inner.left() + 4.0, strip_y), 3.5, alpha(ACCENT[RAM], a));
+                p.text(pos2(inner.left() + 14.0, strip_y), Align2::LEFT_CENTER, "Live", FontId::proportional(12.0), alpha(DIM, a)).right()
+            }
+        };
+        let notch = (panel.center().x - self.geo.notch_w / 2.0 - 6.0, panel.center().x + self.geo.notch_w / 2.0 + 6.0);
+        self.view_switch(ui, p, pos2(left + 14.0, strip_y), notch, dragging_in, a);
         let top = panel.top() + self.geo.bar_h + 10.0;
         let b = Rect::from_min_max(pos2(inner.left(), top), pos2(inner.right(), panel.bottom() - 18.0));
         match self.view {
@@ -519,8 +526,23 @@ impl App {
 }
 
 impl App {
+    /// "● 1:33" in red; returns its right edge.
+    fn interruption_pill(&mut self, ui: &mut egui::Ui, p: &egui::Painter, at: Pos2, start: u64, a: f32) -> f32 {
+        ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+        let t = log_view::clock(stats::unix_secs().saturating_sub(start));
+        let r = Rect::from_min_size(pos2(at.x, at.y - 11.0), vec2(26.0 + 7.5 * t.len() as f32, 22.0));
+        let resp = ui.interact(r, ui.scope_id().with("int-pill"), Sense::click()).on_hover_text("Interruption running · click to end it");
+        p.rect_filled(r, 6.0, alpha(log_view::RED.gamma_multiply(if resp.hovered() { 1.0 } else { 0.85 }), a));
+        p.circle_filled(pos2(r.left() + 10.0, at.y), 3.5, alpha(Color32::WHITE, a));
+        p.text(pos2(r.left() + 19.0, at.y), Align2::LEFT_CENTER, t, FontId::proportional(12.0), alpha(Color32::WHITE, a));
+        if resp.clicked() {
+            self.log.toggle();
+        }
+        r.right()
+    }
+
     /// "Stats | AI | Time | Shelf · N" beside "Live"; Shelf only while it holds something (or a file is dragged over).
-    fn view_switch(&mut self, ui: &mut egui::Ui, p: &egui::Painter, at: Pos2, dragging_in: bool, a: f32) {
+    fn view_switch(&mut self, ui: &mut egui::Ui, p: &egui::Painter, at: Pos2, notch: (f32, f32), dragging_in: bool, a: f32) {
         let mut x = at.x;
         let n = self.shelf.items.len();
         let mut labels = vec![("Stats".to_string(), View::Stats, 50.0), ("AI".to_string(), View::Ai, 40.0), ("Time".to_string(), View::Time, 48.0), ("Log".to_string(), View::Log, 40.0)];
@@ -528,6 +550,9 @@ impl App {
             labels.push((if n > 0 { format!("Shelf · {n}") } else { "Shelf".into() }, View::Shelf, 74.0));
         }
         for (label, view, w) in labels {
+            if x + w > notch.0 && x < notch.1 {
+                x = notch.1; // never under the camera: jump to the other side of the notch
+            }
             let r = Rect::from_min_size(pos2(x, at.y - 11.0), vec2(w, 22.0));
             x += w + 4.0;
             let resp = ui.interact(r, ui.scope_id().with(("view", view as u8)), Sense::click());
@@ -538,19 +563,6 @@ impl App {
             let fill = if on { Color32::from_gray(48) } else if resp.hovered() { Color32::from_gray(28) } else { Color32::TRANSPARENT };
             p.rect_filled(r, 6.0, alpha(fill, a));
             p.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), alpha(if on { Color32::WHITE } else { DIM }, a));
-        }
-        // a running interruption shows from every tab, and a click ends it
-        if let Some(s) = self.log.running {
-            ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
-            let r = Rect::from_min_size(pos2(x + 8.0, at.y - 11.0), vec2(118.0, 22.0));
-            let resp = ui.interact(r, ui.scope_id().with("int-pill"), Sense::click());
-            p.rect_filled(r, 6.0, alpha(log_view::RED.gamma_multiply(if resp.hovered() { 1.0 } else { 0.85 }), a));
-            p.circle_filled(pos2(r.left() + 10.0, at.y), 3.5, alpha(Color32::WHITE, a));
-            let t = format!("{} · End", log_view::clock(stats::unix_secs().saturating_sub(s)));
-            p.text(pos2(r.left() + 20.0, at.y), Align2::LEFT_CENTER, t, FontId::proportional(12.0), alpha(Color32::WHITE, a));
-            if resp.clicked() {
-                self.log.toggle();
-            }
         }
     }
 }
