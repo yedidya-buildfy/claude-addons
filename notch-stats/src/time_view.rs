@@ -33,6 +33,7 @@ struct Data {
     totals: HashMap<String, u64>,
     prev: HashMap<String, u64>,
     apps: HashMap<String, Vec<(String, u64)>>, // per project, biggest first
+    details: HashMap<String, Vec<(String, String, u64)>>, // per project: (app, what inside it, s), biggest first
     elapsed_days: u64,
 }
 
@@ -42,11 +43,12 @@ pub struct Time {
     back: u32,
     data: Option<(Period, u32, Instant, Data)>,
     colors: Vec<String>, // rule order = fixed colours for the owner's projects
+    open: Option<String>, // the project whose breakdown is shown
 }
 
 impl Time {
     pub fn start() -> Self {
-        Time { live: st::start(), period: Period::Day, back: 0, data: None, colors: Vec::new() }
+        Time { live: st::start(), period: Period::Day, back: 0, data: None, colors: Vec::new(), open: None }
     }
 
     fn color(&self, name: &str) -> Color32 {
@@ -78,6 +80,7 @@ impl Time {
         p.text(pos2(r.left() - 6.0, big.bottom() - 4.0), Align2::RIGHT_BOTTOM, dt, FontId::proportional(12.0), alpha(dc, a));
 
         let top = big.bottom() + 12.0;
+        let mut clicked = None;
         if total == 0 {
             let msg = if self.back == 0 { "Recording — the first minutes show up here shortly" } else { "Nothing recorded" };
             p.text(pos2(b.center().x, top + 60.0), Align2::CENTER_CENTER, msg, FontId::proportional(12.0), alpha(DIM, a));
@@ -86,19 +89,22 @@ impl Time {
                 Period::Day => {
                     let card = Rect::from_min_size(pos2(b.left(), top), vec2(b.width(), 70.0));
                     self.ribbon(ui, p, card, d, a);
-                    self.list(p, Rect::from_min_max(pos2(b.left(), card.bottom() + 12.0), b.max), d, a);
+                    clicked = self.list(ui, p, Rect::from_min_max(pos2(b.left(), card.bottom() + 12.0), b.max), d, a);
                 }
                 Period::Week => {
                     let card = Rect::from_min_size(pos2(b.left(), top), vec2(b.width(), 160.0));
                     self.week(ui, p, card, d, a);
-                    self.list(p, Rect::from_min_max(pos2(b.left(), card.bottom() + 12.0), b.max), d, a);
+                    clicked = self.list(ui, p, Rect::from_min_max(pos2(b.left(), card.bottom() + 12.0), b.max), d, a);
                 }
                 Period::Month => {
                     let card = Rect::from_min_max(pos2(b.left(), top), pos2(b.left() + 300.0, b.bottom()));
                     self.month(ui, p, card, d, a);
-                    self.list(p, Rect::from_min_max(pos2(card.right() + 16.0, top + 4.0), b.max), d, a);
+                    clicked = self.list(ui, p, Rect::from_min_max(pos2(card.right() + 16.0, top + 4.0), b.max), d, a);
                 }
             }
+        }
+        if let Some(name) = clicked {
+            self.open = if self.open.as_ref() == Some(&name) { None } else { Some(name) };
         }
     }
 
@@ -235,15 +241,26 @@ impl Time {
     }
 
     /// Projects ranked: colour, name, its main apps, a bar, time, change vs the previous period.
-    fn list(&self, p: &egui::Painter, r: Rect, d: &Data, a: f32) {
+    /// Clicking a row opens what inside the apps the time went to; returns the clicked project.
+    fn list(&self, ui: &mut egui::Ui, p: &egui::Painter, r: Rect, d: &Data, a: f32) -> Option<String> {
         let rows = st::ranked(&d.totals);
         let max = rows.first().map_or(1, |x| x.1).max(1);
         let narrow = r.width() < 500.0;
+        let mut clicked = None;
         let mut y = r.top();
         // ponytail: as many rows as fit; the rest are not shown
         for (name, secs) in rows {
             if y + ROW_H > r.bottom() {
                 break;
+            }
+            let row = Rect::from_min_size(pos2(r.left() - 4.0, y), vec2(r.width() + 8.0, ROW_H));
+            let resp = ui.interact(row, ui.scope_id().with(("time-row", name.as_str())), Sense::click());
+            let open = self.open.as_ref() == Some(&name);
+            if resp.hovered() || open {
+                p.rect_filled(row, 5.0, alpha(Color32::from_rgb(30, 30, 34), a));
+            }
+            if resp.clicked() {
+                clicked = Some(name.clone());
             }
             let mid = y + ROW_H / 2.0;
             let c = self.color(&name);
@@ -261,7 +278,34 @@ impl Time {
             let (dt, dc) = delta(secs, d.prev.get(&name).copied().unwrap_or(0));
             p.text(pos2(r.right() - 2.0, mid), Align2::RIGHT_CENTER, dt, FontId::proportional(10.5), alpha(dc, a));
             y += ROW_H;
+            if open {
+                y = self.details(p, r, y, d.details.get(&name).map_or(&[][..], |v| v), secs, c, narrow, a);
+            }
         }
+        clicked
+    }
+
+    /// The opened project's top 5: which app, what inside it, time; returns the next row's y.
+    #[allow(clippy::too_many_arguments)]
+    fn details(&self, p: &egui::Painter, r: Rect, mut y: f32, list: &[(String, String, u64)], total: u64, c: Color32, narrow: bool, a: f32) -> f32 {
+        for (app, what, secs) in list.iter().take(5) {
+            if y + 19.0 > r.bottom() {
+                break;
+            }
+            let mid = y + 9.5;
+            let mut x = r.left() + 18.0;
+            if !narrow {
+                p.text(pos2(x, mid), Align2::LEFT_CENTER, short(app, 18), FontId::proportional(10.5), alpha(DIM, a));
+                x += 132.0;
+            }
+            let w = if narrow { 30 } else { 44 };
+            p.text(pos2(x, mid), Align2::LEFT_CENTER, short(what, w), FontId::proportional(11.5), alpha(Color32::from_gray(210), a));
+            let bar = Rect::from_min_max(pos2(r.right() - 200.0, mid - 2.0), pos2(r.right() - 120.0, mid + 2.0));
+            crate::bar(p, bar, &[(*secs as f32 / total.max(1) as f32, c.gamma_multiply(0.7))], a);
+            p.text(pos2(r.right() - 52.0, mid), Align2::RIGHT_CENTER, fmt(*secs), FontId::proportional(11.0), alpha(DIM, a));
+            y += 19.0;
+        }
+        y + 4.0
     }
 }
 
@@ -292,7 +336,13 @@ fn compute(period: Period, back: u32, live: Option<Seg>) -> Data {
     let pto = if back == 0 { (pfrom + now.saturating_sub(from)).min(pend) } else { pend };
     let prev = st::bucket(&st::load(pfrom, pto, None), &[pfrom, pto.max(pfrom)], proj).pop().unwrap_or_default();
     let elapsed_days = days.iter().filter(|d| **d <= today).count() as u64;
-    Data { days, per_day, slots, totals, prev, apps, elapsed_days }
+    let mut details: HashMap<String, Vec<(String, String, u64)>> = HashMap::new();
+    for (k, v) in st::ranked(&st::bucket(&segs, &[from, to.max(from)], |s| format!("{}\t{}\t{}", s.proj, s.app, s.title)).pop().unwrap_or_default()) {
+        let mut it = k.splitn(3, '\t');
+        let (p, app, what) = (it.next().unwrap_or(""), it.next().unwrap_or(""), it.next().unwrap_or(""));
+        details.entry(p.to_string()).or_default().push((app.to_string(), if what.is_empty() { "(no window)".into() } else { what.to_string() }, v));
+    }
+    Data { days, per_day, slots, totals, prev, apps, details, elapsed_days }
 }
 
 fn fmt(secs: u64) -> String {

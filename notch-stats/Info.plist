@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
+  <key>NSAppleEventsUsageDescription</key><string>Reads the address of the tab in front, so screen time can show which site you worked on.</string>
   <key>CFBundleName</key><string>NotchStats</string>
   <key>CFBundleIdentifier</key><string>com.claude-addons.notchstats</string>
   <key>CFBundleExecutable</key><string>NotchStats</string>

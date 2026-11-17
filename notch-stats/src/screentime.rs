@@ -27,6 +27,7 @@ pub struct Seg {
     pub e: u64,
     pub app: String,
     pub proj: String,
+    /// What inside the app: "file · folder" in an editor, the site in a browser, else the window title.
     #[serde(default)]
     pub title: String,
 }
@@ -82,6 +83,19 @@ pub fn project(rules: &[Rule], app: &str, title: &str) -> String {
     app.to_string()
 }
 
+/// What inside the app the time went to: an editor's "file · folder", a browser's site, else the window title.
+pub fn detail(app: &str, title: &str, url: &str) -> String {
+    if !url.is_empty() {
+        let host = url.split("://").nth(1).unwrap_or(url).split(['/', '?', '#']).next().unwrap_or("");
+        return host.trim_start_matches("www.").to_string();
+    }
+    let title = title.trim().trim_start_matches("● ");
+    if EDITORS.contains(&app) {
+        return title.split(" — ").filter(|p| !EDITORS.contains(p) && !p.starts_with('[')).collect::<Vec<_>>().join(" · ");
+    }
+    if title.is_empty() { "(no window)".into() } else { title.to_string() }
+}
+
 /// Turns samples into stretches. `sample` returns the stretches that are finished and should be written.
 #[derive(Default)]
 pub struct Recorder {
@@ -97,7 +111,7 @@ impl Recorder {
                 done.extend(self.cur.take()); // asleep in between: ends where it was last seen
             }
         }
-        let Some((app, proj, title)) = front else {
+        let Some((app, proj, title)) = front.map(|(a, p, t)| (a, p, t.chars().take(80).collect::<String>())) else {
             if let Some(mut c) = self.cur.take() {
                 c.e = c.e.min(now.saturating_sub(idle as u64)).max(c.s); // the idle minutes do not count
                 done.push(c);
@@ -105,13 +119,13 @@ impl Recorder {
             return done;
         };
         match &mut self.cur {
-            Some(c) if c.app == app && c.proj == proj && now - c.s < FLUSH_S => c.e = now,
+            Some(c) if c.app == app && c.proj == proj && c.title == title && now - c.s < FLUSH_S => c.e = now,
             _ => {
                 if let Some(mut c) = self.cur.take() {
                     c.e = now;
                     done.push(c);
                 }
-                self.cur = Some(Seg { s: now, e: now, app, proj, title: title.chars().take(80).collect() });
+                self.cur = Some(Seg { s: now, e: now, app, proj, title });
             }
         }
         done.retain(|c| c.e > c.s);
@@ -185,7 +199,8 @@ pub fn start() -> Arc<Mutex<Option<Seg>>> {
                 }
                 let front = front.filter(|_| idle < IDLE_S).map(|f| {
                     let title = crate::screentime_mac::window_title(f.pid);
-                    (f.name.clone(), project(&list, &f.name, &title), title)
+                    let url = if f.bundle == "com.google.Chrome" { crate::screentime_mac::chrome_url() } else { String::new() };
+                    (f.name.clone(), project(&list, &f.name, &format!("{title} {url}")), detail(&f.name, &title, &url))
                 });
                 append(&rec.sample(crate::stats::unix_secs(), front, idle));
                 *live.lock().unwrap() = rec.cur.clone();
@@ -257,6 +272,15 @@ mod tests {
         assert_eq!(project(&r, "WhatsApp", "Chat"), "Messages");
         assert_eq!(project(&r, "Google Chrome", "Site - localhost:3002"), "PMS");
         assert_eq!(project(&r, "Finder", "Downloads"), "Finder");
+    }
+
+    #[test]
+    fn details_name_the_file_site_or_window() {
+        assert_eq!(detail("Code", "● main.rs — e2k-new — Visual Studio Code", ""), "main.rs · e2k-new");
+        assert_eq!(detail("Google Chrome", "Lab", "http://localhost:3003/lab?x=1"), "localhost:3003");
+        assert_eq!(detail("Google Chrome", "Inbox", "https://www.gmail.com/"), "gmail.com");
+        assert_eq!(detail("ChatGPT", "הרב כהנא", ""), "הרב כהנא");
+        assert_eq!(detail("Finder", "", ""), "(no window)");
     }
 
     #[test]

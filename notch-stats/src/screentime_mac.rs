@@ -65,6 +65,20 @@ pub fn window_title(pid: i32) -> String {
     }
 }
 
+/// The address of Chrome's tab in front; empty if unavailable. The first time, macOS asks once to let
+/// NotchStats read Chrome.
+pub fn chrome_url() -> String {
+    let script = r#"with timeout of 1 second
+tell application id "com.google.Chrome" to if (count of windows) > 0 then get URL of active tab of front window
+end timeout"#;
+    std::process::Command::new("/usr/bin/osascript")
+        .args(["-e", script])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
 /// Seconds since the last keyboard, mouse or trackpad input anywhere.
 pub fn idle_secs() -> f64 {
     unsafe { CGEventSourceSecondsSinceLastEventType(0 /* combined session */, u32::MAX /* any input */) }
