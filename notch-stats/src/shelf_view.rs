@@ -21,14 +21,15 @@ pub struct Shelf {
     picked: HashSet<PathBuf>, // ⌘/⇧-clicked or boxed tiles: dragging any of them drags them all
     boxing: Option<(egui::Pos2, HashSet<PathBuf>)>, // a selection box being drawn: where it started, what was picked before
     last_app: Option<(String, Instant)>, // the last app in front other than Finder, and when it was
-    hush: Option<(String, Instant)>,     // after an AirDrop: the app to return to if Finder jumps up, until when
+    hush: Option<(String, Instant)>,
+    clear_armed: Option<Instant>, // first click on Clear; a second within 3 s empties the shelf     // after an AirDrop: the app to return to if Finder jumps up, until when
 }
 
 impl Shelf {
     pub fn new() -> Shelf {
         let root = shelf::dir();
         let _ = std::fs::create_dir_all(&root);
-        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None, picked: HashSet::new(), boxing: None, last_app: None, hush: None }
+        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None, picked: HashSet::new(), boxing: None, last_app: None, hush: None, clear_armed: None }
     }
 
     /// Re-reads the shelf folder every second; that is also when 3-day-old items go and new screenshots
@@ -128,6 +129,26 @@ impl Shelf {
         if pr.clicked() {
             self.paste();
         }
+        // Clear asks once more ("Clear all?") so one stray click never empties the shelf
+        let armed = self.clear_armed.is_some_and(|t| t.elapsed() < Duration::from_secs(3));
+        let clear = Rect::from_min_size(pos2(paste.left() - 8.0 - if armed { 80.0 } else { 58.0 }, paste.top()), vec2(if armed { 80.0 } else { 58.0 }, 22.0));
+        let cr = ui.interact(clear, ui.scope_id().with("clear"), Sense::click()).on_hover_text("Delete everything on the shelf");
+        let red = Color32::from_rgb(255, 69, 58);
+        p.rect_filled(clear, 6.0, alpha(if armed { red } else { Color32::from_gray(if cr.hovered() { 60 } else { 44 }) }, a));
+        p.text(clear.center(), Align2::CENTER_CENTER, if armed { "Clear all?" } else { "Clear" }, FontId::proportional(12.0), white);
+        if cr.clicked() {
+            if armed {
+                self.items.iter().for_each(shelf::remove);
+                self.clear_armed = None;
+                self.changed();
+            } else {
+                self.clear_armed = Some(Instant::now());
+            }
+        }
+        if armed {
+            ui.ctx().request_repaint_after(Duration::from_millis(300)); // so it disarms on time
+        }
+        let paste = clear;
         p.text(pos2(paste.left() - 10.0, b.top() + 13.0), Align2::RIGHT_TOP, "each item clears 3 days after it came in", FontId::proportional(11.0), alpha(DIM, a));
 
         let grid = Rect::from_min_max(b.left_top() + vec2(14.0, 40.0), b.right_bottom() - vec2(14.0, 30.0));
