@@ -3,7 +3,10 @@
 //! and "who is using it" donuts. It also holds a shelf: files dropped on it stay for 3 days.
 
 mod ai_view;
+mod interrupts;
+mod interrupts_report;
 mod keys;
+mod log_view;
 mod mac;
 mod net;
 mod net_view;
@@ -69,6 +72,7 @@ enum View {
     Stats,
     Ai,
     Time,
+    Log,
     Shelf,
 }
 
@@ -84,6 +88,7 @@ struct App {
     view: View,
     ai: ai_view::Ai,
     time: time_view::Time,
+    log: log_view::Log,
     cmd_v: Arc<AtomicBool>,
     test_now: bool,
 }
@@ -134,9 +139,10 @@ fn main() -> eframe::Result {
                 set_up: false,
                 shelf: shelf_view::Shelf::new(),
                 cmd_v,
-                view: match std::env::var("NOTCH_STATS_PIN").as_deref() { Ok("shelf") => View::Shelf, Ok("ai") => View::Ai, Ok("time") => View::Time, _ => View::Stats },
+                view: match std::env::var("NOTCH_STATS_PIN").as_deref() { Ok("shelf") => View::Shelf, Ok("ai") => View::Ai, Ok("time") => View::Time, Ok("log") => View::Log, _ => View::Stats },
                 ai: ai_view::Ai::start(cc.egui_ctx.clone()),
                 time: time_view::Time::start(),
+                log: log_view::Log::new(),
                 test_now: false,
             }))
         }),
@@ -282,6 +288,7 @@ impl App {
             View::Shelf => return self.shelf.draw(ui, p, b, dragging_in, a),
             View::Ai => return self.ai.draw(ui, p, b, a),
             View::Time => return self.time.draw(ui, p, b, a),
+            View::Log => return self.log.draw(ui, p, b, a),
             View::Stats => {}
         }
         let ranges = if self.metric == NET { net_view::RANGES } else { RANGES };
@@ -516,7 +523,7 @@ impl App {
     fn view_switch(&mut self, ui: &mut egui::Ui, p: &egui::Painter, at: Pos2, dragging_in: bool, a: f32) {
         let mut x = at.x;
         let n = self.shelf.items.len();
-        let mut labels = vec![("Stats".to_string(), View::Stats, 50.0), ("AI".to_string(), View::Ai, 40.0), ("Time".to_string(), View::Time, 48.0)];
+        let mut labels = vec![("Stats".to_string(), View::Stats, 50.0), ("AI".to_string(), View::Ai, 40.0), ("Time".to_string(), View::Time, 48.0), ("Log".to_string(), View::Log, 40.0)];
         if n > 0 || dragging_in {
             labels.push((if n > 0 { format!("Shelf · {n}") } else { "Shelf".into() }, View::Shelf, 74.0));
         }
@@ -531,6 +538,19 @@ impl App {
             let fill = if on { Color32::from_gray(48) } else if resp.hovered() { Color32::from_gray(28) } else { Color32::TRANSPARENT };
             p.rect_filled(r, 6.0, alpha(fill, a));
             p.text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), alpha(if on { Color32::WHITE } else { DIM }, a));
+        }
+        // a running interruption shows from every tab, and a click ends it
+        if let Some(s) = self.log.running {
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+            let r = Rect::from_min_size(pos2(x + 8.0, at.y - 11.0), vec2(118.0, 22.0));
+            let resp = ui.interact(r, ui.scope_id().with("int-pill"), Sense::click());
+            p.rect_filled(r, 6.0, alpha(log_view::RED.gamma_multiply(if resp.hovered() { 1.0 } else { 0.85 }), a));
+            p.circle_filled(pos2(r.left() + 10.0, at.y), 3.5, alpha(Color32::WHITE, a));
+            let t = format!("{} · End", log_view::clock(stats::unix_secs().saturating_sub(s)));
+            p.text(pos2(r.left() + 20.0, at.y), Align2::LEFT_CENTER, t, FontId::proportional(12.0), alpha(Color32::WHITE, a));
+            if resp.clicked() {
+                self.log.toggle();
+            }
         }
     }
 }

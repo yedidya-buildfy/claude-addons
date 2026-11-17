@@ -66,7 +66,7 @@ impl Time {
             let live = self.live.lock().unwrap().clone();
             self.data = Some((self.period, self.back, Instant::now(), compute(self.period, self.back, live)));
         }
-        self.header(ui, p, b, a);
+        period_nav(ui, p, b, &mut self.period, &mut self.back, "time", a);
         let Some((_, _, _, d)) = &self.data else { return };
         let total: u64 = d.totals.values().sum();
         let prev: u64 = d.prev.values().sum();
@@ -105,52 +105,6 @@ impl Time {
         }
         if let Some(name) = clicked {
             self.open = if self.open.as_ref() == Some(&name) { None } else { Some(name) };
-        }
-    }
-
-    /// ‹ label › on the left, Day / Week / Month on the right.
-    fn header(&mut self, ui: &mut egui::Ui, p: &egui::Painter, b: Rect, a: f32) {
-        let y = b.top() + 11.0;
-        let today = Local::now().date_naive();
-        let (first, end) = st::period_days(self.period, self.back, today);
-        let last = end.pred_opt().unwrap();
-        let label = match (self.period, self.back) {
-            (Period::Day, 0) => format!("Today · {}", first.format("%a %-d %b")),
-            (Period::Day, 1) => format!("Yesterday · {}", first.format("%a %-d %b")),
-            (Period::Day, _) => first.format("%a %-d %b").to_string(),
-            (Period::Week, n) => format!("{}{}–{}", if n == 0 { "This week · " } else { "" }, first.format("%-d %b"), last.format("%-d %b")),
-            (Period::Month, _) => first.format("%B %Y").to_string(),
-        };
-        let mut x = b.left();
-        for (i, arrow) in ["‹", "›"].into_iter().enumerate() {
-            let r = Rect::from_min_size(pos2(x, y - 11.0), vec2(24.0, 22.0));
-            let usable = i == 0 || self.back > 0;
-            let resp = ui.interact(r, ui.scope_id().with(("time-nav", i)), Sense::click());
-            if resp.hovered() && usable {
-                p.rect_filled(r, 6.0, alpha(Color32::from_gray(28), a));
-            }
-            p.text(r.center(), Align2::CENTER_CENTER, arrow, FontId::proportional(15.0), alpha(if usable { Color32::WHITE } else { FAINT }, a));
-            if resp.clicked() && usable {
-                self.back = if i == 0 { self.back + 1 } else { self.back - 1 };
-            }
-            x = r.right();
-            if i == 0 {
-                let t = p.text(pos2(x + 8.0, y), Align2::LEFT_CENTER, &label, FontId::proportional(13.0), alpha(Color32::WHITE, a));
-                x = t.right() + 8.0;
-            }
-        }
-        let mut x = b.right();
-        for (i, (name, per)) in [("Day", Period::Day), ("Week", Period::Week), ("Month", Period::Month)].into_iter().enumerate().rev() {
-            let r = Rect::from_min_size(pos2(x - 52.0, y - 11.0), vec2(52.0, 22.0));
-            x -= 56.0;
-            let resp = ui.interact(r, ui.scope_id().with(("time-period", i)), Sense::click());
-            if resp.clicked() && self.period != per {
-                (self.period, self.back) = (per, 0);
-            }
-            let on = self.period == per;
-            let fill = if on { Color32::from_gray(48) } else if resp.hovered() { Color32::from_gray(28) } else { Color32::TRANSPARENT };
-            p.rect_filled(r, 6.0, alpha(fill, a));
-            p.text(r.center(), Align2::CENTER_CENTER, name, FontId::proportional(12.0), alpha(if on { Color32::WHITE } else { DIM }, a));
         }
     }
 
@@ -309,6 +263,52 @@ impl Time {
     }
 }
 
+/// ‹ label › on the left, Day / Week / Month on the right (shared by Time and Log).
+pub fn period_nav(ui: &mut egui::Ui, p: &egui::Painter, b: Rect, period: &mut Period, back: &mut u32, id: &str, a: f32) {
+    let y = b.top() + 11.0;
+    let today = Local::now().date_naive();
+    let (first, end) = st::period_days(*period, *back, today);
+    let last = end.pred_opt().unwrap();
+    let label = match (*period, *back) {
+        (Period::Day, 0) => format!("Today · {}", first.format("%a %-d %b")),
+        (Period::Day, 1) => format!("Yesterday · {}", first.format("%a %-d %b")),
+        (Period::Day, _) => first.format("%a %-d %b").to_string(),
+        (Period::Week, n) => format!("{}{}–{}", if n == 0 { "This week · " } else { "" }, first.format("%-d %b"), last.format("%-d %b")),
+        (Period::Month, _) => first.format("%B %Y").to_string(),
+    };
+    let mut x = b.left();
+    for (i, arrow) in ["‹", "›"].into_iter().enumerate() {
+        let r = Rect::from_min_size(pos2(x, y - 11.0), vec2(24.0, 22.0));
+        let usable = i == 0 || *back > 0;
+        let resp = ui.interact(r, ui.scope_id().with((id, "nav", i)), Sense::click());
+        if resp.hovered() && usable {
+            p.rect_filled(r, 6.0, alpha(Color32::from_gray(28), a));
+        }
+        p.text(r.center(), Align2::CENTER_CENTER, arrow, FontId::proportional(15.0), alpha(if usable { Color32::WHITE } else { FAINT }, a));
+        if resp.clicked() && usable {
+            *back = if i == 0 { *back + 1 } else { *back - 1 };
+        }
+        x = r.right();
+        if i == 0 {
+            let t = p.text(pos2(x + 8.0, y), Align2::LEFT_CENTER, &label, FontId::proportional(13.0), alpha(Color32::WHITE, a));
+            x = t.right() + 8.0;
+        }
+    }
+    let mut x = b.right();
+    for (i, (name, per)) in [("Day", Period::Day), ("Week", Period::Week), ("Month", Period::Month)].into_iter().enumerate().rev() {
+        let r = Rect::from_min_size(pos2(x - 52.0, y - 11.0), vec2(52.0, 22.0));
+        x -= 56.0;
+        let resp = ui.interact(r, ui.scope_id().with((id, "period", i)), Sense::click());
+        if resp.clicked() && *period != per {
+            (*period, *back) = (per, 0);
+        }
+        let on = *period == per;
+        let fill = if on { Color32::from_gray(48) } else if resp.hovered() { Color32::from_gray(28) } else { Color32::TRANSPARENT };
+        p.rect_filled(r, 6.0, alpha(fill, a));
+        p.text(r.center(), Align2::CENTER_CENTER, name, FontId::proportional(12.0), alpha(if on { Color32::WHITE } else { DIM }, a));
+    }
+}
+
 /// Everything one view needs, read from the day files once (refreshed every 15 s while open).
 fn compute(period: Period, back: u32, live: Option<Seg>) -> Data {
     let today = Local::now().date_naive();
@@ -345,7 +345,7 @@ fn compute(period: Period, back: u32, live: Option<Seg>) -> Data {
     Data { days, per_day, slots, totals, prev, apps, details, elapsed_days }
 }
 
-fn fmt(secs: u64) -> String {
+pub fn fmt(secs: u64) -> String {
     let m = secs / 60;
     match m {
         0 if secs > 0 => "<1m".into(),
