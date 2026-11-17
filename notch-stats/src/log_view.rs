@@ -98,8 +98,9 @@ impl Log {
             let mid = row.center().y;
             let live = self.running == Some(i.s);
             let x_btn = Rect::from_center_size(pos2(r.right() - 30.0, mid), vec2(60.0, 18.0));
-            let del = ui.interact(x_btn, ui.scope_id().with(("int-del", i.s)), Sense::click());
+            // the row first: egui gives an overlapping click to the widget added last, so × must come after it
             let resp = ui.interact(row, ui.scope_id().with(("int-row", i.s)), Sense::click());
+            let del = ui.interact(x_btn, ui.scope_id().with(("int-del", i.s)), Sense::click());
             if (resp.hovered() || del.hovered()) && !live {
                 p.rect_filled(row, 5.0, alpha(Color32::from_rgb(30, 30, 34), a));
             }
