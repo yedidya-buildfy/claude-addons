@@ -20,7 +20,7 @@ unsafe fn ns(s: &str) -> *mut AnyObject {
     unsafe { msg_send![class!(NSString), stringWithUTF8String: c.as_ptr()] }
 }
 
-unsafe fn text(s: *mut AnyObject) -> Option<String> {
+pub(crate) unsafe fn text(s: *mut AnyObject) -> Option<String> {
     if s.is_null() {
         return None;
     }
@@ -144,11 +144,7 @@ pub fn copy(path: &Path) {
 
 /// The bundle id of the app in front ("com.apple.finder" for Finder).
 pub fn front_app() -> Option<String> {
-    autoreleasepool(|_| unsafe {
-        let ws: *mut AnyObject = msg_send![class!(NSWorkspace), sharedWorkspace];
-        let app: *mut AnyObject = msg_send![ws, frontmostApplication];
-        if app.is_null() { None } else { text(msg_send![app, bundleIdentifier]) }
-    })
+    crate::screentime_mac::front().map(|f| f.bundle)
 }
 
 /// Closes the Downloads window AirDrop opens in Finder and brings `app` back to the front.

@@ -7,11 +7,14 @@ mod keys;
 mod mac;
 mod net;
 mod net_view;
+mod screentime;
+mod screentime_mac;
 mod shelf;
 mod shelf_mac;
 mod shelf_view;
 mod stats;
 mod temp;
+mod time_view;
 
 use eframe::egui::{
     self, Align2, Color32, CornerRadius, FontFamily, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Vec2, pos2, vec2,
@@ -65,6 +68,7 @@ const MEM_COLORS: [Color32; 4] = [
 enum View {
     Stats,
     Ai,
+    Time,
     Shelf,
 }
 
@@ -79,6 +83,7 @@ struct App {
     shelf: shelf_view::Shelf,
     view: View,
     ai: ai_view::Ai,
+    time: time_view::Time,
     cmd_v: Arc<AtomicBool>,
     test_now: bool,
 }
@@ -129,8 +134,9 @@ fn main() -> eframe::Result {
                 set_up: false,
                 shelf: shelf_view::Shelf::new(),
                 cmd_v,
-                view: match std::env::var("NOTCH_STATS_PIN").as_deref() { Ok("shelf") => View::Shelf, Ok("ai") => View::Ai, _ => View::Stats },
+                view: match std::env::var("NOTCH_STATS_PIN").as_deref() { Ok("shelf") => View::Shelf, Ok("ai") => View::Ai, Ok("time") => View::Time, _ => View::Stats },
                 ai: ai_view::Ai::start(cc.egui_ctx.clone()),
+                time: time_view::Time::start(),
                 test_now: false,
             }))
         }),
@@ -275,6 +281,7 @@ impl App {
         match self.view {
             View::Shelf => return self.shelf.draw(ui, p, b, dragging_in, a),
             View::Ai => return self.ai.draw(ui, p, b, a),
+            View::Time => return self.time.draw(ui, p, b, a),
             View::Stats => {}
         }
         let ranges = if self.metric == NET { net_view::RANGES } else { RANGES };
@@ -505,11 +512,11 @@ impl App {
 }
 
 impl App {
-    /// "Stats | AI | Shelf · N" beside "Live"; Shelf only while it holds something (or a file is dragged over).
+    /// "Stats | AI | Time | Shelf · N" beside "Live"; Shelf only while it holds something (or a file is dragged over).
     fn view_switch(&mut self, ui: &mut egui::Ui, p: &egui::Painter, at: Pos2, dragging_in: bool, a: f32) {
         let mut x = at.x;
         let n = self.shelf.items.len();
-        let mut labels = vec![("Stats".to_string(), View::Stats, 50.0), ("AI".to_string(), View::Ai, 40.0)];
+        let mut labels = vec![("Stats".to_string(), View::Stats, 50.0), ("AI".to_string(), View::Ai, 40.0), ("Time".to_string(), View::Time, 48.0)];
         if n > 0 || dragging_in {
             labels.push((if n > 0 { format!("Shelf · {n}") } else { "Shelf".into() }, View::Shelf, 74.0));
         }

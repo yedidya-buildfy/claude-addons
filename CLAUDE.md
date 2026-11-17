@@ -66,6 +66,7 @@ Provider auth and runtime state live only under the user's home directory. The r
 | Public price source and refresh schedule | Same module: LiteLLM's public provider catalogue, daily while visible; hourly retries after failure |
 | Saved AI logins (Claude, Codex, Gemini), per-account plan usage, plan prices, which account to use, switching accounts | `claude-accounts/accounts.mjs` + one file per tool (the notch AI view only runs it; Codex/Gemini usage is read through `statusline-gsd/provider-usage.js`) |
 | Session and agent totals | `statusline-gsd/gsd-statusline.js`; cached totals are invalidated by a price/alias fingerprint |
+| Screen time: what is in front, its project, idle rule, day files, period maths (notch Time tab) | `notch-stats/src/screentime.rs` (+ `screentime_mac.rs` = THE front-app reader, the shelf uses it too; view `time_view.rs` only draws) |
 
 Known duplicate: `statusline-gsd/usage-fetch.sh` reads plan usage for the signed-in account with its own call; `claude-accounts/claude.mjs` does the same for saved accounts (it reuses the status line's cache for the signed-in one). Both hit the same endpoint; point the status line at the accounts script if they ever drift.
 
