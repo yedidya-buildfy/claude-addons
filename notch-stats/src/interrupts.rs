@@ -17,6 +17,8 @@ pub const FOCUS_CAP_S: u64 = 3600;
 pub struct Interruption {
     pub s: u64,
     pub e: u64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
 }
 
 fn log_file() -> PathBuf {
@@ -39,18 +41,64 @@ pub fn begin(now: u64) {
 /// Ends the running interruption and keeps it.
 pub fn end(now: u64) {
     let Some(s) = running() else { return };
-    let line = serde_json::to_string(&Interruption { s, e: now.max(s) }).unwrap();
+    let line = serde_json::to_string(&Interruption { s, e: now.max(s), note: String::new() }).unwrap();
     let ok = std::fs::OpenOptions::new().create(true).append(true).open(log_file()).and_then(|mut f| writeln!(f, "{line}"));
     if ok.is_ok() {
         let _ = std::fs::remove_file(open_file());
     }
 }
 
+fn all() -> Vec<Interruption> {
+    std::fs::read_to_string(log_file()).unwrap_or_default().lines().filter_map(|l| serde_json::from_str(l).ok()).collect()
+}
+
+/// Rewrites the whole log (temp file + rename, so a crash never leaves half of it).
+fn save(v: &[Interruption]) -> bool {
+    let tmp = log_file().with_extension("tmp");
+    let body: String = v.iter().map(|x| serde_json::to_string(x).unwrap() + "\n").collect();
+    std::fs::create_dir_all(data_dir()).and_then(|_| std::fs::write(&tmp, body)).and_then(|_| std::fs::rename(&tmp, log_file())).is_ok()
+}
+
+/// Adds one after the fact (or replaces the one starting at the same second).
+pub fn add(i: Interruption) -> bool {
+    let mut v = all();
+    v.retain(|x| x.s != i.s);
+    v.push(i);
+    v.sort_by_key(|x| x.s);
+    save(&v)
+}
+
+/// The interruption starting at `s` (unix seconds) is the key for edit and delete.
+pub fn set_note(s: u64, note: &str) -> bool {
+    let mut v = all();
+    v.iter_mut().filter(|x| x.s == s).for_each(|x| x.note = note.trim().to_string());
+    save(&v)
+}
+
+pub fn remove(s: u64) -> bool {
+    let mut v = all();
+    v.retain(|x| x.s != s);
+    save(&v)
+}
+
+/// "14:10-14:25" (also with – or spaces) on `day` -> [start, end) unix seconds; None if unreadable,
+/// backwards, or in the future.
+pub fn parse_span(text: &str, day: NaiveDate, now: u64) -> Option<(u64, u64)> {
+    let t: String = text.chars().map(|c| if c == '–' || c == '—' { '-' } else { c }).filter(|c| !c.is_whitespace()).collect();
+    let (a, b) = t.split_once('-')?;
+    let at = |x: &str| -> Option<u64> {
+        let tm = chrono::NaiveTime::parse_from_str(x, "%H:%M").ok()?;
+        let dt = day.and_time(tm).and_local_timezone(chrono::Local).earliest()?;
+        Some(dt.timestamp() as u64)
+    };
+    let (s, e) = (at(a)?, at(b)?);
+    (s < e && e <= now).then_some((s, e))
+}
+
 /// Interruptions overlapping [from, to), oldest first; the running one up to `now`.
 pub fn load(from: u64, to: u64, now: u64) -> Vec<Interruption> {
-    let mut v: Vec<Interruption> =
-        std::fs::read_to_string(log_file()).unwrap_or_default().lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
-    v.extend(running().map(|s| Interruption { s, e: now.max(s) }));
+    let mut v = all();
+    v.extend(running().map(|s| Interruption { s, e: now.max(s), note: String::new() }));
     v.retain(|x| x.e > from && x.s < to);
     v.sort_by_key(|x| x.s);
     v
@@ -113,7 +161,7 @@ mod tests {
 
     #[test]
     fn back_to_focus_is_the_wait_for_the_same_project() {
-        let i = Interruption { s: 1000, e: 1600 };
+        let i = Interruption { s: 1000, e: 1600, note: String::new() };
         let segs = [seg(0, 1000, "e2k"), seg(1600, 1900, "Mail"), seg(1900, 2500, "e2k")];
         assert_eq!(back_to_focus(&i, &segs), Some(300));
         // straight back to it
@@ -121,5 +169,16 @@ mod tests {
         // nothing in front before it, or never back within the hour
         assert_eq!(back_to_focus(&i, &[seg(0, 500, "e2k"), seg(1600, 2000, "e2k")]), None);
         assert_eq!(back_to_focus(&i, &[seg(0, 1000, "e2k"), seg(9000, 9100, "e2k")]), None);
+    }
+
+    #[test]
+    fn typed_times_read_on_the_day() {
+        let day = NaiveDate::from_ymd_opt(2026, 11, 17).unwrap();
+        let now = st::midnight(day) + 86400;
+        let (s, e) = parse_span(" 14:10 – 14:25 ", day, now).unwrap();
+        assert_eq!((s - st::midnight(day), e - s), (14 * 3600 + 600, 900));
+        assert!(parse_span("14:25-14:10", day, now).is_none()); // backwards
+        assert!(parse_span("14:10", day, now).is_none());
+        assert!(parse_span("23:00-23:30", day, st::midnight(day) + 3600).is_none()); // future
     }
 }

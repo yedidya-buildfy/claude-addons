@@ -57,8 +57,10 @@ pub fn build(first: NaiveDate, end: NaiveDate, now: u64) -> Report {
     for (i, f) in &sm.list {
         let f = f.map_or("—".to_string(), fmt);
         let d = day_he(st::local_day(i.s));
-        text.push_str(&format!("{d}  {} – {}  ({}), חזרה לריכוז {f}\n", hm(i.s), hm(i.e), fmt(i.e - i.s)));
-        rows.push_str(&format!("<tr><td>{d}</td><td class=n>{}</td><td class=n>{}</td><td class=n>{}</td><td class=n>{f}</td></tr>", hm(i.s), hm(i.e), fmt(i.e - i.s)));
+        let note = if i.note.is_empty() { String::new() } else { format!(" · {}", i.note) };
+        text.push_str(&format!("{d}  {} – {}  ({}), חזרה לריכוז {f}{note}\n", hm(i.s), hm(i.e), fmt(i.e - i.s)));
+        let esc = i.note.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+        rows.push_str(&format!("<tr><td>{d}</td><td class=n>{}</td><td class=n>{}</td><td class=n>{}</td><td class=n>{f}</td><td>{esc}</td></tr>", hm(i.s), hm(i.e), fmt(i.e - i.s)));
     }
     let html = format!(
         r#"<!doctype html><html lang=he dir=rtl><head><meta charset=utf-8><title>יומן הפרעות · {range}</title><style>
@@ -73,7 +75,7 @@ table{{width:100%;border-collapse:collapse;font-size:13px}}td,th{{padding:6px 4p
 </style></head><body><h1>יומן הפרעות בעבודה</h1><div class=sub>{range} · כל הפרעה סומנה ידנית ברגע שהתחילה ונגמרה</div>
 <div class=k><div>הפרעות<b>{}</b></div><div>זמן הפרעה<b class=red>{}</b></div><div>זמן חזרה לריכוז<b>{}</b></div><div>מתוך שעות העבודה<b>{share:.0}%</b></div></div>
 {bars}
-<table><tr><th>יום</th><th>התחלה</th><th>סיום</th><th>משך</th><th>חזרה לריכוז</th></tr>{rows}</table>
+<table><tr><th>יום</th><th>התחלה</th><th>סיום</th><th>משך</th><th>חזרה לריכוז</th><th>הערה</th></tr>{rows}</table>
 <p class=sub>זמן חזרה לריכוז = כמה זמן אחרי סוף ההפרעה חזרתי לפרויקט שעבדתי עליו לפניה (נמדד מזמן המסך; מעל שעה לא נספר).</p>
 </body></html>"#,
         sm.list.len(),

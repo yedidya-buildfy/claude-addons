@@ -555,8 +555,40 @@ impl App {
     }
 }
 
+/// Cut to `n` letters, then put in screen order (the painter draws left to right only, so Hebrew is turned).
 fn short(name: &str, n: usize) -> String {
-    if name.chars().count() > n { format!("{}…", name.chars().take(n - 1).collect::<String>()) } else { name.to_string() }
+    let cut = if name.chars().count() > n { format!("{}…", name.chars().take(n - 1).collect::<String>()) } else { name.to_string() };
+    visual(&cut)
+}
+
+fn is_rtl(c: char) -> bool {
+    matches!(c, '\u{0590}'..='\u{08FF}' | '\u{FB1D}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFF}')
+}
+
+/// A line with Hebrew / Arabic in it, as a right-to-left line drawn left to right: runs of Latin letters and
+/// numbers (with the dots, colons and spaces inside them) keep their order, everything else is turned.
+/// ponytail: not the full Unicode bidi algorithm; enough for names, notes and window titles.
+fn visual(s: &str) -> String {
+    if !s.chars().any(is_rtl) {
+        return s.to_string();
+    }
+    let c: Vec<char> = s.chars().collect();
+    let strong = |x: char| if is_rtl(x) { Some(false) } else if x.is_alphanumeric() { Some(true) } else { None };
+    let ltr: Vec<bool> = (0..c.len())
+        .map(|i| match strong(c[i]) {
+            Some(l) => l,
+            None => c[..i].iter().rev().find_map(|x| strong(*x)) == Some(true) && c[i + 1..].iter().find_map(|x| strong(*x)) == Some(true),
+        })
+        .collect();
+    let mut runs: Vec<(bool, String)> = Vec::new();
+    for (ch, l) in c.iter().zip(&ltr) {
+        match runs.last_mut() {
+            Some((k, r)) if k == l => r.push(*ch),
+            _ => runs.push((*l, ch.to_string())),
+        }
+    }
+    let mirror = |x: char| match x { '(' => ')', ')' => '(', '[' => ']', ']' => '[', '<' => '>', '>' => '<', _ => x };
+    runs.iter().rev().map(|(l, r)| if *l { r.clone() } else { r.chars().rev().map(mirror).collect() }).collect()
 }
 
 /// A row: colour mark, name, value on the right; returns the next row's y.
@@ -754,4 +786,15 @@ fn core_heatmap(p: &egui::Painter, r: Rect, hist: &[stats::Point], e_cores: usiz
 fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
     let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t.clamp(0.0, 1.0)) as u8;
     Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
+}
+
+#[cfg(test)]
+mod bidi_tests {
+    #[test]
+    fn hebrew_is_turned_and_latin_kept() {
+        assert_eq!(super::visual("abc"), "abc");
+        assert_eq!(super::visual("שלום"), "םולש");
+        assert_eq!(super::visual("שיחה עם Dan על main.rs"), "main.rs לע Dan םע החיש");
+        assert_eq!(super::visual("פגישה (14:10)"), "(14:10) השיגפ");
+    }
 }

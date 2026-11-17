@@ -185,3 +185,14 @@ pub fn off_active_space() -> bool {
         })
     }
 }
+
+/// A small Mac text dialog (the notch panel never takes keyboard focus); None = cancelled. Blocks.
+pub fn ask(prompt: &str, default: &str) -> Option<String> {
+    let out = std::process::Command::new("/usr/bin/osascript")
+        .args(["-e", "on run argv", "-e", "activate", "-e"])
+        .arg("text returned of (display dialog (item 1 of argv) default answer (item 2 of argv) with title \"NotchStats\")")
+        .args(["-e", "end run", prompt, default])
+        .output()
+        .ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim_end_matches('\n').to_string())
+}

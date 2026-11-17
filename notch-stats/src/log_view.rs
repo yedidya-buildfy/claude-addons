@@ -8,6 +8,8 @@ use crate::time_view::{fmt, period_nav};
 use crate::{CARD, DIM, alpha};
 use chrono::{Local, TimeZone};
 use eframe::egui::{self, Align2, Color32, FontId, Rect, Sense, pos2, vec2};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 pub const RED: Color32 = Color32::from_rgb(255, 69, 58);
@@ -19,11 +21,13 @@ pub struct Log {
     back: u32,
     data: Option<(Period, u32, Instant, Summary)>,
     said: Option<(Instant, &'static str)>,
+    changed: Arc<AtomicBool>,            // a dialog (own thread) changed the log
+    armed: Option<(u64, Instant)>,       // delete waits for a second click on the same row
 }
 
 impl Log {
     pub fn new() -> Self {
-        Log { running: int::running(), period: Period::Day, back: 0, data: None, said: None }
+        Log { running: int::running(), period: Period::Day, back: 0, data: None, said: None, changed: Arc::default(), armed: None }
     }
 
     /// Start or end an interruption (the tab's button and the red mark in the top strip).
@@ -39,6 +43,9 @@ impl Log {
     }
 
     pub fn draw(&mut self, ui: &mut egui::Ui, p: &egui::Painter, b: Rect, a: f32) {
+        if self.changed.swap(false, Ordering::Relaxed) {
+            self.data = None;
+        }
         let fresh = matches!(&self.data, Some((pp, bb, at, _)) if *pp == self.period && *bb == self.back && at.elapsed() < REFRESH);
         if !fresh {
             self.data = Some((self.period, self.back, Instant::now(), { let (f, e) = st::period_days(self.period, self.back, Local::now().date_naive()); int::summary(f, e, unix_secs()) }));
@@ -70,11 +77,96 @@ impl Log {
         if d.list.is_empty() {
             p.text(body.center(), Align2::CENTER_CENTER, "No interruptions", FontId::proportional(12.0), alpha(DIM, a));
         } else if self.period == Period::Day {
-            rows(p, body.shrink2(vec2(12.0, 8.0)), &d.list, self.running, a);
+            let list = d.list.clone();
+            self.rows(ui, p, body.shrink2(vec2(12.0, 8.0)), &list, a);
         } else {
             bars(ui, p, body.shrink2(vec2(12.0, 10.0)), d, a);
         }
         self.share(ui, p, Rect::from_min_max(pos2(b.left(), b.bottom() - 22.0), b.max), a);
+    }
+
+    /// One line per interruption, newest first: start–end, how long, back to focus, note.
+    /// Click = edit the note; × twice = delete.
+    fn rows(&mut self, ui: &mut egui::Ui, p: &egui::Painter, r: Rect, list: &[(Interruption, Option<u64>)], a: f32) {
+        let mut y = r.top();
+        // ponytail: as many as fit
+        for (i, focus) in list.iter().rev() {
+            if y + 22.0 > r.bottom() {
+                break;
+            }
+            let row = Rect::from_min_size(pos2(r.left() - 6.0, y), vec2(r.width() + 12.0, 22.0));
+            let mid = row.center().y;
+            let live = self.running == Some(i.s);
+            let x_btn = Rect::from_center_size(pos2(r.right() - 30.0, mid), vec2(60.0, 18.0));
+            let del = ui.interact(x_btn, ui.scope_id().with(("int-del", i.s)), Sense::click());
+            let resp = ui.interact(row, ui.scope_id().with(("int-row", i.s)), Sense::click());
+            if (resp.hovered() || del.hovered()) && !live {
+                p.rect_filled(row, 5.0, alpha(Color32::from_rgb(30, 30, 34), a));
+            }
+            p.circle_filled(pos2(r.left() + 4.0, mid), 3.0, alpha(RED, a));
+            let when = if live { format!("{} – now", hm(i.s)) } else { format!("{} – {}", hm(i.s), hm(i.e)) };
+            p.text(pos2(r.left() + 16.0, mid), Align2::LEFT_CENTER, when, FontId::proportional(12.0), alpha(Color32::WHITE, a));
+            p.text(pos2(r.left() + 130.0, mid), Align2::LEFT_CENTER, fmt(i.e - i.s), FontId::proportional(12.0), alpha(RED, a));
+            let f = focus.map_or("—".to_string(), |s| format!("+{} to refocus", fmt(s)));
+            p.text(pos2(r.left() + 190.0, mid), Align2::LEFT_CENTER, f, FontId::proportional(11.0), alpha(DIM, a));
+            let (note, nc) = if i.note.is_empty() { (if resp.hovered() && !live { "add note…" } else { "" }, DIM) } else { (i.note.as_str(), Color32::from_gray(215)) };
+            p.text(pos2(r.left() + 310.0, mid), Align2::LEFT_CENTER, crate::short(note, 46), FontId::proportional(11.5), alpha(nc, a));
+            if live {
+                y += 22.0;
+                continue;
+            }
+            let armed = self.armed.is_some_and(|(s, at)| s == i.s && at.elapsed() < Duration::from_secs(3));
+            if resp.hovered() || del.hovered() || armed {
+                p.text(x_btn.center(), Align2::CENTER_CENTER, if armed { "Delete?" } else { "×" }, FontId::proportional(if armed { 11.5 } else { 14.0 }), alpha(if armed || del.hovered() { RED } else { DIM }, a));
+            }
+            if armed {
+                ui.ctx().request_repaint_after(Duration::from_millis(300));
+            }
+            if del.clicked() {
+                if armed {
+                    int::remove(i.s);
+                    (self.armed, self.data) = (None, None);
+                } else {
+                    self.armed = Some((i.s, Instant::now()));
+                }
+            } else if resp.clicked() {
+                self.edit_note(ui.ctx(), i);
+            }
+            y += 22.0;
+        }
+    }
+
+    fn edit_note(&self, ctx: &egui::Context, i: &Interruption) {
+        let (i, changed, ctx) = (i.clone(), self.changed.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            let prompt = format!("הערה להפרעה {} – {}", hm(i.s), hm(i.e));
+            if let Some(n) = crate::mac::ask(&prompt, &i.note) {
+                int::set_note(i.s, &n);
+                changed.store(true, Ordering::Relaxed);
+                ctx.request_repaint();
+            }
+        });
+    }
+
+    /// "Add past": times typed for the day on screen, then an optional note.
+    fn add_past(&self, ctx: &egui::Context) {
+        let day = st::period_days(Period::Day, self.back, Local::now().date_naive()).0;
+        let (changed, ctx) = (self.changed.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            let mut prompt = format!("הפרעה ביום {} — שעת התחלה וסיום, למשל 14:10-14:25", day.format("%-d.%-m"));
+            let span = loop {
+                let text = crate::mac::ask(&prompt, "")?;
+                if let Some(x) = int::parse_span(&text, day, unix_secs()) {
+                    break x;
+                }
+                prompt = "לא הבנתי את השעות. כתוב התחלה-סיום, למשל 14:10-14:25 (לא בעתיד)".into();
+            };
+            let note = crate::mac::ask("הערה (לא חובה)", "").unwrap_or_default();
+            int::add(Interruption { s: span.0, e: span.1, note: note.trim().to_string() });
+            changed.store(true, Ordering::Relaxed);
+            ctx.request_repaint();
+            Some(())
+        });
     }
 
     fn button(&mut self, ui: &mut egui::Ui, p: &egui::Painter, r: Rect, a: f32) {
@@ -95,6 +187,15 @@ impl Log {
 
     /// "Open report" (a page in Hebrew for a partner) and "Copy as text", bottom right.
     fn share(&mut self, ui: &mut egui::Ui, p: &egui::Painter, r: Rect, a: f32) {
+        if self.period == Period::Day {
+            let br = Rect::from_min_size(r.min, vec2(84.0, 22.0));
+            let resp = ui.interact(br, ui.scope_id().with("int-add"), Sense::click());
+            p.rect_filled(br, 6.0, alpha(Color32::from_gray(if resp.hovered() { 40 } else { 28 }), a));
+            p.text(br.center(), Align2::CENTER_CENTER, "+ Add past", FontId::proportional(11.5), alpha(Color32::WHITE, a));
+            if resp.clicked() {
+                self.add_past(ui.ctx());
+            }
+        }
         let mut x = r.right();
         for (i, label) in ["Copy as text", "Open report"].into_iter().enumerate() {
             let w = 96.0;
@@ -114,24 +215,6 @@ impl Log {
             let _ = at;
             p.text(pos2(x - 4.0, r.center().y), Align2::RIGHT_CENTER, msg, FontId::proportional(11.0), alpha(DIM, a));
         }
-    }
-}
-
-/// One line per interruption: start–end, how long, back to focus.
-fn rows(p: &egui::Painter, r: Rect, list: &[(Interruption, Option<u64>)], running: Option<u64>, a: f32) {
-    let mut y = r.top();
-    // ponytail: as many as fit, newest first
-    for (i, focus) in list.iter().rev() {
-        if y + 20.0 > r.bottom() {
-            break;
-        }
-        let mid = y + 10.0;
-        p.circle_filled(pos2(r.left() + 4.0, mid), 3.0, alpha(RED, a));
-        p.text(pos2(r.left() + 16.0, mid), Align2::LEFT_CENTER, if running == Some(i.s) { format!("{} – now", hm(i.s)) } else { format!("{} – {}", hm(i.s), hm(i.e)) }, FontId::proportional(12.0), alpha(Color32::WHITE, a));
-        p.text(pos2(r.left() + 140.0, mid), Align2::LEFT_CENTER, fmt(i.e - i.s), FontId::proportional(12.0), alpha(RED, a));
-        let f = focus.map_or("—".to_string(), |s| format!("back to focus +{}", fmt(s)));
-        p.text(pos2(r.left() + 220.0, mid), Align2::LEFT_CENTER, f, FontId::proportional(11.0), alpha(DIM, a));
-        y += 20.0;
     }
 }
 
