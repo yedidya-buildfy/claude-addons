@@ -25,7 +25,8 @@ pub fn front() -> Option<Front> {
         }
         let pid: i32 = msg_send![app, processIdentifier];
         let bundle = text(msg_send![app, bundleIdentifier]).unwrap_or_default();
-        let name = text(msg_send![app, localizedName]).unwrap_or_default();
+        // some apps hide direction marks in their name ("\u{200E}WhatsApp"); rules compare plain names
+        let name: String = text(msg_send![app, localizedName]).unwrap_or_default().chars().filter(|c| !matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}')).collect();
         Some(Front { bundle, name, pid })
     })
 }
