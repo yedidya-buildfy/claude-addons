@@ -1,7 +1,7 @@
 //! Screen time: what was in front, and on which project, kept per day on this Mac only.
 //! Every 2 s the focused app and its window title are sampled. Only the focused window counts, so with
 //! two screens it is still one thing at a time and the total never exceeds real time. Nothing counts
-//! after 3 min without keyboard or mouse. Files: one JSON line per stretch, `screentime/<day>.jsonl`.
+//! after 10 min without keyboard or mouse. Files: one JSON line per stretch, `screentime/<day>.jsonl`.
 
 use crate::stats::data_dir;
 use chrono::{Datelike, Local, Months, NaiveDate, TimeZone};
@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub const SAMPLE_S: u64 = 2;
-pub const IDLE_S: f64 = 180.0;
+pub const IDLE_S: f64 = 600.0; // reading or waiting on an agent without touching anything still counts
 const FLUSH_S: u64 = 300; // a running stretch is written at least this often, so a crash loses little
 const GAP_S: u64 = 3 * SAMPLE_S; // longer without a sample (Mac asleep) = the stretch ended
 pub const SLOT_S: u64 = 300; // the day ribbon's resolution
