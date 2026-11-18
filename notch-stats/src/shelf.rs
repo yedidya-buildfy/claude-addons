@@ -3,6 +3,7 @@
 //! Every item sits in its own folder named after when it came in, so the file keeps its own name.
 
 use crate::stats::{data_dir, unix_secs};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -82,10 +83,12 @@ fn move_in(root: &Path, f: &Path) -> Option<PathBuf> {
     std::fs::rename(f, &to).map(|_| to).map_err(|_| std::fs::remove_dir_all(&slot)).ok()
 }
 
-/// What AirDrop just received into Downloads moves onto the shelf instead. AirDrop tags what it
-/// receives as coming from "sharingd"; only things that landed in the last 30 s are looked at, so
-/// older downloads stay where they are. Returns where they landed.
-pub fn adopt_airdrops(root: &Path, downloads: &Path, now: u64) -> Vec<PathBuf> {
+/// What AirDrop or Taildrop (Tailscale) just received into Downloads moves onto the shelf instead.
+/// AirDrop tags what it receives as coming from "sharingd". Taildrop tags nothing, so a fresh file with
+/// no download tag at all is taken only when Tailscale logged "files waiting" in the last minute
+/// (`taildrop`, asked at most once per file: it takes ~0.7 s). Only things that landed in the last 30 s
+/// are looked at, so older downloads stay where they are. Returns where they landed.
+pub fn adopt_airdrops(root: &Path, downloads: &Path, now: u64, judged: &mut HashSet<PathBuf>, taildrop: impl Fn() -> bool) -> Vec<PathBuf> {
     use std::os::unix::fs::MetadataExt;
     let fresh: Vec<PathBuf> = std::fs::read_dir(downloads)
         .into_iter()
@@ -95,15 +98,30 @@ pub fn adopt_airdrops(root: &Path, downloads: &Path, now: u64) -> Vec<PathBuf> {
         .filter(|e| e.metadata().is_ok_and(|m| now.saturating_sub(m.ctime().max(0) as u64) < 30))
         .map(|e| e.path())
         .collect();
-    fresh.iter().filter(|f| from_airdrop(f)).filter_map(|f| move_in(root, f)).collect()
+    judged.retain(|p| fresh.contains(p));
+    let mut tail: Option<bool> = None;
+    let mut take = |f: &PathBuf| match download_agent(f).as_deref() {
+        Some("sharingd") => true,
+        Some(_) => false,
+        None => judged.insert(f.clone()) && *tail.get_or_insert_with(&taildrop),
+    };
+    let picked: Vec<&PathBuf> = fresh.iter().filter(|f| take(f)).collect();
+    picked.into_iter().filter_map(|f| move_in(root, f)).collect()
 }
 
-fn from_airdrop(f: &Path) -> bool {
-    std::process::Command::new("/usr/bin/xattr")
-        .args(["-p", "com.apple.quarantine"])
-        .arg(f)
+/// Who downloaded it, from macOS's download tag ("sharingd" = AirDrop, "Chrome", ...); None = untagged.
+fn download_agent(f: &Path) -> Option<String> {
+    let o = std::process::Command::new("/usr/bin/xattr").args(["-p", "com.apple.quarantine"]).arg(f).output().ok()?;
+    o.status.success().then(|| String::from_utf8_lossy(&o.stdout).split(';').nth(2).unwrap_or("").to_string())
+}
+
+/// True when Tailscale announced received files in the last minute (its "files waiting" log line).
+pub fn taildrop_just_now() -> bool {
+    std::process::Command::new("/usr/bin/log")
+        .args(["show", "--last", "1m", "--info", "--style", "compact", "--predicate"])
+        .arg(r#"process == "Tailscale" AND eventMessage CONTAINS "files waiting""#)
         .output()
-        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).split(';').nth(2) == Some("sharingd"))
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("files waiting"))
 }
 
 pub fn remove(item: &Item) {
@@ -194,10 +212,19 @@ mod tests {
         };
         tag("From phone.heic", "sharingd");
         tag("From Chrome.pdf", "Chrome");
-        assert!(adopt_airdrops(&root, &downloads, unix_secs() + 120).is_empty(), "old AirDrops stay in Downloads");
-        let moved = adopt_airdrops(&root, &downloads, unix_secs());
+        std::fs::write(downloads.join("Saved by an app.txt"), b"x").unwrap();
+        let mut judged = HashSet::new();
+        assert!(adopt_airdrops(&root, &downloads, unix_secs() + 120, &mut judged, || true).is_empty(), "old AirDrops stay in Downloads");
+        let moved = adopt_airdrops(&root, &downloads, unix_secs(), &mut judged, || false);
         assert_eq!(moved.len(), 1);
         assert_eq!(list(&root)[0].path.file_name().unwrap(), "From phone.heic");
+        assert!(downloads.join("From Chrome.pdf").exists());
+        assert!(downloads.join("Saved by an app.txt").exists(), "untagged file stays when Tailscale received nothing");
+        assert!(adopt_airdrops(&root, &downloads, unix_secs(), &mut judged, || panic!("asked twice")).is_empty(), "each file is judged once");
+        std::fs::write(downloads.join("From Taildrop.jpg"), b"x").unwrap();
+        let moved = adopt_airdrops(&root, &downloads, unix_secs(), &mut judged, || true);
+        assert_eq!(moved.len(), 1, "a fresh untagged file right after Tailscale received goes on the shelf");
+        assert!(moved[0].ends_with("From Taildrop.jpg"));
         assert!(downloads.join("From Chrome.pdf").exists());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&downloads);

@@ -21,15 +21,16 @@ pub struct Shelf {
     picked: HashSet<PathBuf>, // ⌘/⇧-clicked or boxed tiles: dragging any of them drags them all
     boxing: Option<(egui::Pos2, HashSet<PathBuf>)>, // a selection box being drawn: where it started, what was picked before
     last_app: Option<(String, Instant)>, // the last app in front other than Finder, and when it was
-    hush: Option<(String, Instant)>,
-    clear_armed: Option<Instant>, // first click on Clear; a second within 3 s empties the shelf     // after an AirDrop: the app to return to if Finder jumps up, until when
+    hush: Option<(String, Instant)>,     // after an AirDrop: the app to return to if Finder jumps up, until when
+    clear_armed: Option<Instant>,        // first click on Clear; a second within 3 s empties the shelf
+    judged: HashSet<PathBuf>,            // fresh untagged Downloads files already checked against Tailscale
 }
 
 impl Shelf {
     pub fn new() -> Shelf {
         let root = shelf::dir();
         let _ = std::fs::create_dir_all(&root);
-        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None, picked: HashSet::new(), boxing: None, last_app: None, hush: None, clear_armed: None }
+        Shelf { root, items: Vec::new(), thumbs: HashMap::new(), read_at: None, copied: None, picked: HashSet::new(), boxing: None, last_app: None, hush: None, clear_armed: None, judged: HashSet::new() }
     }
 
     /// Re-reads the shelf folder every second; that is also when 3-day-old items go and new screenshots
@@ -61,7 +62,7 @@ impl Shelf {
             self.last_app = Some((app, Instant::now()));
         }
         let downloads = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Downloads")).unwrap_or_default();
-        if !shelf::adopt_airdrops(&self.root, &downloads, crate::stats::unix_secs()).is_empty() {
+        if !shelf::adopt_airdrops(&self.root, &downloads, crate::stats::unix_secs(), &mut self.judged, shelf::taildrop_just_now).is_empty() {
             if let Some((app, seen)) = &self.last_app {
                 if seen.elapsed() < Duration::from_secs(4) {
                     self.hush = Some((app.clone(), Instant::now() + Duration::from_secs(6)));
